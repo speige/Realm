@@ -656,7 +656,7 @@ public partial class WeaponVfxDialog : FloatingDialogBase
 			}
 			else
 			{
-				string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+				string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 				string fullPath = System.IO.Path.Combine(wsPath, "Assets", "audio", soundPath);
 				if (!System.IO.File.Exists(fullPath))
 				{
@@ -793,7 +793,12 @@ public partial class WeaponVfxDialog : FloatingDialogBase
 
 		Vector3 newPos = _targetPosition + offset;
 		_camera.Position = newPos;
-		_camera.LookAtFromPosition(newPos, _targetPosition, Vector3.Up);
+		if (newPos.DistanceSquaredTo(_targetPosition) > 0.0001f)
+		{
+			Vector3 dir = (_targetPosition - newPos).Normalized();
+			Vector3 up = Mathf.Abs(dir.Dot(Vector3.Up)) > 0.99f ? Vector3.Forward : Vector3.Up;
+			_camera.LookAtFromPosition(newPos, _targetPosition, up);
+		}
 	}
 
 	protected override void OnApply()

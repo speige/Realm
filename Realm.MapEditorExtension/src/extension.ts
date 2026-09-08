@@ -10,7 +10,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.workspace.onWillSaveTextDocument(event => {
             const fileName = path.basename(event.document.fileName).toLowerCase();
-            if (fileName === 'metadata.json' || fileName === 'terrain.json') {
+            if (fileName === 'metadata.json' || fileName === 'manifest.json' || fileName === 'terrain.json') {
                 event.waitUntil((async () => {
                     try {
                         const content = event.document.getText();

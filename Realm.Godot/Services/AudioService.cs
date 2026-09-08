@@ -87,7 +87,7 @@ public class AudioService
 			}
 			else
 			{
-				string wsPath = ProjectSettings.GlobalizePath(global::MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+				string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
 				string fullPath = System.IO.Path.Combine(wsPath, "Assets", "audio", soundPath);
 				if (!System.IO.File.Exists(fullPath))
 				{

@@ -11,6 +11,8 @@ using System.Linq;
 using MirrorMode = Realm.Ecs.Components.Core.MirrorMode;
 using WaterType = Realm.Ecs.Components.Terrain.WaterType;
 using Realm.Shared;
+using Realm.Shared.Metadata;
+using Realm.Godot.Utils;
 
 public partial class MapEditorHUD : Control
 {
@@ -111,9 +113,8 @@ public partial class MapEditorHUD : Control
 	private Button _btnHeaderFile;
 	private Control _contentFile;
 
-	private VBoxContainer _accordionMapSettings;
-	private Button _btnHeaderMapSettings;
-	private Control _contentMapSettings;
+	private MapSettingsDialog? _mapSettingsDialog;
+	private Button _btnMapSettings;
 	
 	private VBoxContainer _accordionInspector;
 	private Button _btnHeaderInspector;
@@ -150,6 +151,12 @@ public partial class MapEditorHUD : Control
 	private PanelContainer _topBar;
 	private HBoxContainer _topToolbar;
 	private VBoxContainer _middleRightBox;
+	private HBoxContainer _topLeftBox;
+	private TextureRect _screenFrameRect;
+	private Tween _hudFadeTween;
+	private bool _is3DInteractionActive = false;
+	public bool Is3DInteractionActive => _is3DInteractionActive;
+	private readonly Dictionary<Control, Control.MouseFilterEnum> _savedMouseFilters = new();
 	
 	private PanelContainer _panelTextures;
 	private PanelContainer _panelEntityPalette;
@@ -203,9 +210,18 @@ public partial class MapEditorHUD : Control
 	private AbilityVfxDialog _abilityVfxDialog;
 	private AssetManagerDialog _assetManagerDialog;
 	private AssetBrowserDialog _assetBrowserDialog;
+	private NoiseTextureDialog _noiseTextureDialog;
+	private ConvertGlbDialog _convertGlbDialog;
+	private EditorSettingsDialog _editorSettingsDialog;
+	private ShaderEditorDialog _shaderEditorDialog;
+	private Button _btnEditorSettings;
+	private PanelContainer _mapNameHeaderPanel;
+	private Label _lblMapNameHeader;
+	private double _mapNameUpdateTimer = 0.0;
 	private Button _btnOpenGlobalOverrides;
 	private Button _btnOpenAnimationPreview;
 	private Button _btnAssetsManager;
+	private Button _btnImportAnimation;
 	private bool _isUpdatingInspectorUI;
 
 	private CheckBox _chkApplyGroundTexture;
@@ -224,6 +240,7 @@ public partial class MapEditorHUD : Control
 	private Control _stepBox;
 	private Button _btnToggleSnap;
 	private Button _btnToggleGrid;
+	private Button _btnToggleWireframe;
 	private Button _btnBrushShape;
 	private Button _btnResetMap;
 	private Button _btnGenerateMap;
@@ -237,16 +254,6 @@ public partial class MapEditorHUD : Control
 	private Vector3 _lastRaycastPos = new Vector3(float.MinValue, float.MinValue, float.MinValue);
 
 	private Button _btnSkybox;
-	private OptionButton _optSkybox;
-
-	private OptionButton _optMapType;
-	private CheckBox _chkTagTD;
-	private CheckBox _chkTagCampaign;
-	private CheckBox _chkTagMelee;
-	private CheckBox _chkTagCoop;
-	private CheckBox _chkTagTutorial;
-
-	private List<string> _skyboxFiles = new List<string>();
 
 
 
@@ -280,7 +287,6 @@ public partial class MapEditorHUD : Control
 	private Button _btnShowCoverage;
 	private HBoxContainer _playerOwnerContainer;
 	private OptionButton _optPlayerOwner;
-	private Button _btnImportAnimation;
 	private PanelContainer _rigStatusContainer;
 	private Label _lblRigStatus;
 
@@ -317,13 +323,6 @@ public partial class MapEditorHUD : Control
 	private Label _lblCliffTexture;
 
 	private Button _btnToggleCameraBounds;
-	private Label _lblCamLeftVal;
-	private Label _lblCamRightVal;
-	private Label _lblCamTopVal;
-	private Label _lblCamBottomVal;
-	
-	private Label _lblMapWidthVal;
-	private Label _lblMapHeightVal;
 
 	private PanelContainer _scaleMapDialog;
 	private Label _lblScalePreviewWidth;
@@ -349,9 +348,9 @@ public partial class MapEditorHUD : Control
 	private bool _wasmHasErrors = false;
 	private string _wasmCompileLogPath = "";
 
-	public const string TempWorkspaceGodotPath = "user://temp_map_workspace";
+	public const string TempWorkspaceGodotPath = MapWorkspaceService.DefaultWorkspaceGodotPath;
 
-	private string _tempWorkspacePath;
+	private string _tempWorkspacePath = MapWorkspaceService.GetDefaultWorkspaceGlobalPath();
 	public string TempWorkspacePath => _tempWorkspacePath;
 	private EditorService _editorService;
 	private long _lastTerrainSyncTime = 0;
@@ -374,6 +373,41 @@ public partial class MapEditorHUD : Control
 		{
 			_swatchCliffHighlightPanel.QueueFree();
 		}
+		if (_hudFadeTween != null && _hudFadeTween.IsValid())
+		{
+			_hudFadeTween.Kill();
+		}
+		foreach (var (ctrl, filter) in _savedMouseFilters)
+		{
+			if (GodotObject.IsInstanceValid(ctrl))
+			{
+				ctrl.MouseFilter = filter;
+			}
+		}
+		_savedMouseFilters.Clear();
+	}
+
+	private double _autoBackupElapsedSeconds = 0;
+
+	public void PerformAutoBackup()
+	{
+		try
+		{
+			if (GameHost.Instance == null || GameHost.Instance.GroundTerrain == null) return;
+			string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
+			if (string.IsNullOrEmpty(wsPath) || !System.IO.Directory.Exists(wsPath)) return;
+
+			string tempTerrainPath = System.IO.Path.Combine(wsPath, "terrain.json");
+			GameHost.Instance.SaveMapToFile(tempTerrainPath, performReload: false);
+			int maxBackups = EditorSettingsDialog.CurrentSettings?.MaxBackupSnapshots ?? 3;
+			SaveLoadService.CreateWorkspaceBackup(wsPath, maxBackups);
+			ShowFeedback(TranslationServer.Translate("Auto-backup snapshot saved."));
+			GD.Print("[MapEditorHUD] Auto-backup snapshot saved.");
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] Auto-backup failed: {ex.Message}");
+		}
 	}
 
 	public void UpdateFPSVisibility()
@@ -393,7 +427,7 @@ public partial class MapEditorHUD : Control
 			Instance = this;
 			_editorService = ServiceLocator.TryGet<EditorService>();
 			UpdateFPSVisibility();
-			_tempWorkspacePath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+			_tempWorkspacePath = MapWorkspaceService.GetDefaultWorkspaceGlobalPath();
 
 			_camera3D = (GameHost.Instance?.MainCamera);
 
@@ -423,9 +457,14 @@ public partial class MapEditorHUD : Control
 			frameRect.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 			frameRect.StretchMode = TextureRect.StretchModeEnum.Scale;
 			frameRect.MouseFilter = Control.MouseFilterEnum.Ignore;
+			frameRect.Visible = !EditorSettingsDialog.CurrentSettings.HideChromeBorderOverlay;
 			AddChild(frameRect);
 			MoveChild(frameRect, 0);
+			_screenFrameRect = frameRect;
 		}
+
+		_topLeftBox = GetNodeOrNull<HBoxContainer>("TopLeftBox");
+		_topBar = GetNodeOrNull<PanelContainer>("TopBar");
 
 		_leftPillar = new Panel();
 		_rightPillar = new Panel();
@@ -440,6 +479,8 @@ public partial class MapEditorHUD : Control
 
 		_panelLeft = GetNode<Panel>("LeftSlidePanel");
 		_panelRight = GetNode<Panel>("RightSlidePanel");
+		if (_panelLeft != null) _panelLeft.MouseFilter = Control.MouseFilterEnum.Ignore;
+		if (_panelRight != null) _panelRight.MouseFilter = Control.MouseFilterEnum.Ignore;
 
 		_btnLeftTab = GetNodeOrNull<Button>("LeftSlidePanel/LeftTabButton");
 		if (_btnLeftTab != null)
@@ -458,6 +499,45 @@ public partial class MapEditorHUD : Control
 		_btnBackToHub = GetNode<Button>("TopLeftBox/BtnBack");
 		SetupButton(_btnBackToHub, "\uf2f5 BACK TO HUB", () => BackToHubAction(), 13, "Exit editor and return to game lobby");
 		StyleMapEditorTopButton(_btnBackToHub);
+		_mapNameHeaderPanel = new PanelContainer();
+		_mapNameHeaderPanel.Name = "MapNameHeaderPanel";
+		_mapNameHeaderPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateLightInnerPanel());
+		_mapNameHeaderPanel.CustomMinimumSize = new Vector2(160, 32);
+		_mapNameHeaderPanel.MouseFilter = Control.MouseFilterEnum.Stop;
+		_mapNameHeaderPanel.MouseDefaultCursorShape = Control.CursorShape.PointingHand;
+		_mapNameHeaderPanel.TooltipText = TranslationServer.Translate("Click to open Map Settings");
+		_mapNameHeaderPanel.GuiInput += (ev) =>
+		{
+			if (ev is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
+			{
+				_mapSettingsDialog?.OpenDialog();
+			}
+		};
+
+		var mapNameHBox = new HBoxContainer();
+		mapNameHBox.Alignment = BoxContainer.AlignmentMode.Center;
+		mapNameHBox.AddThemeConstantOverride("separation", 6);
+		_mapNameHeaderPanel.AddChild(mapNameHBox);
+
+		_lblMapNameHeader = new Label();
+		_lblMapNameHeader.Name = "LblMapNameHeader";
+		_lblMapNameHeader.Text = "";
+		_lblMapNameHeader.AddThemeFontSizeOverride("font_size", 12);
+		_lblMapNameHeader.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		_lblMapNameHeader.HorizontalAlignment = HorizontalAlignment.Center;
+		_lblMapNameHeader.VerticalAlignment = VerticalAlignment.Center;
+		_lblMapNameHeader.MouseFilter = Control.MouseFilterEnum.Pass;
+		mapNameHBox.AddChild(_lblMapNameHeader);
+
+		var topLeftBoxNode = GetNodeOrNull<HBoxContainer>("TopLeftBox");
+		if (topLeftBoxNode != null)
+		{
+			topLeftBoxNode.AddChild(_mapNameHeaderPanel);
+			int backIdx = _btnBackToHub.GetIndex();
+			topLeftBoxNode.MoveChild(_mapNameHeaderPanel, backIdx + 1);
+		}
+
+		UpdateMapNameHeader();
 
 		var btnHelp = GetNode<Button>("TopLeftBox/BtnHelp");
 		SetupButton(btnHelp, "\uf059 HELP / HOTKEYS", () => ToggleHelpPanelExternal(), 13, "Toggle the hotkeys and editor guide overlay (H)");
@@ -502,7 +582,11 @@ public partial class MapEditorHUD : Control
 		_btnSettings = GetNodeOrNull<Button>("TopLeftBox/BtnSettings");
 		if (_btnSettings != null)
 		{
-			SetupIconButton(_btnSettings, "res://Assets/UI/gear_icon.png", () => UIManager.Instance?.OpenSettingsOverlay(), "Settings");
+			SetupIconButton(_btnSettings, "res://Assets/UI/gear_icon.png", () =>
+			{
+				if (_editorSettingsDialog != null) _editorSettingsDialog.OpenDialog();
+				else UIManager.Instance?.OpenSettingsOverlay();
+			}, "Editor Settings");
 			StyleMapEditorTopButton(_btnSettings);
 		}
 
@@ -523,10 +607,12 @@ public partial class MapEditorHUD : Control
 		_statusLabel = GetNode<Label>("TopBar/HBox/StatusLabel");
 		_feedbackLabel = GetNode<Label>("FeedbackLabel");
 		_feedbackLabel.Modulate = new Color(1, 1, 1, 0);
+		_feedbackLabel.MouseFilter = Control.MouseFilterEnum.Ignore;
 
 		var leftScroll = GetNodeOrNull<ScrollContainer>("LeftSlidePanel/LeftScroll");
 		if (leftScroll != null)
 		{
+			leftScroll.MouseFilter = Control.MouseFilterEnum.Ignore;
 			leftScroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
 			leftScroll.VerticalScrollMode = ScrollContainer.ScrollMode.Disabled;
 		}
@@ -534,6 +620,7 @@ public partial class MapEditorHUD : Control
 		var rightScroll = GetNodeOrNull<ScrollContainer>("RightSlidePanel/RightScroll");
 		if (rightScroll != null)
 		{
+			rightScroll.MouseFilter = Control.MouseFilterEnum.Ignore;
 			rightScroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
 			rightScroll.VerticalScrollMode = ScrollContainer.ScrollMode.Disabled;
 		}
@@ -582,6 +669,18 @@ public partial class MapEditorHUD : Control
 		SetupOptionButton(_btnImportAnimation, "\uf1c8 MIXAMO / GLB", () => ImportMixamoOrAnimationDialog(), 13, "Import Mixamo character/animation GLB or .ranim binary animation files");
 		_contentFile.AddChild(_btnImportAnimation);
 
+		_btnMapSettings = new Button();
+		_btnMapSettings.Name = "BtnMapSettings";
+		_btnMapSettings.Set("icon_max_width", 0);
+		SetupOptionButton(_btnMapSettings, "\uf303 MAP SETTINGS", () => _mapSettingsDialog?.OpenDialog(), 13, "Open Map Settings dialog");
+		_contentFile.AddChild(_btnMapSettings);
+
+		_btnEditorSettings = new Button();
+		_btnEditorSettings.Name = "BtnEditorSettings";
+		_btnEditorSettings.Set("icon_max_width", 0);
+		SetupOptionButton(_btnEditorSettings, "⚙️ " + TranslationServer.Translate("EDITOR SETTINGS"), () => _editorSettingsDialog?.OpenDialog(), 13, "Configure editor preferences, chrome border, and display overlays");
+		_contentFile.AddChild(_btnEditorSettings);
+
 		_accordionViewport = GetNode<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion");
 		_btnHeaderViewport = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/BtnHeaderViewport");
 		_contentViewport = GetNode<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport");
@@ -619,6 +718,16 @@ public partial class MapEditorHUD : Control
 				UpdateCameraBoundsOverlayExternal(GameHost.Instance.EditorCameraBoundsVisible);
 			}
 		}, 12, "Toggle camera bounds overlay (B)");
+		_btnToggleWireframe = GetNodeOrNull<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport/BtnToggleWireframe") ?? new Button();
+		SetupButton(_btnToggleWireframe, "\uf5ee", () =>
+		{
+			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
+			{
+				GameHost.Instance.GroundTerrain.ToggleWireframeMode();
+				bool isWireframe = GetViewport()?.DebugDraw == Viewport.DebugDrawEnum.Wireframe;
+				UpdateWireframeOverlayExternal(isWireframe);
+			}
+		}, 12, "Toggle wireframe mode (F7)");
 
 		_btnRotate = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport/BtnRotate");
 		SetupButton(_btnRotate, "\uf01e", () =>
@@ -672,185 +781,8 @@ public partial class MapEditorHUD : Control
 		_minimapArea = GetNode<Control>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport/MinimapFrame/MinimapArea");
 		_cameraIndicator = GetNode<MapEditorCameraIndicator>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport/MinimapFrame/MinimapArea/CameraIndicator");
 
-		_accordionMapSettings = GetNode<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion");
-		_btnHeaderMapSettings = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/BtnHeaderMapSettings");
-		_contentMapSettings = GetNode<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings");
-		StyleAccordionHeader(_btnHeaderMapSettings);
-		SetupAccordion(_btnHeaderMapSettings, _contentMapSettings, TranslationServer.Translate("Map Settings"));
-
-
-
-		_camBoundsBox = GetNode<Control>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox");
-		_lblCamLeftVal = GetNode<Label>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/LblCamLeftVal");
-		_lblCamRightVal = GetNode<Label>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/LblCamRightVal");
-		_lblCamTopVal = GetNode<Label>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/LblCamTopVal");
-		_lblCamBottomVal = GetNode<Label>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/LblCamBottomVal");
-
-		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnLeftDec"), "\uf060", () => {
-			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
-				EnsureCameraBoundsVisible();
-				float minX = -GameHost.Instance.GroundTerrain.Width;
-				GameHost.Instance.EditorCameraBoundsLeft = Mathf.Max(minX, GameHost.Instance.EditorCameraBoundsLeft - 5.0f);
-				GameHost.Instance.RebuildCameraBoundsOverlay();
-				UpdateCameraBoundsUI();
-			}
-		}, 10, "Move Left boundary further left (West)");
-		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnLeftInc"), "\uf061", () => {
-			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
-				EnsureCameraBoundsVisible();
-				float maxX = GameHost.Instance.EditorCameraBoundsRight;
-				GameHost.Instance.EditorCameraBoundsLeft = Mathf.Min(maxX, GameHost.Instance.EditorCameraBoundsLeft + 5.0f);
-				GameHost.Instance.RebuildCameraBoundsOverlay();
-				UpdateCameraBoundsUI();
-			}
-		}, 10, "Move Left boundary further right (East)");
-		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnRightDec"), "\uf060", () => {
-			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
-				EnsureCameraBoundsVisible();
-				float minX = GameHost.Instance.EditorCameraBoundsLeft;
-				GameHost.Instance.EditorCameraBoundsRight = Mathf.Max(minX, GameHost.Instance.EditorCameraBoundsRight - 5.0f);
-				GameHost.Instance.RebuildCameraBoundsOverlay();
-				UpdateCameraBoundsUI();
-			}
-		}, 10, "Move Right boundary further left (West)");
-		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnRightInc"), "\uf061", () => {
-			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
-				EnsureCameraBoundsVisible();
-				float maxX = (float)GameHost.Instance.GroundTerrain.Width;
-				GameHost.Instance.EditorCameraBoundsRight = Mathf.Min(maxX, GameHost.Instance.EditorCameraBoundsRight + 5.0f);
-				GameHost.Instance.RebuildCameraBoundsOverlay();
-				UpdateCameraBoundsUI();
-			}
-		}, 10, "Move Right boundary further right (East)");
-		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnTopDec"), "\uf060", () => {
-			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
-				EnsureCameraBoundsVisible();
-				float minZ = -GameHost.Instance.GroundTerrain.Depth;
-				GameHost.Instance.EditorCameraBoundsTop = Mathf.Max(minZ, GameHost.Instance.EditorCameraBoundsTop - 5.0f);
-				GameHost.Instance.RebuildCameraBoundsOverlay();
-				UpdateCameraBoundsUI();
-			}
-		}, 10, "Move Top boundary further North (Up)");
-		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnTopInc"), "\uf061", () => {
-			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
-				EnsureCameraBoundsVisible();
-				float maxZ = GameHost.Instance.EditorCameraBoundsBottom;
-				GameHost.Instance.EditorCameraBoundsTop = Mathf.Min(maxZ, GameHost.Instance.EditorCameraBoundsTop + 5.0f);
-				GameHost.Instance.RebuildCameraBoundsOverlay();
-				UpdateCameraBoundsUI();
-			}
-		}, 10, "Move Top boundary further South (Down)");
-		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnBottomDec"), "\uf060", () => {
-			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
-				EnsureCameraBoundsVisible();
-				float minZ = GameHost.Instance.EditorCameraBoundsTop;
-				GameHost.Instance.EditorCameraBoundsBottom = Mathf.Max(minZ, GameHost.Instance.EditorCameraBoundsBottom - 5.0f);
-				GameHost.Instance.RebuildCameraBoundsOverlay();
-				UpdateCameraBoundsUI();
-			}
-		}, 10, "Move Bottom boundary further North (Up)");
-		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid/BtnBottomInc"), "\uf061", () => {
-			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
-				EnsureCameraBoundsVisible();
-				float maxZ = (float)GameHost.Instance.GroundTerrain.Depth;
-				GameHost.Instance.EditorCameraBoundsBottom = Mathf.Min(maxZ, GameHost.Instance.EditorCameraBoundsBottom + 5.0f);
-				GameHost.Instance.RebuildCameraBoundsOverlay();
-				UpdateCameraBoundsUI();
-			}
-		}, 10, "Move Bottom boundary further South (Down)");
-
-		_lblMapWidthVal = GetNode<Label>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid/LblMapWidthVal");
-		_lblMapHeightVal = GetNode<Label>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid/LblMapHeightVal");
-
-		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid/BtnWidthDec"), "\uf068", () => {
-			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
-				int w = GameHost.Instance.GroundTerrain.Width;
-				if (w > 32) {
-					int targetW = Math.Max(32, (w % 32 == 0 ? w - 32 : (w / 32) * 32));
-					GameHost.Instance.ResizeMapExternal(targetW, GameHost.Instance.GroundTerrain.Depth);
-					UpdateCameraBoundsUI();
-				}
-			}
-		}, 10, "Decrease map tile columns (West)");
-		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid/BtnWidthInc"), "\uf067", () => {
-			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
-				int w = GameHost.Instance.GroundTerrain.Width;
-				if (w < 512) {
-					int targetW = Math.Min(512, (w / 32 + 1) * 32);
-					GameHost.Instance.ResizeMapExternal(targetW, GameHost.Instance.GroundTerrain.Depth);
-					UpdateCameraBoundsUI();
-				}
-			}
-		}, 10, "Increase map tile columns (East)");
-		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid/BtnHeightDec"), "\uf068", () => {
-			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
-				int d = GameHost.Instance.GroundTerrain.Depth;
-				if (d > 32) {
-					int targetD = Math.Max(32, (d % 32 == 0 ? d - 32 : (d / 32) * 32));
-					GameHost.Instance.ResizeMapExternal(GameHost.Instance.GroundTerrain.Width, targetD);
-					UpdateCameraBoundsUI();
-				}
-			}
-		}, 10, "Decrease map tile rows (North)");
-		SetupOptionButton(GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid/BtnHeightInc"), "\uf067", () => {
-			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null) {
-				int d = GameHost.Instance.GroundTerrain.Depth;
-				if (d < 512) {
-					int targetD = Math.Min(512, (d / 32 + 1) * 32);
-					GameHost.Instance.ResizeMapExternal(GameHost.Instance.GroundTerrain.Width, targetD);
-					UpdateCameraBoundsUI();
-				}
-			}
-		}, 10, "Increase map tile rows (South)");
-
-		UpdateCameraBoundsUI();
-
-		var btnScaleMap = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/BtnScaleMap");
-		SetupOptionButton(btnScaleMap, "\uf07e SCALE MAP", () =>
-		{
-			if (GameHost.Instance?.GroundTerrain != null)
-			{
-				_scaleDialogTargetWidth = GameHost.Instance.GroundTerrain.Width;
-				_scaleDialogTargetDepth = GameHost.Instance.GroundTerrain.Depth;
-				OpenScaleMapDialog();
-			}
-		}, 11, "Scale the entire map: stretches/shrinks terrain data and repositions all entities proportionally");
-
-		_optSkybox = GetNode<OptionButton>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/SkyboxBox/OptSkybox");
-
-		_optMapType = GetNodeOrNull<OptionButton>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapTypeBox/OptMapType");
-		if (_optMapType != null) {
-			_optMapType.AddItem("Arcade Custom Map", 0);
-			_optMapType.AddItem("Asset Pack", 1);
-			_optMapType.ItemSelected += (idx) => {
-				RebuildTagsUI();
-				SaveMapProperties();
-			};
-		}
-
-		RefreshSkyboxList();
-		_optSkybox.ItemSelected += (index) =>
-		{
-			int idx = (int)index;
-			if (idx >= 0 && idx < _skyboxFiles.Count)
-			{
-				string selectedFile = _skyboxFiles[idx];
-				string relPath = selectedFile.Contains("/") || selectedFile.Contains("\\")
-					? selectedFile
-					: $"Assets/skyboxes/{selectedFile}";
-				GameHost.Instance?.SetSkyboxTexture(relPath);
-			}
-		};
-
-		if (_skyboxFiles.Count > 0)
-		{
-			_optSkybox.Selected = 0;
-			string initialFile = _skyboxFiles[0];
-			string initialRelPath = initialFile.Contains("/") || initialFile.Contains("\\")
-				? initialFile
-				: $"Assets/skyboxes/{initialFile}";
-			GameHost.Instance?.SetSkyboxTexture(initialRelPath);
-		}
+		_mapSettingsDialog = new MapSettingsDialog(this);
+		AddChild(_mapSettingsDialog);
 
 		ApplyThemeStyles();
 		SetupLightingTuningUI();
@@ -1139,19 +1071,48 @@ public partial class MapEditorHUD : Control
 		SetupTextureSwatches(true);
 
 		_containerPathingSettings = GetNode<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerPathing");
-		_chkShallowWater = GetNode<CheckBox>("RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerPathing/PathingContent/ChkShallowWater");
-		UIStyle.ApplyCheckboxStyle(_chkShallowWater);
-		_chkDeepWater = GetNode<CheckBox>("RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerPathing/PathingContent/ChkDeepWater");
-		UIStyle.ApplyCheckboxStyle(_chkDeepWater);
-		_chkFlying = GetNode<CheckBox>("RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerPathing/PathingContent/ChkFlying");
-		UIStyle.ApplyCheckboxStyle(_chkFlying);
-		_chkGround = GetNode<CheckBox>("RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerPathing/PathingContent/ChkGround");
-		UIStyle.ApplyCheckboxStyle(_chkGround);
-		_chkBuildable = GetNode<CheckBox>("RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerPathing/PathingContent/ChkBuildable");
-		UIStyle.ApplyCheckboxStyle(_chkBuildable);
+		var pathingContent = GetNode<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerPathing/PathingContent");
+		_chkShallowWater = pathingContent.GetNode<CheckBox>("ChkShallowWater");
+		_chkDeepWater = pathingContent.GetNode<CheckBox>("ChkDeepWater");
+		_chkFlying = pathingContent.GetNode<CheckBox>("ChkFlying");
+		_chkGround = pathingContent.GetNode<CheckBox>("ChkGround");
+		_chkBuildable = pathingContent.GetNode<CheckBox>("ChkBuildable");
+
+		SetupPathingCheckBoxRow(pathingContent, _chkShallowWater, new Color(0.2f, 0.6f, 1.0f), "Shallow Water");
+		SetupPathingCheckBoxRow(pathingContent, _chkDeepWater, new Color(0.0f, 0.15f, 0.7f), "Deep Water");
+		SetupPathingCheckBoxRow(pathingContent, _chkFlying, new Color(0.85f, 0.85f, 0.0f), "Flying");
+		SetupPathingCheckBoxRow(pathingContent, _chkGround, new Color(0.2f, 0.85f, 0.2f), "Ground");
+		SetupPathingCheckBoxRow(pathingContent, _chkBuildable, new Color(0.6f, 0.2f, 0.8f), "Buildable");
 		_chkGround.ButtonPressed = true;
 
-		_optPathingMode = GetNode<OptionButton>("RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerPathing/PathingContent/PathingModeRow/OptPathingMode");
+		var pathingModeRow = pathingContent.GetNodeOrNull<HBoxContainer>("PathingModeRow");
+		if (pathingModeRow != null)
+		{
+			var modePanel = new PanelContainer();
+			modePanel.Name = "ModeRowPanel";
+			modePanel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+			var modeStyle = new StyleBoxFlat();
+			modeStyle.BgColor = new Color(0.12f, 0.13f, 0.16f, 0.82f);
+			modeStyle.BorderColor = new Color(0.35f, 0.33f, 0.28f, 0.75f);
+			modeStyle.SetBorderWidthAll(1);
+			modeStyle.CornerRadiusTopLeft = 4;
+			modeStyle.CornerRadiusTopRight = 4;
+			modeStyle.CornerRadiusBottomLeft = 4;
+			modeStyle.CornerRadiusBottomRight = 4;
+			modeStyle.ContentMarginLeft = 8;
+			modeStyle.ContentMarginRight = 8;
+			modeStyle.ContentMarginTop = 4;
+			modeStyle.ContentMarginBottom = 4;
+			modePanel.AddThemeStyleboxOverride("panel", modeStyle);
+
+			int modeIdx = pathingModeRow.GetIndex();
+			pathingContent.RemoveChild(pathingModeRow);
+			modePanel.AddChild(pathingModeRow);
+			pathingContent.AddChild(modePanel);
+			pathingContent.MoveChild(modePanel, modeIdx);
+		}
+
+		_optPathingMode = pathingContent.GetNode<OptionButton>("ModeRowPanel/PathingModeRow/OptPathingMode");
 		_optPathingMode.AddItem(TranslationServer.Translate("Add Pathing Attribute"), 0);
 		_optPathingMode.AddItem(TranslationServer.Translate("Clear Pathing Attribute"), 1);
 		_optPathingMode.Selected = 0;
@@ -1308,7 +1269,6 @@ public partial class MapEditorHUD : Control
 
 		MakeCardDraggable(_accordionFile, _btnHeaderFile, _contentFile, "File");
 		MakeCardDraggable(_accordionViewport, _btnHeaderViewport, _contentViewport, "Viewport & Navigation");
-		MakeCardDraggable(_accordionMapSettings, _btnHeaderMapSettings, _contentMapSettings, "Map Settings");
 		MakeCardDraggable(_accordionTool, _btnHeaderTool, _contentTool, "Tool");
 		MakeCardDraggable(_accordionBrush, _btnHeaderBrush, _contentBrush, "Global Brush Properties");
 		MakeCardDraggable(_accordionToolSettings, _btnHeaderToolSettings, _contentToolSettings, "Tool Settings");
@@ -1424,6 +1384,25 @@ public partial class MapEditorHUD : Control
 				_accordionContainer?.QueueSort();
 			}
 		}
+
+		_mapNameUpdateTimer += delta;
+		if (_mapNameUpdateTimer >= 0.2)
+		{
+			_mapNameUpdateTimer = 0.0;
+			UpdateMapNameHeader();
+		}
+
+		int intervalMins = EditorSettingsDialog.CurrentSettings?.AutoBackupIntervalMinutes ?? 30;
+		if (intervalMins > 0)
+		{
+			_autoBackupElapsedSeconds += delta;
+			double targetSeconds = intervalMins * 60.0;
+			if (_autoBackupElapsedSeconds >= targetSeconds)
+			{
+				_autoBackupElapsedSeconds = 0;
+				PerformAutoBackup();
+			}
+		}
 	}
 
 	public void ShowFeedbackExternal(string text)
@@ -1468,18 +1447,39 @@ public partial class MapEditorHUD : Control
 
 	private void ApplyThemeStyles()
 	{
-		if (_panelLeft != null) _panelLeft.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
-		if (_panelRight != null) _panelRight.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+		if (_panelLeft != null)
+		{
+			_panelLeft.MouseFilter = Control.MouseFilterEnum.Ignore;
+			_panelLeft.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+		}
+		if (_panelRight != null)
+		{
+			_panelRight.MouseFilter = Control.MouseFilterEnum.Ignore;
+			_panelRight.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+		}
+
+		var leftScroll = GetNodeOrNull<ScrollContainer>("LeftSlidePanel/LeftScroll");
+		if (leftScroll != null) leftScroll.MouseFilter = Control.MouseFilterEnum.Ignore;
+
+		var rightScroll = GetNodeOrNull<ScrollContainer>("RightSlidePanel/RightScroll");
+		if (rightScroll != null) rightScroll.MouseFilter = Control.MouseFilterEnum.Ignore;
 
 		var leftVBox = GetNodeOrNull<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox");
-		if (leftVBox != null) leftVBox.AddThemeConstantOverride("separation", 14);
+		if (leftVBox != null)
+		{
+			leftVBox.MouseFilter = Control.MouseFilterEnum.Ignore;
+			leftVBox.AddThemeConstantOverride("separation", 14);
+		}
 
 		var rightVBox = GetNodeOrNull<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer");
-		if (rightVBox != null) rightVBox.AddThemeConstantOverride("separation", 14);
+		if (rightVBox != null)
+		{
+			rightVBox.MouseFilter = Control.MouseFilterEnum.Ignore;
+			rightVBox.AddThemeConstantOverride("separation", 14);
+		}
 
 		if (_accordionFile != null) _accordionFile.CustomMinimumSize = new Vector2(260, 0);
 		if (_accordionViewport != null) _accordionViewport.CustomMinimumSize = new Vector2(260, 0);
-		if (_accordionMapSettings != null) _accordionMapSettings.CustomMinimumSize = new Vector2(260, 0);
 		if (_accordionTool != null) _accordionTool.CustomMinimumSize = new Vector2(260, 0);
 		if (_accordionBrush != null) _accordionBrush.CustomMinimumSize = new Vector2(260, 0);
 		if (_accordionToolSettings != null) _accordionToolSettings.CustomMinimumSize = new Vector2(260, 0);
@@ -1488,7 +1488,6 @@ public partial class MapEditorHUD : Control
 
 		ApplyCardPanelStyle(_accordionFile);
 		ApplyCardPanelStyle(_accordionViewport);
-		ApplyCardPanelStyle(_accordionMapSettings);
 		ApplyCardPanelStyle(_accordionTool);
 		ApplyCardPanelStyle(_accordionBrush);
 		ApplyCardPanelStyle(_accordionToolSettings);
@@ -1497,7 +1496,6 @@ public partial class MapEditorHUD : Control
 
 		StyleContentBox(_contentFile);
 		StyleContentBox(_contentViewport);
-		StyleContentBox(_contentMapSettings);
 		StyleContentBox(_contentTool);
 		StyleContentBox(_contentBrush);
 		StyleContentBox(_contentToolSettings);
@@ -1506,7 +1504,6 @@ public partial class MapEditorHUD : Control
 
 		SetupCardScrollContainer(_contentFile, 300f);
 		SetupCardScrollContainer(_contentViewport, 0f, false);
-		SetupCardScrollContainer(_contentMapSettings, 320f);
 		SetupCardScrollContainer(_contentTool, 320f);
 		SetupCardScrollContainer(_contentBrush, 300f);
 		SetupCardScrollContainer(_contentToolSettings, 320f);
@@ -1521,6 +1518,8 @@ public partial class MapEditorHUD : Control
 		StyleRowButton(_btnGenerateMap);
 		StyleRowButton(_btnImportMinimap);
 		StyleRowButton(_btnImportAnimation);
+		StyleRowButton(_btnMapSettings);
+		StyleRowButton(_btnEditorSettings);
 
 		StyleRowButton(_btnRaise);
 		StyleRowButton(_btnLower);
@@ -1560,12 +1559,6 @@ public partial class MapEditorHUD : Control
 		StyleValueBadge(_lblClumpDensityValue);
 		StyleValueBadge(_lblClumpScaleVarValue);
 		StyleValueBadge(_lblPasteRotation);
-		StyleValueBadge(_lblCamLeftVal);
-		StyleValueBadge(_lblCamRightVal);
-		StyleValueBadge(_lblCamTopVal);
-		StyleValueBadge(_lblCamBottomVal);
-		StyleValueBadge(_lblMapWidthVal);
-		StyleValueBadge(_lblMapHeightVal);
 
 		StyleCheckBoxRow(_chkBlockMode);
 		StyleCheckBoxRow(_chkShallowWater);
@@ -1576,10 +1569,6 @@ public partial class MapEditorHUD : Control
 		StyleCheckBoxRow(_chkRandomRotation);
 		StyleCheckBoxRow(_chkRandomScale);
 		StyleCheckBoxRow(_chkClumpMode);
-
-		StyleSubContainer(_camBoundsBox, "Camera Boundaries");
-		var mapSizeBox = GetContentTarget(_contentMapSettings)?.GetNodeOrNull<Control>("MapSizeBox") ?? _contentMapSettings?.GetNodeOrNull<Control>("MapSizeBox");
-		StyleSubContainer(mapSizeBox, "Map Grid Dimensions");
 		StyleSubContainer(_containerTextureSettings, "Texture Paint Palette");
 		StyleSubContainer(_containerPathingSettings, "Pathing Masks");
 		StyleSubContainer(_containerPlacementSettings, "Placement Controls");
@@ -1662,6 +1651,7 @@ public partial class MapEditorHUD : Control
 				if (_contentInspector != null) _contentInspector.Visible = true;
 			}
 			string nameStr = selected.Name;
+			string idStr = null;
 			Vector3 pos = Vector3.Zero;
 			Vector3 rot = Vector3.Zero;
 			Vector3 scale = Vector3.One;
@@ -1675,7 +1665,15 @@ public partial class MapEditorHUD : Control
 			if (selected is Unit3D unit)
 			{
 				typeStr = unit.IsBuilding ? "BUILDING" : "UNIT";
-				nameStr = System.IO.Path.GetFileName(unit.UnitId).ToUpper();
+				idStr = System.IO.Path.GetFileName(unit.UnitId).ToUpper();
+				if (unit.IsResource && GameHost.ResourceRegistry.TryGetValue(unit.UnitId, out var resMeta) && !string.IsNullOrEmpty(resMeta.Name))
+					nameStr = resMeta.Name.ToUpper();
+				else if (unit.IsBuilding && GameHost.BuildingRegistry.TryGetValue(unit.UnitId, out var bldMeta) && !string.IsNullOrEmpty(bldMeta.Name))
+					nameStr = bldMeta.Name.ToUpper();
+				else if (GameHost.UnitRegistry.TryGetValue(unit.UnitId, out var unitMeta) && !string.IsNullOrEmpty(unitMeta.Name))
+					nameStr = unitMeta.Name.ToUpper();
+				else
+					nameStr = idStr;
 				if (_playerOwnerContainer != null && _optPlayerOwner != null)
 				{
 					_playerOwnerContainer.Visible = true;
@@ -1694,7 +1692,13 @@ public partial class MapEditorHUD : Control
 				if (selected is Prop3D prop)
 				{
 					typeStr = "PROP";
-					nameStr = System.IO.Path.GetFileName(prop.PropId).ToUpper();
+					idStr = System.IO.Path.GetFileName(prop.PropId).ToUpper();
+					if (GameHost.ResourceRegistry.TryGetValue(prop.PropId, out var propResMeta) && !string.IsNullOrEmpty(propResMeta.Name))
+						nameStr = propResMeta.Name.ToUpper();
+					else if (GameHost.PropRegistry.TryGetValue(prop.PropId, out var propMeta) && !string.IsNullOrEmpty(propMeta.Name))
+						nameStr = propMeta.Name.ToUpper();
+					else
+						nameStr = idStr;
 				}
 				else if (selected is Decal decal)
 				{
@@ -1717,7 +1721,9 @@ public partial class MapEditorHUD : Control
 			if (_viewModel != null)
 			{
 				_viewModel.HasInspectorSelection = true;
-				_viewModel.InspectorTitle = $"SELECTED: {nameStr}\n[{typeStr}]";
+				_viewModel.InspectorTitle = idStr != null
+					? $"SELECTED: {nameStr}\n({idStr})\n[{typeStr}]"
+					: $"SELECTED: {nameStr}\n[{typeStr}]";
 				_viewModel.InspectorPos = $"Pos: {pos.X:F2}, {pos.Y:F2}, {pos.Z:F2}\nRot: {rot.Y:F1}° | Scale: {scale.X:F2}x";
 			}
 
@@ -1767,7 +1773,8 @@ public partial class MapEditorHUD : Control
 			}
 
 			string assetKey = GameHost.Instance.GetSelectedEntityOrAssetKey(selected);
-			if (!string.IsNullOrEmpty(assetKey))
+			bool isDecal = selected is Decal || (GameHost.Instance != null && GameHost.Instance.FindDecalInParentChain(selected) != null);
+			if (!string.IsNullOrEmpty(assetKey) && !isDecal)
 			{
 				if (_btnOpenGlobalOverrides != null)
 				{
@@ -1893,7 +1900,17 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
-	private void EnsureCameraBoundsVisible()
+	public void UpdateWireframeOverlayExternal(bool enabled)
+	{
+		if (_btnToggleWireframe != null)
+		{
+			_btnToggleWireframe.Text = "\uf5ee";
+			_btnToggleWireframe.TooltipText = TranslationServer.Translate($"Wireframe Mode: {(enabled ? "ON" : "OFF")} (F7)");
+			_btnToggleWireframe.Modulate = enabled ? new Color(1.8f, 1.45f, 0.5f) : new Color(1.1f, 1.1f, 1.1f);
+		}
+	}
+
+	public void EnsureCameraBoundsVisible()
 	{
 		if (GameHost.Instance != null && !GameHost.Instance.EditorCameraBoundsVisible)
 		{
@@ -1903,36 +1920,14 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
-
 	public void UpdateCameraBoundsUI()
 	{
-		if (GameHost.Instance == null) return;
-		if (_lblCamLeftVal != null) _lblCamLeftVal.Text = $"L: {GameHost.Instance.EditorCameraBoundsLeft:F0}m";
-		if (_lblCamRightVal != null) _lblCamRightVal.Text = $"R: {GameHost.Instance.EditorCameraBoundsRight:F0}m";
-		if (_lblCamTopVal != null) _lblCamTopVal.Text = $"T: {GameHost.Instance.EditorCameraBoundsTop:F0}m";
-		if (_lblCamBottomVal != null) _lblCamBottomVal.Text = $"B: {GameHost.Instance.EditorCameraBoundsBottom:F0}m";
-		
-		if (GameHost.Instance.GroundTerrain != null)
-		{
-			if (_lblMapWidthVal != null) _lblMapWidthVal.Text = $"W: {GameHost.Instance.GroundTerrain.Width}";
-			if (_lblMapHeightVal != null) _lblMapHeightVal.Text = $"H: {GameHost.Instance.GroundTerrain.Depth}";
-		}
+		_mapSettingsDialog?.UpdateCameraBoundsUI();
 	}
 
 	public void UpdateSelectedSkyboxExternal(string path)
 	{
-		if (_optSkybox == null) return;
-		string file = System.IO.Path.GetFileName(path);
-		int index = _skyboxFiles.IndexOf(file);
-		if (index < 0)
-		{
-			RefreshSkyboxList();
-			index = _skyboxFiles.IndexOf(file);
-		}
-		if (index >= 0)
-		{
-			_optSkybox.Selected = index;
-		}
+		_mapSettingsDialog?.SelectSkybox(path);
 	}
 
 	public void UpdatePathingOverlayExternal(bool visible)
@@ -2033,7 +2028,7 @@ public partial class MapEditorHUD : Control
 		var optType = new OptionButton();
 		optType.AddItem("Custom Arcade Map", 0);
 		optType.AddItem("Reusable Asset Pack", 1);
-		optType.Selected = _optMapType != null ? _optMapType.Selected : 0;
+		optType.Selected = _mapSettingsDialog?.SelectedMapTypeIndex ?? 0;
 		vbox.AddChild(optType);
 
 		var scroll = new ScrollContainer();
@@ -2843,6 +2838,7 @@ public partial class MapEditorHUD : Control
 	{
 		string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
 		MapWorkspaceService.EnsureGlbAssetsOptimized(_tempWorkspacePath);
+		MapWorkspaceService.EnsurePngAssetsConverted(_tempWorkspacePath);
 		LoadMapProperties();
 		ReadMetadataAndRefreshTextures();
 		if (GameHost.Instance != null && System.IO.File.Exists(terrainPath))
@@ -2947,15 +2943,15 @@ public partial class MapEditorHUD : Control
 
 		if (terrainModifiedOnDisk || metadataModifiedOnDisk)
 		{
-			if (terrainModifiedOnDisk)
-			{
-				GameHost.Instance.LoadMapFromFile(terrainPath);
-				_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
-			}
 			if (metadataModifiedOnDisk)
 			{
 				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 				ReadMetadataAndRefreshTextures();
+			}
+			if (terrainModifiedOnDisk)
+			{
+				GameHost.Instance.LoadMapFromFile(terrainPath);
+				_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
 			}
 			
 			GameHost.Instance.EditorHasUnsavedChanges = false;
@@ -3182,6 +3178,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			MapWorkspaceService.EnsureGlbAssetsOptimized(_tempWorkspacePath);
+			MapWorkspaceService.EnsurePngAssetsConverted(_tempWorkspacePath);
 			LoadMapProperties();
 			ReadMetadataAndRefreshTextures();
 			string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
@@ -3227,6 +3224,12 @@ public partial class MapEditorHUD : Control
 			await MapWorkspaceService.EnsureGlbAssetsOptimizedCooperativeAsync(_tempWorkspacePath, async (current, total, fileName) =>
 			{
 				ShowFeedback(string.Format(TranslationServer.Translate("Optimizing 3D asset {0}/{1}: {2}..."), current, total, fileName));
+				await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+			});
+
+			await MapWorkspaceService.EnsurePngAssetsConvertedCooperativeAsync(_tempWorkspacePath, async (current, total, fileName) =>
+			{
+				ShowFeedback(string.Format(TranslationServer.Translate("Converting texture {0}/{1}: {2}..."), current, total, fileName));
 				await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 			});
 
@@ -3355,7 +3358,9 @@ public partial class MapEditorHUD : Control
 					if (file.EndsWith("map.json") || file.EndsWith("authorship_key.pem")) continue;
 					
 					byte[] fileBytes = System.IO.File.ReadAllBytes(file);
-					string hash = MapAssetManager.ComputeBlake3(fileBytes);
+					string ext = System.IO.Path.GetExtension(file).ToLowerInvariant();
+					string blake3 = RealmMetadataHelper.ComputeBlake3(fileBytes, ext);
+					string hash = string.IsNullOrEmpty(ext) ? blake3 : $"{blake3}{ext}";
 					
 					byte[] hashBytes = System.Text.Encoding.UTF8.GetBytes(hash);
 					byte[] signatureBytes = SignatureAlgorithm.Ed25519.Sign(authorshipKey, hashBytes);
@@ -3458,7 +3463,8 @@ public partial class MapEditorHUD : Control
 					System.IO.File.WriteAllText(mapJsonPath, updatedMapJson);
 					
 					byte[] mapBytes = System.IO.File.ReadAllBytes(mapJsonPath);
-					string mapHash = MapAssetManager.ComputeBlake3(mapBytes);
+					string mapBlake3 = RealmMetadataHelper.ComputeBlake3(mapBytes, ".json");
+					string mapHash = $"{mapBlake3}.json";
 					byte[] mapHashBytes = System.Text.Encoding.UTF8.GetBytes(mapHash);
 					byte[] mapSigBytes = SignatureAlgorithm.Ed25519.Sign(authorshipKey, mapHashBytes);
 					
@@ -3793,133 +3799,12 @@ public partial class MapEditorHUD : Control
 	{
 		if (GameHost.Instance == null) return;
 		
-		string mapJsonPath = ProjectSettings.GlobalizePath("user://temp_map_workspace/map.json");
-		if (System.IO.File.Exists(mapJsonPath))
-		{
-			try
-			{
-				string mapJsonContent = System.IO.File.ReadAllText(mapJsonPath);
-				var mapDoc = System.Text.Json.Nodes.JsonNode.Parse(mapJsonContent) as System.Text.Json.Nodes.JsonObject;
-				if (mapDoc != null)
-				{
-					if (!mapDoc.ContainsKey("MapProperties")) mapDoc["MapProperties"] = new System.Text.Json.Nodes.JsonObject();
-					var props = mapDoc["MapProperties"] as System.Text.Json.Nodes.JsonObject;
-					if (props != null)
-					{
-						if (_optMapType != null) props["MapType"] = _optMapType.Selected == 0 ? "Arcade Custom Map" : "Asset Pack";
-						var tagsArr = new System.Text.Json.Nodes.JsonArray();
-						foreach (var chk in _activeTagCheckboxes)
-						{
-							if (chk.ButtonPressed)
-							{
-								tagsArr.Add(chk.Text);
-							}
-						}
-						props["Tags"] = tagsArr;
-					}
-					var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
-					System.IO.File.WriteAllText(mapJsonPath, mapDoc.ToJsonString(options));
-				}
-			}
-			catch (System.Exception ex)
-			{
-				GD.PrintErr($"Failed to save map properties: {ex.Message}");
-			}
-		}
-	}
-
-	private List<CheckBox> _activeTagCheckboxes = new();
-
-	private void RebuildTagsUI()
-	{
-		var mapTagsBox = GetNodeOrNull<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapTagsBox");
-		if (mapTagsBox == null) return;
-
-		// Remove old checkboxes
-		foreach (var child in mapTagsBox.GetChildren())
-		{
-			if (child is CheckBox chk)
-			{
-				mapTagsBox.RemoveChild(chk);
-				chk.QueueFree();
-			}
-		}
-
-		_activeTagCheckboxes.Clear();
-
-		string[] tags;
-		if (_optMapType != null && _optMapType.Selected == 1)
-		{
-			// Asset Pack tags
-			tags = new[] { "3D Models", "Audio", "Code Scripts", "Terrain PBR", "UI Components" };
-		}
-		else
-		{
-			// Arcade Custom Map tags
-			tags = new[] { "Tower Defense", "Campaign", "Melee", "Coop / Survival", "Tutorial / Skirmish" };
-		}
-
-		foreach (var tag in tags)
-		{
-			var chk = new CheckBox();
-			chk.Text = tag;
-			chk.FocusMode = FocusModeEnum.None;
-			chk.AddThemeFontSizeOverride("font_size", 11);
-			chk.Toggled += (_) => SaveMapProperties();
-			mapTagsBox.AddChild(chk);
-			_activeTagCheckboxes.Add(chk);
-		}
+		_mapSettingsDialog?.SaveMapProperties();
 	}
 
 	private void LoadMapProperties()
 	{
-		string mapJsonPath = ProjectSettings.GlobalizePath("user://temp_map_workspace/map.json");
-		if (System.IO.File.Exists(mapJsonPath))
-		{
-			try
-			{
-				string mapJsonContent = System.IO.File.ReadAllText(mapJsonPath);
-				var mapDoc = System.Text.Json.Nodes.JsonNode.Parse(mapJsonContent) as System.Text.Json.Nodes.JsonObject;
-				if (mapDoc != null && mapDoc.ContainsKey("MapProperties"))
-				{
-					var props = mapDoc["MapProperties"] as System.Text.Json.Nodes.JsonObject;
-					if (props != null)
-					{
-						if (_optMapType != null && props.ContainsKey("MapType"))
-						{
-							string mapType = props["MapType"]?.GetValue<string>() ?? "";
-							_optMapType.Selected = (mapType == "Asset Pack") ? 1 : 0;
-						}
-						
-						// Rebuild tags UI based on selected MapType
-						RebuildTagsUI();
-
-						if (props.ContainsKey("Tags") && props["Tags"] is System.Text.Json.Nodes.JsonArray tagsArr)
-						{
-							var activeTags = new HashSet<string>();
-							foreach (var tagNode in tagsArr)
-							{
-								if (tagNode != null) activeTags.Add(tagNode.GetValue<string>());
-							}
-
-							foreach (var chk in _activeTagCheckboxes)
-							{
-								chk.ButtonPressed = activeTags.Contains(chk.Text);
-							}
-						}
-					}
-				}
-			}
-			catch (System.Exception ex)
-			{
-				GD.PrintErr($"Failed to load map properties: {ex.Message}");
-			}
-		}
-		else
-		{
-			// Default initialization
-			RebuildTagsUI();
-		}
+		_mapSettingsDialog?.LoadMapProperties();
 	}
 
 	private async System.Threading.Tasks.Task CompileAndSignMapAsync(string workspace, bool skipAttribution = true)
@@ -4152,7 +4037,9 @@ public partial class MapEditorHUD : Control
 					if (file.EndsWith("map.json") || file.EndsWith("authorship_key.pem")) continue;
 					
 					byte[] fileBytes = System.IO.File.ReadAllBytes(file);
-					string hash = MapAssetManager.ComputeBlake3(fileBytes);
+					string ext = System.IO.Path.GetExtension(file).ToLowerInvariant();
+					string blake3 = RealmMetadataHelper.ComputeBlake3(fileBytes, ext);
+					string hash = string.IsNullOrEmpty(ext) ? blake3 : $"{blake3}{ext}";
 					
 					byte[] hashBytes = System.Text.Encoding.UTF8.GetBytes(hash);
 					byte[] signatureBytes = SignatureAlgorithm.Ed25519.Sign(authorshipKey, hashBytes);
@@ -4258,7 +4145,8 @@ public partial class MapEditorHUD : Control
 						System.IO.File.WriteAllText(mapJsonPath, updatedMapJson);
 						
 						byte[] mapBytes = System.IO.File.ReadAllBytes(mapJsonPath);
-						string mapHash = MapAssetManager.ComputeBlake3(mapBytes);
+						string mapBlake3 = RealmMetadataHelper.ComputeBlake3(mapBytes, ".json");
+						string mapHash = $"{mapBlake3}.json";
 						byte[] mapHashBytes = System.Text.Encoding.UTF8.GetBytes(mapHash);
 						byte[] mapSigBytes = SignatureAlgorithm.Ed25519.Sign(authorshipKey, mapHashBytes);
 						
@@ -4468,13 +4356,13 @@ public partial class MapEditorHUD : Control
 		vbox.AddChild(btnRow);
 	}
 
-	public void OpenAssetBrowser(string title, IEnumerable<string> allowedExtensions, Action<string> onAssetSelected)
+	public void OpenAssetBrowser(string title, IEnumerable<string> allowedExtensions, Action<string> onAssetSelected, bool requireRealmMetadata = false, string? requiredAssetType = null)
 	{
 		if (_assetBrowserDialog == null)
 		{
 			_assetBrowserDialog = new AssetBrowserDialog(this);
 		}
-		_assetBrowserDialog.OpenForImport(title, allowedExtensions, onAssetSelected);
+		_assetBrowserDialog.OpenForImport(title, allowedExtensions, onAssetSelected, requireRealmMetadata, requiredAssetType);
 	}
 
 	public void ImportTerrainFromMinimapDialog()
@@ -4521,20 +4409,114 @@ public partial class MapEditorHUD : Control
 		GameHost.Instance.AlignTerrainSplatMapExternal();
 		GameHost.Instance.GroundTerrain.UpdateMeshAndPhysics();
 
-		foreach (var child in GameHost.Instance.GetChildren())
+		List<string> treeModels = new();
+		string wsPath = !string.IsNullOrEmpty(_tempWorkspacePath) 
+			? _tempWorkspacePath 
+			: ProjectSettings.GlobalizePath(TempWorkspaceGodotPath);
+		string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+
+		if (System.IO.File.Exists(metadataPath))
 		{
-			if (child is Prop3D prop && GodotObject.IsInstanceValid(prop))
+			try
 			{
-				if (prop.PropId == "tree")
+				string json = System.IO.File.ReadAllText(metadataPath);
+				var root = System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject;
+				if (root != null)
 				{
-					prop.QueueFree();
+					if (root["CustomResources"] is System.Text.Json.Nodes.JsonArray resArray)
+					{
+						foreach (var node in resArray)
+						{
+							if (node is System.Text.Json.Nodes.JsonObject rObj)
+							{
+								string uId = rObj["UnitId"]?.ToString() ?? "";
+								string name = rObj["Name"]?.ToString() ?? "";
+								string mPath = rObj["ModelPath"]?.ToString() ?? "";
+								if (!string.IsNullOrEmpty(uId))
+								{
+									if (uId.Contains("tree", StringComparison.OrdinalIgnoreCase) ||
+									    name.Contains("tree", StringComparison.OrdinalIgnoreCase) ||
+									    mPath.Contains("tree", StringComparison.OrdinalIgnoreCase))
+									{
+										treeModels.Add(uId);
+									}
+								}
+							}
+						}
+
+						if (treeModels.Count == 0)
+						{
+							foreach (var node in resArray)
+							{
+								if (node is System.Text.Json.Nodes.JsonObject rObj)
+								{
+									string uId = rObj["UnitId"]?.ToString() ?? "";
+									if (!string.IsNullOrEmpty(uId))
+									{
+										treeModels.Add(uId);
+									}
+								}
+							}
+						}
+					}
+
+					var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
+					if (treeModels.Count == 0 && assetsObj?["glb"]?["resources"] is System.Text.Json.Nodes.JsonObject glbRes)
+					{
+						foreach (var kvp in glbRes)
+						{
+							string key = kvp.Key;
+							if (key.Contains("tree", StringComparison.OrdinalIgnoreCase))
+							{
+								treeModels.Add(System.IO.Path.GetFileNameWithoutExtension(key));
+							}
+						}
+
+						if (treeModels.Count == 0)
+						{
+							foreach (var kvp in glbRes)
+							{
+								treeModels.Add(System.IO.Path.GetFileNameWithoutExtension(kvp.Key));
+							}
+						}
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"Failed to read tree models from metadata.json: {ex.Message}");
+			}
+		}
+
+		if (treeModels.Count == 0 && GameHost.ResourceRegistry != null && GameHost.ResourceRegistry.Count > 0)
+		{
+			foreach (var kvp in GameHost.ResourceRegistry)
+			{
+				if (kvp.Key.Contains("tree", StringComparison.OrdinalIgnoreCase) ||
+				    (!string.IsNullOrEmpty(kvp.Value.Name) && kvp.Value.Name.Contains("tree", StringComparison.OrdinalIgnoreCase)) ||
+				    (!string.IsNullOrEmpty(kvp.Value.ModelPath) && kvp.Value.ModelPath.Contains("tree", StringComparison.OrdinalIgnoreCase)))
+				{
+					treeModels.Add(kvp.Key);
+				}
+			}
+
+			if (treeModels.Count == 0)
+			{
+				foreach (var kvp in GameHost.ResourceRegistry)
+				{
+					treeModels.Add(kvp.Key);
 				}
 			}
 		}
 
-		foreach (var (x, y, z, rot, scale) in treePositions)
+		if (treeModels.Count > 0)
 		{
-			GameHost.Instance.SpawnPropExternalWithParams("tree", new Vector3(x, y, z), rot, scale);
+			var random = new Random();
+			foreach (var (x, y, z, rot, scale) in treePositions)
+			{
+				string treePropId = treeModels[random.Next(treeModels.Count)];
+				GameHost.Instance.SpawnPropExternalWithParams(treePropId, new Vector3(x, y, z), rot, scale);
+			}
 		}
 
 		ShowFeedback(TranslationServer.Translate("Terrain imported from minimap image successfully!"));
@@ -4586,11 +4568,9 @@ public partial class MapEditorHUD : Control
 	{
 		if (_accordionFile == null) _accordionFile = GetNodeOrNull<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion");
 		if (_accordionViewport == null) _accordionViewport = GetNodeOrNull<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion");
-		if (_accordionMapSettings == null) _accordionMapSettings = GetNodeOrNull<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion");
 
 		if (_accordionFile != null) _accordionFile.Visible = true;
 		if (_accordionViewport != null) _accordionViewport.Visible = true;
-		if (_accordionMapSettings != null) _accordionMapSettings.Visible = true;
 
 		bool showTool = true;
 		bool showBrush = (module == EditorModule.Terrain || module == EditorModule.TextureDeco || module == EditorModule.Pathing);
@@ -4648,7 +4628,6 @@ public partial class MapEditorHUD : Control
 	{
 		UpdateCardScrollState(_contentFile, 300f);
 		UpdateCardScrollState(_contentViewport, 0f, false);
-		UpdateCardScrollState(_contentMapSettings, 320f);
 		UpdateCardScrollState(_contentTool, 320f);
 		UpdateCardScrollState(_contentBrush, 300f);
 		UpdateCardScrollState(_contentToolSettings, 320f);
@@ -5140,6 +5119,72 @@ public partial class MapEditorHUD : Control
 		chk.AddThemeColorOverride("font_pressed_color", UIStyle.ColorGold);
 	}
 
+	private void SetupPathingCheckBoxRow(VBoxContainer parent, CheckBox chk, Color color, string labelText)
+	{
+		if (chk == null || parent == null) return;
+
+		chk.Text = TranslationServer.Translate(labelText);
+		chk.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		UIStyle.ApplyCheckboxStyle(chk);
+		StyleCheckBoxRow(chk);
+
+		var rowPanel = new PanelContainer();
+		rowPanel.Name = "RowPanel" + chk.Name;
+		rowPanel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+
+		var rowStyle = new StyleBoxFlat();
+		rowStyle.BgColor = new Color(0.12f, 0.13f, 0.16f, 0.82f);
+		rowStyle.BorderColor = new Color(0.35f, 0.33f, 0.28f, 0.75f);
+		rowStyle.SetBorderWidthAll(1);
+		rowStyle.CornerRadiusTopLeft = 4;
+		rowStyle.CornerRadiusTopRight = 4;
+		rowStyle.CornerRadiusBottomLeft = 4;
+		rowStyle.CornerRadiusBottomRight = 4;
+		rowStyle.ContentMarginLeft = 8;
+		rowStyle.ContentMarginRight = 8;
+		rowStyle.ContentMarginTop = 3;
+		rowStyle.ContentMarginBottom = 3;
+		rowPanel.AddThemeStyleboxOverride("panel", rowStyle);
+
+		var row = new HBoxContainer();
+		row.Name = "Row" + chk.Name;
+		row.AddThemeConstantOverride("separation", 8);
+		row.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+
+		int originalIndex = chk.GetIndex();
+		parent.RemoveChild(chk);
+		row.AddChild(chk);
+
+		var colorBox = new Panel();
+		colorBox.Name = "ColorBox" + chk.Name;
+		colorBox.CustomMinimumSize = new Vector2(18, 18);
+		colorBox.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+		colorBox.TooltipText = TranslationServer.Translate(labelText);
+
+		var boxStyle = new StyleBoxFlat();
+		boxStyle.BgColor = color;
+		boxStyle.BorderColor = new Color(0.95f, 0.95f, 1.0f, 0.85f);
+		boxStyle.SetBorderWidthAll(1);
+		boxStyle.CornerRadiusTopLeft = 3;
+		boxStyle.CornerRadiusTopRight = 3;
+		boxStyle.CornerRadiusBottomLeft = 3;
+		boxStyle.CornerRadiusBottomRight = 3;
+		colorBox.AddThemeStyleboxOverride("panel", boxStyle);
+
+		colorBox.GuiInput += (@event) =>
+		{
+			if (@event is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
+			{
+				chk.ButtonPressed = !chk.ButtonPressed;
+			}
+		};
+
+		row.AddChild(colorBox);
+		rowPanel.AddChild(row);
+		parent.AddChild(rowPanel);
+		parent.MoveChild(rowPanel, originalIndex);
+	}
+
 	private FontVariation _faFontVariation;
 	public FontVariation GetFontAwesomeFont()
 	{
@@ -5422,6 +5467,7 @@ public partial class MapEditorHUD : Control
 			SafeReparent(_btnGenerateMap, fileGrid2);
 			SafeReparent(_btnImportMinimap, fileGrid2);
 			SafeReparent(_btnImportAnimation, fileGrid2);
+			SafeReparent(_btnMapSettings, fileGrid2);
 			SafeReparent(_btnResetMap, fileGrid2);
 
 			var fileBox1 = new VBoxContainer();
@@ -5454,6 +5500,7 @@ public partial class MapEditorHUD : Control
 
 			StyleIconButton(_btnToggleGrid, "\uf84c", "Toggle alignment grid lines overlay (V)");
 			StyleIconButton(_btnToggleCameraBounds, "\uf06e", "Toggle camera bounds overlay (B)");
+			StyleIconButton(_btnToggleWireframe, "\uf5ee", "Toggle wireframe mode (F7)");
 			StyleIconButton(_btnRotate, "\uf01e", "Rotate camera 90 degrees (R)");
 			StyleIconButton(_btnCameraAngle, "\uf1b2", "Toggle perspective vs top-down angle (C)");
 			StyleIconButton(_btnSkybox, "\uf185", "Cycle map environment lighting (L)");
@@ -5462,6 +5509,7 @@ public partial class MapEditorHUD : Control
 
 			SafeReparent(_btnToggleGrid, vpRow);
 			SafeReparent(_btnToggleCameraBounds, vpRow);
+			SafeReparent(_btnToggleWireframe, vpRow);
 			SafeReparent(_btnRotate, vpRow);
 			SafeReparent(_btnCameraAngle, vpRow);
 			SafeReparent(_btnSkybox, vpRow);
@@ -5722,69 +5770,10 @@ public partial class MapEditorHUD : Control
 			StyleSubContainer(_containerEyedropperSettings, "Eyedropper Settings");
 		}
 
-		// 11. Map Settings Panel Restructuring
-		var targetMapSettings = GetContentTarget(_contentMapSettings);
-		if (targetMapSettings != null)
-		{
-			var mapTypeBox = targetMapSettings.GetNodeOrNull<Control>("MapTypeBox");
-			if (mapTypeBox != null) StyleSubContainer(mapTypeBox, "Map Type");
-
-			var skyboxBox = targetMapSettings.GetNodeOrNull<Control>("SkyboxBox");
-			if (skyboxBox != null) StyleSubContainer(skyboxBox, "Environment / Skybox");
-
-			var mapTagsBox = targetMapSettings.GetNodeOrNull<Control>("MapTagsBox");
-			if (mapTagsBox != null)
-			{
-				var tagGrid = mapTagsBox.GetNodeOrNull<GridContainer>("TagGrid");
-				if (tagGrid == null)
-				{
-					tagGrid = new GridContainer();
-					tagGrid.Name = "TagGrid";
-					tagGrid.Columns = 2;
-					tagGrid.AddThemeConstantOverride("h_separation", 6);
-					tagGrid.AddThemeConstantOverride("v_separation", 4);
-					tagGrid.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-
-					var chkTD = mapTagsBox.GetNodeOrNull<Control>("ChkTagTD");
-					var chkCamp = mapTagsBox.GetNodeOrNull<Control>("ChkTagCampaign");
-					var chkMel = mapTagsBox.GetNodeOrNull<Control>("ChkTagMelee");
-					var chkCoop = mapTagsBox.GetNodeOrNull<Control>("ChkTagCoop");
-					var chkTut = mapTagsBox.GetNodeOrNull<Control>("ChkTagTutorial");
-
-					SafeReparent(chkTD, tagGrid);
-					SafeReparent(chkCamp, tagGrid);
-					SafeReparent(chkMel, tagGrid);
-					SafeReparent(chkCoop, tagGrid);
-					SafeReparent(chkTut, tagGrid);
-
-					mapTagsBox.AddChild(tagGrid);
-				}
-				StyleSubContainer(mapTagsBox, "Map Tags & Category");
-			}
-
-			var camBoundsBox = targetMapSettings.GetNodeOrNull<Control>("CamBoundsBox");
-			if (camBoundsBox != null)
-			{
-				StyleSubContainer(camBoundsBox, "Camera Boundaries");
-				StyleValueBadge(_lblCamLeftVal);
-				StyleValueBadge(_lblCamRightVal);
-				StyleValueBadge(_lblCamTopVal);
-				StyleValueBadge(_lblCamBottomVal);
-			}
-
-			var mapSizeBox = targetMapSettings.GetNodeOrNull<Control>("MapSizeBox");
-			if (mapSizeBox != null)
-			{
-				StyleSubContainer(mapSizeBox, "Map Dimensions");
-				StyleValueBadge(_lblMapWidthVal);
-				StyleValueBadge(_lblMapHeightVal);
-			}
-		}
-
-		// 12. Apply Procedural RTS Button Style to all Option Panel Buttons
+		// 11. Apply Procedural RTS Button Style to all Option Panel Buttons
 		Control[] allOptionContents = new Control[]
 		{
-			_contentFile, _contentViewport, _contentMapSettings, _contentTool,
+			_contentFile, _contentViewport, _contentTool,
 			_contentBrush, _contentToolSettings, _contentPlacement, _contentInspector, _contentLightingTuning
 		};
 		foreach (var content in allOptionContents)
@@ -5932,7 +5921,6 @@ public partial class MapEditorHUD : Control
 	{
 		ResetSingleCardPosition(_accordionFile);
 		ResetSingleCardPosition(_accordionViewport);
-		ResetSingleCardPosition(_accordionMapSettings);
 		ResetSingleCardPosition(_accordionTool);
 		ResetSingleCardPosition(_accordionBrush);
 		ResetSingleCardPosition(_accordionToolSettings);
@@ -6135,6 +6123,8 @@ public partial class MapEditorHUD : Control
 				if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
 				{
 					GameHost.Instance.GroundTerrain.ToggleWireframeMode();
+					bool isWireframe = GetViewport()?.DebugDraw == Viewport.DebugDrawEnum.Wireframe;
+					UpdateWireframeOverlayExternal(isWireframe);
 				}
 				GetViewport().SetInputAsHandled();
 			}
@@ -6266,7 +6256,13 @@ public partial class MapEditorHUD : Control
 		_minimapController?.RegenerateMinimap();
 	}
 
-	private void OpenScaleMapDialog()
+	public void SetScaleDialogTargets(int width, int depth)
+	{
+		_scaleDialogTargetWidth = width;
+		_scaleDialogTargetDepth = depth;
+	}
+
+	public void OpenScaleMapDialog()
 	{
 		if (_scaleMapDialog != null) return;
 
@@ -6625,7 +6621,7 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
-	private void SetupTextureSwatches(bool connectEvents = false)
+	public void SetupTextureSwatches(bool connectEvents = false)
 	{
 		_swatchTextureCache.Clear();
 		_swatchPaths.Clear();
@@ -6636,7 +6632,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
 			if (System.IO.File.Exists(metadataPath))
@@ -6645,19 +6641,8 @@ public partial class MapEditorHUD : Control
 				var root = System.Text.Json.Nodes.JsonNode.Parse(content) as JsonObject;
 				if (root != null)
 				{
-					JsonObject? texturesObj = null;
-					if (root.ContainsKey("Assets") && root["Assets"] is JsonObject assets && assets.ContainsKey("textures") && assets["textures"] is JsonObject tObj1)
-					{
-						texturesObj = tObj1;
-					}
-					else if (root.ContainsKey("MapProperties") && root["MapProperties"] is JsonObject mp && mp.ContainsKey("Assets") && mp["Assets"] is JsonObject mpAssets && mpAssets.ContainsKey("textures") && mpAssets["textures"] is JsonObject tObj2)
-					{
-						texturesObj = tObj2;
-					}
-					else if (root.ContainsKey("textures") && root["textures"] is JsonObject tObj3)
-					{
-						texturesObj = tObj3;
-					}
+					var unionedAssets = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
+					JsonObject? texturesObj = unionedAssets?["textures"] as JsonObject;
 
 					if (texturesObj != null)
 					{
@@ -6724,7 +6709,12 @@ public partial class MapEditorHUD : Control
 							{
 								string cleanDisplayName = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(item.BaseName.Replace("_", " "));
 								_swatchDisplayNames.Add(cleanDisplayName);
-								_swatchPaths.Add(System.IO.Path.Combine(wsPath, item.Filename));
+								string resolvedPath = System.IO.Path.Combine(wsPath, "Assets", "textures", item.Filename);
+								if (!System.IO.File.Exists(resolvedPath))
+								{
+									resolvedPath = System.IO.Path.Combine(wsPath, item.Filename);
+								}
+								_swatchPaths.Add(resolvedPath);
 								_swatchColors.Add(new Color(0.6f, 0.6f, 0.6f));
 							}
 						}
@@ -6938,6 +6928,14 @@ public partial class MapEditorHUD : Control
 		{
 			return true;
 		}
+		if (FloatingDialogBase.HasAnyDialogOpen)
+		{
+			return true;
+		}
+		if (_is3DInteractionActive)
+		{
+			return false;
+		}
 
 		if (_minimapController != null && _minimapController.IsDragging)
 		{
@@ -6950,11 +6948,17 @@ public partial class MapEditorHUD : Control
 		var hoveredControl = GetViewport().GuiGetHoveredControl();
 		if (hoveredControl != null && hoveredControl != this)
 		{
-			return true;
-		}
-		if (_optSkybox != null && _optSkybox.GetPopup() != null && _optSkybox.GetPopup().Visible)
-		{
-			return true;
+			if (hoveredControl != _panelLeft &&
+				hoveredControl != _panelRight &&
+				hoveredControl.Name != "LeftScroll" &&
+				hoveredControl.Name != "RightScroll" &&
+				hoveredControl.Name != "LeftVBox" &&
+				hoveredControl.Name != "AccordionContainer" &&
+				hoveredControl.Name != "FeedbackLabel" &&
+				hoveredControl.Name != "MapEditorScreenFrame")
+			{
+				return true;
+			}
 		}
 		if (_optModule != null && _optModule.GetPopup() != null && _optModule.GetPopup().Visible)
 		{
@@ -6989,7 +6993,7 @@ public partial class MapEditorHUD : Control
 		// Check all option content containers
 		Control[] optionContents = new Control[]
 		{
-			_contentFile, _contentViewport, _contentMapSettings, _contentTool,
+			_contentFile, _contentViewport, _contentTool,
 			_contentBrush, _contentToolSettings, _contentPlacement, _contentInspector, _contentLightingTuning
 		};
 		foreach (var content in optionContents)
@@ -7003,15 +7007,6 @@ public partial class MapEditorHUD : Control
 			}
 		}
 
-		// Check side panels
-		if (_leftPanelExpanded && _panelLeft != null && _panelLeft.IsVisibleInTree() && _panelLeft.GetGlobalRect().HasPoint(mousePos))
-		{
-			return true;
-		}
-		if (_rightPanelExpanded && _panelRight != null && _panelRight.IsVisibleInTree() && _panelRight.GetGlobalRect().HasPoint(mousePos))
-		{
-			return true;
-		}
 		if (_btnLeftTab != null && _btnLeftTab.Visible && _btnLeftTab.GetGlobalRect().HasPoint(mousePos))
 		{
 			return true;
@@ -7049,6 +7044,103 @@ public partial class MapEditorHUD : Control
 		}
 
 		return false;
+	}
+
+	public void Set3DInteractionActive(bool active)
+	{
+		if (_is3DInteractionActive == active) return;
+		_is3DInteractionActive = active;
+
+		if (active)
+		{
+			_savedMouseFilters.Clear();
+			ApplyMouseFilterIgnoreRecursive(_panelLeft);
+			ApplyMouseFilterIgnoreRecursive(_panelRight);
+			ApplyMouseFilterIgnoreRecursive(_topLeftBox);
+			if (GodotObject.IsInstanceValid(_topBar))
+			{
+				ApplyMouseFilterIgnoreRecursive(_topBar);
+			}
+			foreach (var card in _cardDragMap.Keys)
+			{
+				if (GodotObject.IsInstanceValid(card))
+				{
+					ApplyMouseFilterIgnoreRecursive(card);
+				}
+			}
+		}
+		else
+		{
+			foreach (var (ctrl, filter) in _savedMouseFilters)
+			{
+				if (GodotObject.IsInstanceValid(ctrl))
+				{
+					ctrl.MouseFilter = filter;
+				}
+			}
+			_savedMouseFilters.Clear();
+		}
+
+		if (_hudFadeTween != null && _hudFadeTween.IsValid())
+		{
+			_hudFadeTween.Kill();
+		}
+
+		_hudFadeTween = CreateTween();
+		_hudFadeTween.SetParallel(true);
+		float targetAlpha = active ? 0.0f : 1.0f;
+		float duration = 0.35f;
+
+		if (GodotObject.IsInstanceValid(_topLeftBox))
+		{
+			_hudFadeTween.TweenProperty(_topLeftBox, "modulate:a", targetAlpha, duration)
+				.SetTrans(Tween.TransitionType.Cubic)
+				.SetEase(Tween.EaseType.Out);
+		}
+		if (GodotObject.IsInstanceValid(_panelLeft))
+		{
+			_hudFadeTween.TweenProperty(_panelLeft, "modulate:a", targetAlpha, duration)
+				.SetTrans(Tween.TransitionType.Cubic)
+				.SetEase(Tween.EaseType.Out);
+		}
+		if (GodotObject.IsInstanceValid(_panelRight))
+		{
+			_hudFadeTween.TweenProperty(_panelRight, "modulate:a", targetAlpha, duration)
+				.SetTrans(Tween.TransitionType.Cubic)
+				.SetEase(Tween.EaseType.Out);
+		}
+		if (GodotObject.IsInstanceValid(_screenFrameRect) && !EditorSettingsDialog.CurrentSettings.HideChromeBorderOverlay)
+		{
+			_hudFadeTween.TweenProperty(_screenFrameRect, "modulate:a", targetAlpha, duration)
+				.SetTrans(Tween.TransitionType.Cubic)
+				.SetEase(Tween.EaseType.Out);
+		}
+		foreach (var card in _cardDragMap.Keys)
+		{
+			if (GodotObject.IsInstanceValid(card) && (card.TopLevel || card.GetParent() == this))
+			{
+				_hudFadeTween.TweenProperty(card, "modulate:a", targetAlpha, duration)
+					.SetTrans(Tween.TransitionType.Cubic)
+					.SetEase(Tween.EaseType.Out);
+			}
+		}
+	}
+
+	private void ApplyMouseFilterIgnoreRecursive(Node node)
+	{
+		if (node == null) return;
+		if (node is Control ctrl)
+		{
+			if (ctrl.MouseFilter != Control.MouseFilterEnum.Ignore)
+			{
+				_savedMouseFilters[ctrl] = ctrl.MouseFilter;
+				ctrl.MouseFilter = Control.MouseFilterEnum.Ignore;
+			}
+		}
+		foreach (Node child in node.GetChildren())
+		{
+			ApplyMouseFilterIgnoreRecursive(child);
+		}
 	}
 
 	private void UpdateBlockStepVisibility()
@@ -7326,11 +7418,16 @@ public partial class MapEditorHUD : Control
 		_abilityVfxDialog = new AbilityVfxDialog(this);
 		_assetManagerDialog = new AssetManagerDialog(this);
 		_assetBrowserDialog = new AssetBrowserDialog(this);
+		_noiseTextureDialog = new NoiseTextureDialog(this);
+		_convertGlbDialog = new ConvertGlbDialog(this);
+		_editorSettingsDialog = new EditorSettingsDialog(this);
+		_shaderEditorDialog = new ShaderEditorDialog(this);
+		ApplyEditorPreferences(EditorSettingsDialog.CurrentSettings);
 
 		_btnOpenAnimationPreview = new Button();
 		_btnOpenAnimationPreview.Name = "BtnOpenAnimationPreview";
 		_btnOpenAnimationPreview.Set("icon_max_width", 0);
-		_btnOpenAnimationPreview.Text = "✏️ " + TranslationServer.Translate("Preview Animations...");
+		_btnOpenAnimationPreview.Text = "✏️ " + TranslationServer.Translate("Edit Animations");
 		_btnOpenAnimationPreview.AddThemeFontSizeOverride("font_size", 11);
 		_btnOpenAnimationPreview.FocusMode = Control.FocusModeEnum.None;
 		_btnOpenAnimationPreview.CustomMinimumSize = new Vector2(0, 28);
@@ -7347,7 +7444,7 @@ public partial class MapEditorHUD : Control
 		_btnOpenGlobalOverrides = new Button();
 		_btnOpenGlobalOverrides.Name = "BtnOpenGlobalOverrides";
 		_btnOpenGlobalOverrides.Set("icon_max_width", 0);
-		_btnOpenGlobalOverrides.Text = "✏️ " + TranslationServer.Translate("Global Overrides...");
+		_btnOpenGlobalOverrides.Text = "✏️ " + TranslationServer.Translate("Global Overrides");
 		_btnOpenGlobalOverrides.AddThemeFontSizeOverride("font_size", 11);
 		_btnOpenGlobalOverrides.FocusMode = Control.FocusModeEnum.None;
 		_btnOpenGlobalOverrides.CustomMinimumSize = new Vector2(0, 28);
@@ -7373,12 +7470,127 @@ public partial class MapEditorHUD : Control
 		_weaponVfxDialog.OpenForWeapon(weaponId, weapon, onApplied);
 	}
 
+	private ObjectAttachmentDialog _objectAttachmentDialog;
+
+	public void OpenObjectAttachmentDialog(
+		string unitId = null, 
+		string attachmentId = null, 
+		string hand = "RightHand", 
+		Node3D sourceModel = null, 
+		Action<GameHost.HandAttachmentOrientation> onApplied = null)
+	{
+		if (_objectAttachmentDialog == null)
+		{
+			_objectAttachmentDialog = new ObjectAttachmentDialog(this);
+		}
+		_objectAttachmentDialog.OpenForUnitAndAttachment(unitId, attachmentId, hand, sourceModel, onApplied);
+	}
+
+	public void SaveUnitObjectAttachment(string unitId, Realm.Godot.Animation.HumanoidBone hand, string attachmentId, GameHost.HandAttachmentOrientation orientation)
+	{
+		try
+		{
+			if (string.IsNullOrEmpty(unitId) || string.IsNullOrEmpty(attachmentId)) return;
+
+			if (GameHost.UnitRegistry.TryGetValue(unitId, out var uMeta))
+			{
+				uMeta.SetObjectAttachment(hand, attachmentId, orientation);
+				GameHost.UnitRegistry[unitId] = uMeta;
+			}
+
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
+				: _tempWorkspacePath;
+			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			if (!System.IO.File.Exists(metadataPath)) return;
+
+			string jsonStr = System.IO.File.ReadAllText(metadataPath);
+			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
+			if (root == null) return;
+
+			var unitsArray = root["CustomUnits"]?.AsArray() ?? root["Units"]?.AsArray();
+			if (unitsArray != null)
+			{
+				for (int i = 0; i < unitsArray.Count; i++)
+				{
+					var uObj = unitsArray[i]?.AsObject();
+					if (uObj != null && (uObj["UnitId"]?.ToString() == unitId || uObj["unitId"]?.ToString() == unitId || uObj["Id"]?.ToString() == unitId))
+					{
+						var objAttsNode = uObj["ObjectAttachments"]?.AsObject();
+						if (objAttsNode == null)
+						{
+							objAttsNode = new System.Text.Json.Nodes.JsonObject();
+							uObj["ObjectAttachments"] = objAttsNode;
+						}
+
+						string handKey = hand == Realm.Godot.Animation.HumanoidBone.LeftHand ? "left_hand" : "right_hand";
+						var handArr = objAttsNode[handKey]?.AsArray();
+						if (handArr == null)
+						{
+							handArr = new System.Text.Json.Nodes.JsonArray();
+							objAttsNode[handKey] = handArr;
+						}
+
+						string cleanId = System.IO.Path.GetFileNameWithoutExtension(attachmentId);
+						var orientNode = new System.Text.Json.Nodes.JsonObject
+						{
+							["PositionX"] = orientation.PositionX,
+							["PositionY"] = orientation.PositionY,
+							["PositionZ"] = orientation.PositionZ,
+							["PitchX"] = orientation.PitchX,
+							["YawY"] = orientation.YawY,
+							["RollZ"] = orientation.RollZ,
+							["Scale"] = orientation.Scale <= 0f ? 1.0f : orientation.Scale
+						};
+
+						bool updated = false;
+						for (int j = 0; j < handArr.Count; j++)
+						{
+							if (handArr[j] is System.Text.Json.Nodes.JsonObject itemObj)
+							{
+								foreach (var prop in itemObj)
+								{
+									if (prop.Key.Equals(attachmentId, StringComparison.OrdinalIgnoreCase) ||
+										prop.Key.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
+										System.IO.Path.GetFileNameWithoutExtension(prop.Key).Equals(cleanId, StringComparison.OrdinalIgnoreCase))
+									{
+										itemObj[prop.Key] = orientNode;
+										updated = true;
+										break;
+									}
+								}
+								if (updated) break;
+							}
+						}
+
+						if (!updated)
+						{
+							var newEntry = new System.Text.Json.Nodes.JsonObject
+							{
+								[cleanId] = orientNode
+							};
+							handArr.Add(newEntry);
+						}
+						break;
+					}
+				}
+			}
+
+			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] SaveUnitObjectAttachment error: {ex.Message}");
+		}
+	}
+
 	public void SaveCustomWeaponToMetadata(string weaponId, GameHost.WeaponMetadata weapon)
 	{
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
 			if (!System.IO.File.Exists(metadataPath)) return;
@@ -7422,7 +7634,7 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
-	public void SaveCustomUnitAnimations(string unitId, Dictionary<string, string[]> animations)
+	public void SaveCustomUnitAnimations(string unitId, Dictionary<string, List<GameHost.UnitAnimationEntry>> animations)
 	{
 		try
 		{
@@ -7435,7 +7647,7 @@ public partial class MapEditorHUD : Control
 			}
 
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
 			if (!System.IO.File.Exists(metadataPath)) return;
@@ -7466,6 +7678,30 @@ public partial class MapEditorHUD : Control
 		{
 			GD.PrintErr($"[MapEditorHUD] SaveCustomUnitAnimations error: {ex.Message}");
 		}
+	}
+
+	public void SaveCustomUnitAnimations(string unitId, Dictionary<string, string[]> animations)
+	{
+		var converted = new Dictionary<string, List<GameHost.UnitAnimationEntry>>(StringComparer.OrdinalIgnoreCase);
+		if (animations != null)
+		{
+			foreach (var kvp in animations)
+			{
+				converted[kvp.Key] = (kvp.Value ?? Array.Empty<string>())
+					.Select(s => new GameHost.UnitAnimationEntry { Animation = s })
+					.ToList();
+			}
+		}
+		SaveCustomUnitAnimations(unitId, converted);
+	}
+
+	public void OpenShaderEditorDialog(string shaderKey = "", Action<CustomShaderConfig> onSaved = null)
+	{
+		if (_shaderEditorDialog == null)
+		{
+			_shaderEditorDialog = new ShaderEditorDialog(this);
+		}
+		_shaderEditorDialog.OpenForShader(shaderKey, onSaved);
 	}
 
 	public void OpenModelPickerDialog(string entityId, string fieldName, string domain, string currentPath, Action<string> onApplied = null)
@@ -7509,7 +7745,7 @@ public partial class MapEditorHUD : Control
 			}
 
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
 			if (!System.IO.File.Exists(metadataPath)) return;
@@ -7579,7 +7815,7 @@ public partial class MapEditorHUD : Control
 			if (string.IsNullOrEmpty(abilityId)) return;
 
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
 			if (!System.IO.File.Exists(metadataPath)) return;
@@ -7817,64 +8053,45 @@ public partial class MapEditorHUD : Control
 	private Texture2D LoadSwatchTextureInternal(int i)
 	{
 		string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-			? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+			? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 			: _tempWorkspacePath;
-		string texName = (i >= 0 && i < _swatchDisplayNames.Count) ? _swatchDisplayNames[i] : $"swatch_{i}";
-		string cleanName = texName.ToLowerInvariant().Replace(" ", "_") + ".ktx2";
-		string localKtx2 = System.IO.Path.Combine(wsPath, "Assets", "textures", cleanName);
-		if (!System.IO.File.Exists(localKtx2))
+		string localRtex = "";
+		if (i >= 0 && i < _swatchPaths.Count && System.IO.File.Exists(_swatchPaths[i]))
 		{
-			localKtx2 = System.IO.Path.Combine(wsPath, cleanName);
+			localRtex = _swatchPaths[i];
 		}
-		if (System.IO.File.Exists(localKtx2))
+		else
 		{
-			string cacheDir = ProjectSettings.GlobalizePath("user://swatch_cache");
-			System.IO.Directory.CreateDirectory(cacheDir);
-			string basePngName = texName.ToLowerInvariant().Replace(" ", "_") + ".png";
-			string globalTempOut = System.IO.Path.Combine(cacheDir, basePngName);
-
-			DateTime ktxTime = System.IO.File.GetLastWriteTimeUtc(localKtx2);
-			if (System.IO.File.Exists(globalTempOut) && System.IO.File.GetLastWriteTimeUtc(globalTempOut) >= ktxTime)
+			string texName = (i >= 0 && i < _swatchDisplayNames.Count) ? _swatchDisplayNames[i] : $"swatch_{i}";
+			string cleanName = texName.ToLowerInvariant().Replace(" ", "_") + ".rtex";
+			localRtex = System.IO.Path.Combine(wsPath, "Assets", "textures", cleanName);
+			if (!System.IO.File.Exists(localRtex))
 			{
-				var cachedImg = Image.LoadFromFile(globalTempOut);
-				if (cachedImg != null)
-				{
-					return ImageTexture.CreateFromImage(cachedImg);
-				}
+				localRtex = System.IO.Path.Combine(wsPath, cleanName);
 			}
-
-			string ktxCmd = EditableTerrain.GetKtxCmdPath();
+		}
+		if (System.IO.File.Exists(localRtex))
+		{
 			try
 			{
-				var startInfo = new System.Diagnostics.ProcessStartInfo
+				byte[] bytes = System.IO.File.ReadAllBytes(localRtex);
+				byte[]? webpBytes = Realm.Shared.Textures.RtexFile.GetLayer(bytes, 0);
+				if (webpBytes != null && webpBytes.Length > 0)
 				{
-					FileName = ktxCmd,
-					WorkingDirectory = System.IO.Path.GetDirectoryName(ktxCmd),
-					Arguments = $"extract --layer 0 --level 0 --transcode rgba8 \"{localKtx2}\" \"{globalTempOut}\"",
-					UseShellExecute = false,
-					CreateNoWindow = true,
-					RedirectStandardOutput = true,
-					RedirectStandardError = true
-				};
-				using (var process = System.Diagnostics.Process.Start(startInfo))
-				{
-					process.WaitForExit();
-					if (process.ExitCode == 0)
+					var img = Image.CreateEmpty(1, 1, false, Image.Format.Rgba8);
+					if (img.LoadWebpFromBuffer(webpBytes) != Error.Ok)
 					{
-						var img = Image.LoadFromFile(globalTempOut);
-						if (img != null)
-						{
-							return ImageTexture.CreateFromImage(img);
-						}
+						img.LoadPngFromBuffer(webpBytes);
 					}
+					return ImageTexture.CreateFromImage(img);
 				}
 			}
 			catch (Exception ex)
 			{
-				GD.PrintErr($"Failed to extract swatch preview: {ex.Message}");
+				GD.PrintErr($"Failed to load swatch preview: {ex.Message}");
 			}
 		}
-		if (ResourceLoader.Exists(_swatchPaths[i]))
+		if (i >= 0 && i < _swatchPaths.Count && ResourceLoader.Exists(_swatchPaths[i]))
 		{
 			return GD.Load<Texture2D>(_swatchPaths[i]);
 		}
@@ -7891,10 +8108,10 @@ public partial class MapEditorHUD : Control
 			return;
 		}
 
-		OpenAssetBrowser("Import Texture Image", new[] { ".ktx2", ".png", ".jpg", ".jpeg", ".webp" }, imagePath =>
+		OpenAssetBrowser("Import Texture Image", new[] { ".rtex", ".png", ".webp" }, imagePath =>
 		{
 			ImportTextureFile(imagePath, selectedIdx);
-		});
+		}, requireRealmMetadata: false);
 	}
 
 	private void ImportTextureFile(string imagePath, int index)
@@ -7902,22 +8119,22 @@ public partial class MapEditorHUD : Control
 		string rawName = (index >= 0 && index < _swatchDisplayNames.Count) ? _swatchDisplayNames[index] : $"swatch_{index}";
 		string name = rawName.ToLowerInvariant().Replace(" ", "_");
 		string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-			? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+			? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 			: _tempWorkspacePath;
 		string texDir = System.IO.Path.Combine(wsPath, "Assets", "textures");
 		System.IO.Directory.CreateDirectory(texDir);
-		string outputKtx2 = System.IO.Path.Combine(texDir, name + ".ktx2");
+		string outputRtex = System.IO.Path.Combine(texDir, name + ".rtex");
 		ShowFeedback(TranslationServer.Translate("Importing texture..."));
 		try
 		{
 			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
 			{
-				GameHost.Instance.GroundTerrain.ProcessAndSaveRawTexture(imagePath, outputKtx2);
-				if (System.IO.File.Exists(outputKtx2))
+				GameHost.Instance.GroundTerrain.ProcessAndSaveRawTexture(imagePath, outputRtex);
+				if (System.IO.File.Exists(outputRtex))
 				{
-					byte[] ktx2Bytes = System.IO.File.ReadAllBytes(outputKtx2);
-					string blake3 = MapAssetManager.ComputeBlake3(ktx2Bytes);
-					UpdateMetadataJsonAsset("textures", name + ".ktx2", blake3);
+					byte[] rtexBytes = System.IO.File.ReadAllBytes(outputRtex);
+					string blake3 = RealmMetadataHelper.ComputeBlake3(rtexBytes, ".rtex");
+					UpdateMetadataJsonAsset("textures", name + ".rtex", blake3);
 				}
 				GameHost.Instance.GroundTerrain.ReloadTerrainTextures(true);
 				SetupTextureSwatches(false);
@@ -7931,66 +8148,202 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
-	private void RefreshSkyboxList()
+	public void OpenNoiseTextureDialog(Action<string> onSaved = null)
 	{
-		if (_optSkybox == null) return;
-		_skyboxFiles.Clear();
-		_optSkybox.Clear();
+		_noiseTextureDialog?.OpenWithCallback(onSaved);
+	}
 
-		string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-			? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
-			: _tempWorkspacePath;
-		string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
-
-		if (System.IO.File.Exists(metadataPath))
+	public void OpenConvertGlbDialog(string? initialPath = null, string? initialSubCat = null, Action<string>? onConverted = null)
+	{
+		Action<string> chainedCallback = (resultPath) =>
 		{
-			try
+			onConverted?.Invoke(resultPath);
+			_assetManagerDialog?.RefreshAssetListAndPreview(resultPath);
+		};
+		_convertGlbDialog?.OpenWithPreset(initialPath, initialSubCat, chainedCallback);
+	}
+
+	public void OpenEditorSettingsDialog()
+	{
+		_editorSettingsDialog?.OpenDialog();
+	}
+
+	public void ApplyEditorPreferences(EditorPreferencesData prefs)
+	{
+		if (prefs == null) return;
+
+		var screenFrame = GetNodeOrNull<TextureRect>("MapEditorScreenFrame");
+		if (screenFrame != null)
+		{
+			screenFrame.Visible = !prefs.HideChromeBorderOverlay;
+		}
+
+		var leftPanel = GetNodeOrNull<Panel>("LeftSlidePanel");
+		var rightPanel = GetNodeOrNull<Panel>("RightSlidePanel");
+		var topBar = GetNodeOrNull<PanelContainer>("TopBar");
+		var minimap = GetNodeOrNull<PanelContainer>("MinimapFrame");
+
+		if (prefs.HideChromeBorderOverlay)
+		{
+			if (leftPanel != null) leftPanel.SelfModulate = new Color(1, 1, 1, 0.45f);
+			if (rightPanel != null) rightPanel.SelfModulate = new Color(1, 1, 1, 0.45f);
+			if (topBar != null) topBar.SelfModulate = new Color(1, 1, 1, 0.0f);
+			if (minimap != null) minimap.SelfModulate = new Color(1, 1, 1, 0.5f);
+		}
+		else
+		{
+			if (leftPanel != null) leftPanel.SelfModulate = Colors.White;
+			if (rightPanel != null) rightPanel.SelfModulate = Colors.White;
+			if (topBar != null) topBar.SelfModulate = Colors.White;
+			if (minimap != null) minimap.SelfModulate = Colors.White;
+		}
+
+		UpdateFPSVisibility();
+
+		if (leftPanel != null && !prefs.HideChromeBorderOverlay)
+		{
+			leftPanel.Modulate = new Color(1, 1, 1, prefs.PanelOpacity);
+		}
+		if (rightPanel != null && !prefs.HideChromeBorderOverlay)
+		{
+			rightPanel.Modulate = new Color(1, 1, 1, prefs.PanelOpacity);
+		}
+	}
+
+
+
+	public static string SanitizeMapName(string? candidateName)
+	{
+		if (string.IsNullOrWhiteSpace(candidateName))
+		{
+			return "Untitled Map";
+		}
+
+		string sanitized = candidateName.Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
+		return string.IsNullOrEmpty(sanitized) ? "Untitled Map" : sanitized;
+	}
+
+	private static bool TrySanitizeCandidate(string? candidateName, out string sanitizedMapName)
+	{
+		sanitizedMapName = string.Empty;
+		if (string.IsNullOrWhiteSpace(candidateName))
+		{
+			return false;
+		}
+
+		string cleaned = candidateName.Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
+		if (string.IsNullOrEmpty(cleaned))
+		{
+			return false;
+		}
+
+		sanitizedMapName = cleaned;
+		return true;
+	}
+
+	public string GetMapNameFromMetadata()
+	{
+		try
+		{
+			string workspacePath = MapWorkspaceService.GetActiveWorkspacePath();
+			string manifestPath = System.IO.Path.Combine(workspacePath, "manifest.json");
+			if (System.IO.File.Exists(manifestPath))
 			{
-				string text = System.IO.File.ReadAllText(metadataPath);
-				var root = System.Text.Json.Nodes.JsonNode.Parse(text) as JsonObject;
+				string json = System.IO.File.ReadAllText(manifestPath);
+				var root = System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject;
 				if (root != null)
 				{
-					JsonObject? skyboxesObj = null;
-					if (root.ContainsKey("Assets") && root["Assets"] is JsonObject assets && assets.ContainsKey("skyboxes") && assets["skyboxes"] is JsonObject sObj1)
+					if (root.TryGetPropertyValue("MapName", out var n) && TrySanitizeCandidate(n?.ToString(), out var manifestMapName))
 					{
-						skyboxesObj = sObj1;
-					}
-					else if (root.ContainsKey("MapProperties") && root["MapProperties"] is JsonObject mp && mp.ContainsKey("Assets") && mp["Assets"] is JsonObject mpAssets && mpAssets.ContainsKey("skyboxes") && mpAssets["skyboxes"] is JsonObject sObj2)
-					{
-						skyboxesObj = sObj2;
-					}
-					else if (root.ContainsKey("skyboxes") && root["skyboxes"] is JsonObject sObj3)
-					{
-						skyboxesObj = sObj3;
-					}
-
-					if (skyboxesObj != null)
-					{
-						foreach (var kvp in skyboxesObj)
-						{
-							string filename = kvp.Key;
-							if (!_skyboxFiles.Contains(filename))
-							{
-								_skyboxFiles.Add(filename);
-								string cleanName = System.IO.Path.GetFileNameWithoutExtension(filename).Replace("_", " ");
-								cleanName = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(cleanName);
-								_optSkybox.AddItem(TranslationServer.Translate(cleanName));
-							}
-						}
+						return manifestMapName;
 					}
 				}
 			}
-			catch (Exception ex)
+
+			string metadataPath = System.IO.Path.Combine(workspacePath, "metadata.json");
+			if (System.IO.File.Exists(metadataPath))
 			{
-				GD.PrintErr($"RefreshSkyboxList error parsing metadata.json: {ex.Message}");
+				string json = System.IO.File.ReadAllText(metadataPath);
+				var root = System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject;
+				if (root != null)
+				{
+					if (root.TryGetPropertyValue("Name", out var n1) && TrySanitizeCandidate(n1?.ToString(), out var name1))
+						return name1;
+					if (root.TryGetPropertyValue("map_name", out var n2) && TrySanitizeCandidate(n2?.ToString(), out var name2))
+						return name2;
+					if (root.TryGetPropertyValue("MapName", out var n3) && TrySanitizeCandidate(n3?.ToString(), out var name3))
+						return name3;
+					if (root.TryGetPropertyValue("Title", out var n4) && TrySanitizeCandidate(n4?.ToString(), out var name4))
+						return name4;
+					if (root.TryGetPropertyValue("MapProperties", out var mp) && mp is System.Text.Json.Nodes.JsonObject mpObj)
+					{
+						if (mpObj.TryGetPropertyValue("Name", out var mpN1) && TrySanitizeCandidate(mpN1?.ToString(), out var mpName1))
+							return mpName1;
+						if (mpObj.TryGetPropertyValue("MapName", out var mpN2) && TrySanitizeCandidate(mpN2?.ToString(), out var mpName2))
+							return mpName2;
+					}
+				}
 			}
+
+			string mapJsonPath = System.IO.Path.Combine(workspacePath, "map.json");
+			if (System.IO.File.Exists(mapJsonPath))
+			{
+				var mapDoc = System.Text.Json.Nodes.JsonNode.Parse(System.IO.File.ReadAllText(mapJsonPath)) as System.Text.Json.Nodes.JsonObject;
+				if (mapDoc != null && mapDoc.TryGetPropertyValue("MapProperties", out var mp) && mp is System.Text.Json.Nodes.JsonObject mpObj)
+				{
+					if (mpObj.TryGetPropertyValue("Name", out var n) && TrySanitizeCandidate(n?.ToString(), out var mapDocName))
+						return mapDocName;
+				}
+			}
+
+			if (!string.IsNullOrEmpty(GameHost.Instance?.ActiveMapName))
+			{
+				string candidate = System.IO.Path.GetFileNameWithoutExtension(GameHost.Instance.ActiveMapName);
+				if (TrySanitizeCandidate(candidate, out var activeMapName))
+					return activeMapName;
+			}
+
+			if (!string.IsNullOrEmpty(workspacePath))
+			{
+				string candidate = System.IO.Path.GetFileName(workspacePath);
+				if (TrySanitizeCandidate(candidate, out var workspaceName))
+					return workspaceName;
+			}
+
+			return "Untitled Map";
+		}
+		catch
+		{
+			return "Untitled Map";
+		}
+	}
+
+	public void UpdateMapNameHeader()
+	{
+		if (_lblMapNameHeader == null) return;
+		string mapName = GetMapNameFromMetadata();
+		string displayMapName = mapName == "Untitled Map" ? TranslationServer.Translate("Untitled Map") : mapName;
+		bool hasUnsaved = GameHost.Instance?.EditorHasUnsavedChanges ?? false;
+
+		string displayText = hasUnsaved ? $"🗺️ {displayMapName} *" : $"🗺️ {displayMapName}";
+		string tooltipText = hasUnsaved
+			? $"{displayMapName} * ({TranslationServer.Translate("Unsaved changes — Press Ctrl+S to save")})"
+			: $"{displayMapName} ({TranslationServer.Translate("All changes saved")})";
+
+		if (_lblMapNameHeader.Text != displayText)
+		{
+			_lblMapNameHeader.Text = displayText;
 		}
 
-		if (_skyboxFiles.Count == 0)
+		if (_lblMapNameHeader.TooltipText != tooltipText)
 		{
-			_skyboxFiles.Add("skybox_panoramic.jpg");
-			_optSkybox.AddItem(TranslationServer.Translate("Default Panoramic"));
+			_lblMapNameHeader.TooltipText = tooltipText;
 		}
+	}
+
+	private void RefreshSkyboxList()
+	{
+		_mapSettingsDialog?.RefreshSkyboxList();
 	}
 
 	private void UpdateMetadataJsonAsset(string category, string fileName, string blake3Hash, string subCategory = null, int columns = 0, int rows = 0)
@@ -7998,7 +8351,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
 			JsonObject root = new JsonObject();
@@ -8039,10 +8392,7 @@ public partial class MapEditorHUD : Control
 				}
 			}
 
-			if (!root.ContainsKey("MapProperties")) root["MapProperties"] = new JsonObject();
-			if (!root.ContainsKey("Assets")) root["Assets"] = new JsonObject();
-
-			JsonObject assetsObj = root["Assets"] as JsonObject ?? new JsonObject();
+			JsonObject assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath) ?? new JsonObject();
 
 			if (!string.IsNullOrEmpty(subCategory))
 			{
@@ -8050,12 +8400,50 @@ public partial class MapEditorHUD : Control
 				JsonObject catObj = assetsObj[category] as JsonObject ?? new JsonObject();
 				if (!catObj.ContainsKey(subCategory)) catObj[subCategory] = new JsonObject();
 				JsonObject subObj = catObj[subCategory] as JsonObject ?? new JsonObject();
-				subObj[fileName] = blake3Hash;
-				catObj[subCategory] = subObj;
-				assetsObj[category] = catObj;
-
 				if (category == "glb")
 				{
+					float defaultScale = subCategory.ToLowerInvariant() switch
+					{
+						"resources" => 2.75f,
+						"buildings" => 1.5f,
+						"props" => 1.25f,
+						"units" => 1.0f,
+						_ => 1.0f
+					};
+
+					string modelFullPath = System.IO.Path.Combine(wsPath, "Assets", "models", subCategory, fileName);
+					if (!System.IO.File.Exists(modelFullPath))
+					{
+						modelFullPath = System.IO.Path.Combine(wsPath, "Assets", "glb", subCategory, fileName);
+					}
+
+					var (minY, autoYOffset) = Realm.Godot.Utils.ModelCache.CalculateModelBounds(modelFullPath, defaultScale);
+					bool isPropOrRes = subCategory.ToLowerInvariant() == "props" || subCategory.ToLowerInvariant() == "resources";
+
+					var glbMetaObj = new JsonObject
+					{
+						["hash"] = blake3Hash,
+						["min_y"] = minY,
+						["scale"] = defaultScale,
+						["y_offset"] = autoYOffset,
+						["default_asset_type"] = subCategory.ToLowerInvariant(),
+						["normal_mode"] = "Flat",
+						["normalize_luminance"] = true,
+						["ignore_player_color"] = isPropOrRes
+					};
+					subObj[fileName] = glbMetaObj;
+					catObj[subCategory] = subObj;
+					assetsObj[category] = catObj;
+
+					if (!root.ContainsKey("ModelOffsets") || root["ModelOffsets"] is not JsonObject) root["ModelOffsets"] = new JsonObject();
+					((JsonObject)root["ModelOffsets"])[fileName] = autoYOffset;
+
+					if (!root.ContainsKey("ModelScales") || root["ModelScales"] is not JsonObject) root["ModelScales"] = new JsonObject();
+					((JsonObject)root["ModelScales"])[fileName] = defaultScale;
+
+					GameHost.Instance?.SetModelYOffset(fileName, autoYOffset);
+					GameHost.Instance?.SetModelScale(fileName, defaultScale);
+
 					string unitId = System.IO.Path.GetFileNameWithoutExtension(fileName);
 					string targetArrayKey = subCategory.ToLowerInvariant() switch
 					{
@@ -8071,7 +8459,17 @@ public partial class MapEditorHUD : Control
 						root[targetArrayKey] = new JsonArray();
 					}
 					JsonArray targetArr = (JsonArray)root[targetArrayKey];
-					bool exists = targetArr.Any(node => node is JsonObject obj && obj.ContainsKey("UnitId") && obj["UnitId"]?.ToString() == unitId);
+					bool exists = false;
+					foreach (var item in targetArr)
+					{
+						if (item is JsonObject uObj && (uObj["UnitId"]?.ToString() == unitId || uObj["ModelPath"]?.ToString() == fileName))
+						{
+							exists = true;
+							if (autoYOffset != 0f) uObj["YOffset"] = autoYOffset;
+							break;
+						}
+					}
+
 					if (!exists)
 					{
 						int defaultPathing = subCategory.ToLowerInvariant() switch
@@ -8083,43 +8481,13 @@ public partial class MapEditorHUD : Control
 							_ => (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
 						};
 
-						float defaultScale = subCategory.ToLowerInvariant() switch
-						{
-							"resources" => 2.75f,
-							"buildings" => 1.5f,
-							"props" => 1.25f,
-							"units" => 1.0f,
-							_ => 1.0f
-						};
-
-						float defaultYOffset = 0.0f;
-						string modelFullPath = System.IO.Path.Combine(wsPath, "Assets", "models", subCategory, fileName);
-						if (System.IO.File.Exists(modelFullPath))
-						{
-							try
-							{
-								var modelNode = Realm.Godot.Utils.ModelCache.GetModel(modelFullPath) as Node3D;
-								if (modelNode != null)
-								{
-									float minY = Unit3D.GetMinY(modelNode, Transform3D.Identity);
-									if (minY < 0f)
-									{
-										defaultYOffset = (float)Math.Round(-minY * defaultScale, 4);
-									}
-									modelNode.QueueFree();
-								}
-							}
-							catch { }
-						}
-
-						bool isPropOrRes = subCategory.ToLowerInvariant() == "props" || subCategory.ToLowerInvariant() == "resources";
 						var newUnitObj = new JsonObject
 						{
 							["UnitId"] = unitId,
 							["Name"] = unitId,
 							["Description"] = "",
 							["Scale"] = defaultScale,
-							["YOffset"] = defaultYOffset,
+							["YOffset"] = autoYOffset,
 							["PathingType"] = defaultPathing,
 							["ModelPath"] = fileName,
 							["NormalMode"] = "Flat",
@@ -8127,13 +8495,13 @@ public partial class MapEditorHUD : Control
 							["IgnorePlayerColor"] = isPropOrRes
 						};
 						targetArr.Add(newUnitObj);
-
-						if (!root.ContainsKey("ModelOffsets") || root["ModelOffsets"] is not JsonObject) root["ModelOffsets"] = new JsonObject();
-						((JsonObject)root["ModelOffsets"])[fileName] = defaultYOffset;
-
-						if (!root.ContainsKey("ModelScales") || root["ModelScales"] is not JsonObject) root["ModelScales"] = new JsonObject();
-						((JsonObject)root["ModelScales"])[fileName] = defaultScale;
 					}
+				}
+				else
+				{
+					subObj[fileName] = blake3Hash;
+					catObj[subCategory] = subObj;
+					assetsObj[category] = catObj;
 				}
 			}
 			else
@@ -8142,27 +8510,93 @@ public partial class MapEditorHUD : Control
 				JsonObject catObj = assetsObj[category] as JsonObject ?? new JsonObject();
 				if (category == "textures")
 				{
-					int swatchIdx = -1;
-					if (catObj.ContainsKey(fileName) && catObj[fileName] is JsonObject existingObj)
+					if (catObj.Count == 0 && root.ContainsKey("textures") && root["textures"] is JsonObject rootTexExisting)
 					{
-						if (existingObj.TryGetPropertyValue("swatchIndex", out var idxNode) && idxNode != null && int.TryParse(idxNode.ToString(), out int parsedIdx))
+						foreach (var kvp in rootTexExisting)
 						{
-							swatchIdx = parsedIdx;
+							catObj[kvp.Key] = kvp.Value?.DeepClone();
+						}
+					}
+					var parsedItems = new List<(string Key, int SwatchIndex, JsonNode? Node)>();
+					foreach (var kvp in catObj)
+					{
+						int sIdx = -1;
+						if (kvp.Value is JsonObject sObj)
+						{
+							if (sObj.TryGetPropertyValue("swatchIndex", out var idxNode) && idxNode != null && int.TryParse(idxNode.ToString(), out int parsed))
+							{
+								sIdx = parsed;
+							}
+							else if (sObj.TryGetPropertyValue("swatch_index", out var idxNode2) && idxNode2 != null && int.TryParse(idxNode2.ToString(), out int parsed2))
+							{
+								sIdx = parsed2;
+							}
+							else if (sObj.TryGetPropertyValue("SwatchIndex", out var idxNode3) && idxNode3 != null && int.TryParse(idxNode3.ToString(), out int parsed3))
+							{
+								sIdx = parsed3;
+							}
+						}
+						parsedItems.Add((kvp.Key, sIdx, kvp.Value));
+					}
+
+					var usedIndices = new HashSet<int>();
+					foreach (var item in parsedItems)
+					{
+						if (item.SwatchIndex >= 0)
+						{
+							usedIndices.Add(item.SwatchIndex);
 						}
 					}
 
-					if (swatchIdx < 0)
+					int nextFree = 0;
+					for (int i = 0; i < parsedItems.Count; i++)
 					{
-						int maxIdx = -1;
-						foreach (var kvp in catObj)
+						var item = parsedItems[i];
+						if (item.SwatchIndex < 0)
 						{
-							if (kvp.Value is JsonObject o && o.TryGetPropertyValue("swatchIndex", out var n) && n != null && int.TryParse(n.ToString(), out int p))
+							while (usedIndices.Contains(nextFree))
 							{
-								if (p > maxIdx) maxIdx = p;
+								nextFree++;
 							}
+							item.SwatchIndex = nextFree;
+							usedIndices.Add(nextFree);
+							parsedItems[i] = item;
 						}
-						swatchIdx = maxIdx + 1;
 					}
+
+					foreach (var item in parsedItems)
+					{
+						if (item.Key.Equals(fileName, StringComparison.OrdinalIgnoreCase)) continue;
+
+						if (item.Node is JsonObject sObj)
+						{
+							sObj["swatchIndex"] = item.SwatchIndex;
+							if (sObj.ContainsKey("swatch_index")) sObj.Remove("swatch_index");
+							if (sObj.ContainsKey("SwatchIndex")) sObj.Remove("SwatchIndex");
+						}
+						else
+						{
+							string existingHash = item.Node?.ToString() ?? "";
+							catObj[item.Key] = new JsonObject
+							{
+								["hash"] = existingHash,
+								["swatchIndex"] = item.SwatchIndex
+							};
+						}
+					}
+
+					int maxSwatchIndex = usedIndices.Count > 0 ? usedIndices.Max() : -1;
+					int existingItemIndex = -1;
+					for (int i = 0; i < parsedItems.Count; i++)
+					{
+						if (parsedItems[i].Key.Equals(fileName, StringComparison.OrdinalIgnoreCase))
+						{
+							existingItemIndex = parsedItems[i].SwatchIndex;
+							break;
+						}
+					}
+
+					int swatchIdx = existingItemIndex >= 0 ? existingItemIndex : maxSwatchIndex + 1;
 
 					JsonObject texEntry;
 					if (catObj.ContainsKey(fileName) && catObj[fileName] is JsonObject existingEntry)
@@ -8170,6 +8604,8 @@ public partial class MapEditorHUD : Control
 						texEntry = existingEntry;
 						texEntry["hash"] = blake3Hash;
 						texEntry["swatchIndex"] = swatchIdx;
+						if (texEntry.ContainsKey("swatch_index")) texEntry.Remove("swatch_index");
+						if (texEntry.ContainsKey("SwatchIndex")) texEntry.Remove("SwatchIndex");
 					}
 					else
 					{
@@ -8179,6 +8615,14 @@ public partial class MapEditorHUD : Control
 							["swatchIndex"] = swatchIdx
 						};
 					}
+
+					if (!texEntry.ContainsKey("Scale_Factor") && !texEntry.ContainsKey("scale_factor") && !texEntry.ContainsKey("ScaleFactor"))
+					{
+						string texPath = System.IO.Path.Combine(wsPath, "Assets", "textures", fileName);
+						float scaleFactor = Realm.Shared.Textures.TextureConverter.CalculateLuminanceScaleFactor(texPath);
+						texEntry["Scale_Factor"] = scaleFactor;
+					}
+
 					catObj[fileName] = texEntry;
 				}
 				else if (columns > 0 && rows > 0)
@@ -8198,7 +8642,9 @@ public partial class MapEditorHUD : Control
 				assetsObj[category] = catObj;
 			}
 
-			root["Assets"] = assetsObj;
+			Realm.Godot.Utils.MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj, removeFromMetadata: true);
+			root.Remove("Assets");
+			SaveLoadService.CleanMetadataJsonSchema(root);
 			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
 		}
 		catch (Exception ex)
@@ -8214,28 +8660,28 @@ public partial class MapEditorHUD : Control
 			string rawName = (slotIndex >= 0 && slotIndex < _swatchDisplayNames.Count) ? _swatchDisplayNames[slotIndex] : $"swatch_{slotIndex}";
 			string name = rawName.ToLowerInvariant().Replace(" ", "_");
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string texDir = System.IO.Path.Combine(wsPath, "Assets", "textures");
 			System.IO.Directory.CreateDirectory(texDir);
-			string outputKtx2 = System.IO.Path.Combine(texDir, name + ".ktx2");
+			string outputRtex = System.IO.Path.Combine(texDir, name + ".rtex");
 
 			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
 			{
-				GameHost.Instance.GroundTerrain.ProcessAndSaveRawTexture(sourceFilePath, outputKtx2);
+				GameHost.Instance.GroundTerrain.ProcessAndSaveRawTexture(sourceFilePath, outputRtex);
 			}
 
-			if (System.IO.File.Exists(outputKtx2))
+			if (System.IO.File.Exists(outputRtex))
 			{
-				byte[] ktx2Bytes = System.IO.File.ReadAllBytes(outputKtx2);
-				string blake3 = MapAssetManager.ComputeBlake3(ktx2Bytes);
-				UpdateMetadataJsonAsset("textures", name + ".ktx2", blake3);
+				byte[] rtexBytes = System.IO.File.ReadAllBytes(outputRtex);
+				string blake3 = RealmMetadataHelper.ComputeBlake3(rtexBytes, ".rtex");
+				UpdateMetadataJsonAsset("textures", name + ".rtex", blake3);
 				ReadMetadataAndRefreshTextures();
-				ShowFeedback($"Successfully processed & imported KTX2 texture for {rawName}!");
+				ShowFeedback($"Successfully processed & imported RTEX texture for {rawName}!");
 			}
 			else
 			{
-				ShowFeedback($"Failed to generate KTX2 texture at {outputKtx2}");
+				ShowFeedback($"Failed to generate RTEX texture at {outputRtex}");
 			}
 		}
 		catch (Exception ex)
@@ -8245,23 +8691,23 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
-	public void ConvertRawTextureDirect(string rawPngPath, string outputKtx2Path, string swatchName)
+	public void ConvertRawTextureDirect(string rawPngPath, string outputRtexPath, string swatchName)
 	{
 		try
 		{
 			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
 			{
-				GameHost.Instance.GroundTerrain.ProcessAndSaveRawTexture(rawPngPath, outputKtx2Path);
+				GameHost.Instance.GroundTerrain.ProcessAndSaveRawTexture(rawPngPath, outputRtexPath);
 			}
 
-			if (System.IO.File.Exists(outputKtx2Path))
+			if (System.IO.File.Exists(outputRtexPath))
 			{
 				ReadMetadataAndRefreshTextures();
-				ShowFeedback($"Successfully processed & imported KTX2 texture for {swatchName}!");
+				ShowFeedback($"Successfully processed & imported RTEX texture for {swatchName}!");
 			}
 			else
 			{
-				ShowFeedback($"Failed to generate KTX2 texture at {outputKtx2Path}");
+				ShowFeedback($"Failed to generate RTEX texture at {outputRtexPath}");
 			}
 		}
 		catch (Exception ex)
@@ -8297,7 +8743,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
 			if (!System.IO.File.Exists(metadataPath)) return;
@@ -8335,7 +8781,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string ext = System.IO.Path.GetExtension(sourceFilePath).ToLowerInvariant();
 			string animsDir = System.IO.Path.Combine(wsPath, "Assets", "animations");
@@ -8375,7 +8821,7 @@ public partial class MapEditorHUD : Control
 			{
 				string fileName = System.IO.Path.GetFileName(sourceFilePath);
 				byte[] sourceBytes = System.IO.File.ReadAllBytes(sourceFilePath);
-				string newHash = MapAssetManager.ComputeBlake3(sourceBytes);
+				string newHash = RealmMetadataHelper.ComputeBlake3(sourceBytes, ".ranim");
 
 				string baseName = System.IO.Path.GetFileNameWithoutExtension(fileName).ToLowerInvariant();
 				string finalFileName = $"{baseName}.ranim";
@@ -8383,7 +8829,7 @@ public partial class MapEditorHUD : Control
 
 				if (System.IO.File.Exists(targetPath))
 				{
-					string existingHash = MapAssetManager.ComputeBlake3(System.IO.File.ReadAllBytes(targetPath));
+					string existingHash = RealmMetadataHelper.ComputeBlake3(System.IO.File.ReadAllBytes(targetPath), ".ranim");
 					if (existingHash.Equals(newHash, StringComparison.OrdinalIgnoreCase))
 					{
 						UpdateMetadataJsonAsset("animations", finalFileName, newHash);
@@ -8405,7 +8851,7 @@ public partial class MapEditorHUD : Control
 						}
 						else
 						{
-							string varHash = MapAssetManager.ComputeBlake3(System.IO.File.ReadAllBytes(varPath));
+							string varHash = RealmMetadataHelper.ComputeBlake3(System.IO.File.ReadAllBytes(varPath), ".ranim");
 							if (varHash.Equals(newHash, StringComparison.OrdinalIgnoreCase))
 							{
 								finalFileName = varName;
@@ -8436,7 +8882,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string fileName = System.IO.Path.GetFileName(sourceFilePath);
 			string subCat = category.ToLowerInvariant();
@@ -8449,7 +8895,7 @@ public partial class MapEditorHUD : Control
 			}
 
 			byte[] glbBytes = System.IO.File.ReadAllBytes(importResult.StrippedGlbPath);
-			string glbBlake3 = MapAssetManager.ComputeBlake3(glbBytes);
+			string glbBlake3 = RealmMetadataHelper.ComputeBlake3(glbBytes, ".glb");
 			UpdateMetadataJsonAsset("glb", fileName, glbBlake3, subCategory: subCat);
 
 			foreach (var animFile in importResult.ExtractedAnimationFiles)
@@ -8458,7 +8904,7 @@ public partial class MapEditorHUD : Control
 				if (System.IO.File.Exists(animPath))
 				{
 					byte[] animBytes = System.IO.File.ReadAllBytes(animPath);
-					string animBlake3 = MapAssetManager.ComputeBlake3(animBytes);
+					string animBlake3 = RealmMetadataHelper.ComputeBlake3(animBytes, ".ranim");
 					UpdateMetadataJsonAsset("animations", animFile, animBlake3);
 				}
 			}
@@ -8491,7 +8937,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string baseName = System.IO.Path.GetFileNameWithoutExtension(sourceFilePath);
 			string fileName = baseName + ".png";
@@ -8510,7 +8956,7 @@ public partial class MapEditorHUD : Control
 			}
 
 			byte[] bytes = System.IO.File.ReadAllBytes(targetPath);
-			string blake3 = MapAssetManager.ComputeBlake3(bytes);
+			string blake3 = RealmMetadataHelper.ComputeBlake3(bytes, ".png");
 
 			UpdateMetadataJsonAsset("decals", fileName, blake3);
 			ShowFeedback($"Imported decal {fileName}");
@@ -8527,7 +8973,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string fileName = System.IO.Path.GetFileName(sourceFilePath);
 			string skyboxesDir = System.IO.Path.Combine(wsPath, "Assets", "skyboxes");
@@ -8537,7 +8983,7 @@ public partial class MapEditorHUD : Control
 			System.IO.File.Copy(sourceFilePath, targetPath, true);
 
 			byte[] bytes = System.IO.File.ReadAllBytes(targetPath);
-			string blake3 = MapAssetManager.ComputeBlake3(bytes);
+			string blake3 = RealmMetadataHelper.ComputeBlake3(bytes, fileName);
 
 			UpdateMetadataJsonAsset("skyboxes", fileName, blake3);
 			RefreshSkyboxList();
@@ -8555,7 +9001,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string baseName = System.IO.Path.GetFileNameWithoutExtension(sourceFilePath);
 			string fileName = baseName + ".png";
@@ -8574,7 +9020,7 @@ public partial class MapEditorHUD : Control
 			}
 
 			byte[] bytes = System.IO.File.ReadAllBytes(targetPath);
-			string blake3 = MapAssetManager.ComputeBlake3(bytes);
+			string blake3 = RealmMetadataHelper.ComputeBlake3(bytes, ".png");
 
 			UpdateMetadataJsonAsset("vfx_spritesheets", fileName, blake3, columns: columns, rows: rows);
 			ShowFeedback($"Imported VFX spritesheet {fileName}");
@@ -8591,7 +9037,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string baseName = System.IO.Path.GetFileNameWithoutExtension(sourceFilePath);
 			string fileName = baseName + ".png";
@@ -8610,7 +9056,7 @@ public partial class MapEditorHUD : Control
 			}
 
 			byte[] bytes = System.IO.File.ReadAllBytes(targetPath);
-			string blake3 = MapAssetManager.ComputeBlake3(bytes);
+			string blake3 = RealmMetadataHelper.ComputeBlake3(bytes, ".png");
 
 			UpdateMetadataJsonAsset("icons", fileName, blake3);
 			ShowFeedback($"Imported 2D Icon {fileName}");
@@ -8627,7 +9073,7 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
-				? ProjectSettings.GlobalizePath("user://temp_map_workspace") 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string baseName = System.IO.Path.GetFileNameWithoutExtension(sourceFilePath);
 			string fileName = baseName + ".ogg";
@@ -8639,19 +9085,7 @@ public partial class MapEditorHUD : Control
 			}
 			else
 			{
-				var startInfo = new System.Diagnostics.ProcessStartInfo
-				{
-					FileName = "ffmpeg",
-					Arguments = $"-y -i \"{sourceFilePath}\" -c:a libvorbis \"{targetPath}\"",
-					UseShellExecute = false,
-					CreateNoWindow = true,
-					RedirectStandardOutput = true,
-					RedirectStandardError = true
-				};
-				using (var process = System.Diagnostics.Process.Start(startInfo))
-				{
-					process.WaitForExit();
-				}
+				Realm.Shared.Audio.AudioConverter.ConvertToOgg(sourceFilePath, targetPath);
 				if (!System.IO.File.Exists(targetPath) || new System.IO.FileInfo(targetPath).Length == 0)
 				{
 					System.IO.File.Copy(sourceFilePath, targetPath, true);
@@ -8659,7 +9093,7 @@ public partial class MapEditorHUD : Control
 			}
 
 			byte[] bytes = System.IO.File.ReadAllBytes(targetPath);
-			string blake3 = MapAssetManager.ComputeBlake3(bytes);
+			string blake3 = RealmMetadataHelper.ComputeBlake3(bytes, ".ogg");
 
 			UpdateMetadataJsonAsset(audioType.ToLowerInvariant() == "music" ? "music" : "sfx", fileName, blake3);
 			ShowFeedback($"Imported audio {fileName} ({audioType})");

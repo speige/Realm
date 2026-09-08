@@ -478,6 +478,18 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 	public void MoveTo(System.Numerics.Vector3 destination)
 	{
 		if (!_world.IsAlive(_entity) || IsDead) return;
+		if (_world.Has<Realm.Ecs.Components.Movement.HoldPosition>(_entity))
+		{
+			_world.Remove<Realm.Ecs.Components.Movement.HoldPosition>(_entity);
+		}
+		if (_world.Has<Realm.Ecs.Components.Movement.AttackMove>(_entity))
+		{
+			_world.Remove<Realm.Ecs.Components.Movement.AttackMove>(_entity);
+		}
+		if (_world.Has<Realm.Ecs.Components.Combat.AttackTarget>(_entity))
+		{
+			_world.Remove<Realm.Ecs.Components.Combat.AttackTarget>(_entity);
+		}
 		var mv = new MoveTo(destination);
 		if (_world.Has<MoveTo>(_entity))
 		{
@@ -492,6 +504,14 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 	public void AttackMove(System.Numerics.Vector3 destination)
 	{
 		if (!_world.IsAlive(_entity) || IsDead) return;
+		if (_world.Has<Realm.Ecs.Components.Movement.HoldPosition>(_entity))
+		{
+			_world.Remove<Realm.Ecs.Components.Movement.HoldPosition>(_entity);
+		}
+		if (_world.Has<Realm.Ecs.Components.Combat.AttackTarget>(_entity))
+		{
+			_world.Remove<Realm.Ecs.Components.Combat.AttackTarget>(_entity);
+		}
 		var am = new Realm.Ecs.Components.Movement.AttackMove(destination);
 		if (_world.Has<Realm.Ecs.Components.Movement.AttackMove>(_entity))
 		{
@@ -660,7 +680,8 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 			{
 				if (GodotObject.IsInstanceValid(u3d))
 				{
-					u3d.Scale = new Vector3(value, value, value);
+					float safeScale = Mathf.Max(0.001f, value);
+					u3d.Scale = new Vector3(safeScale, safeScale, safeScale);
 				}
 			}
 		}

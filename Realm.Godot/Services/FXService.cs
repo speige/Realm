@@ -25,11 +25,19 @@ public class FXService
 		string fullPath = texturePath;
 		if (!texturePath.StartsWith("res://") && !System.IO.File.Exists(texturePath))
 		{
-			string wsPath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+			string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
 			fullPath = System.IO.Path.Combine(wsPath, texturePath.Replace('/', System.IO.Path.DirectorySeparatorChar));
 			if (!System.IO.File.Exists(fullPath))
 			{
 				fullPath = System.IO.Path.Combine(wsPath, "Assets", "vfx", System.IO.Path.GetFileName(texturePath));
+			}
+			if (!System.IO.File.Exists(fullPath))
+			{
+				string rtexCandidate = System.IO.Path.ChangeExtension(fullPath, ".rtex");
+				if (System.IO.File.Exists(rtexCandidate))
+				{
+					fullPath = rtexCandidate;
+				}
 			}
 		}
 
@@ -39,9 +47,31 @@ public class FXService
 		}
 		else if (System.IO.File.Exists(fullPath))
 		{
-			var img = Image.LoadFromFile(fullPath);
+			Image? img = null;
+			if (fullPath.EndsWith(".rtex", StringComparison.OrdinalIgnoreCase))
+			{
+				byte[] rtexBytes = System.IO.File.ReadAllBytes(fullPath);
+				byte[]? webpBytes = Realm.Shared.Textures.RtexFile.GetLayer(rtexBytes, 0);
+				if (webpBytes != null && webpBytes.Length > 0)
+				{
+					img = Image.CreateEmpty(1, 1, false, Image.Format.Rgba8);
+					if (img.LoadWebpFromBuffer(webpBytes) != Error.Ok)
+					{
+						img.LoadPngFromBuffer(webpBytes);
+					}
+				}
+			}
+			else
+			{
+				img = Image.LoadFromFile(fullPath);
+			}
+
 			if (img != null)
 			{
+				if (!img.HasMipmaps())
+				{
+					img.GenerateMipmaps();
+				}
 				texture = ImageTexture.CreateFromImage(img);
 			}
 		}

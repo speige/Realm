@@ -683,6 +683,10 @@ internal class CombatAndDamageService
 						{
 							weaponId = weapons[0];
 						}
+						else
+						{
+							weaponId = defId;
+						}
 					}
 					OnWeaponProjectileRequested?.Invoke(currentPos, targetPos, weaponId, target.Target);
 				}

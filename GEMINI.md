@@ -13,6 +13,7 @@
 - Do not use `#region` blocks.
 - Use verbose, descriptive names that clearly identify their purpose (avoid cryptic abbreviations).
 - Avoid the `sealed` keyword.
+- Use [GeneratedRegex] syntax
 
 ## Core 3D rendering and Engine Tick Calculations:
 - Minimize Garbage Collection (GC) pressure by using struct-based data where possible.

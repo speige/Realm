@@ -1,6 +1,7 @@
 using Godot;
 using Realm.Godot.Animation;
 using Realm.Shared;
+using Realm.Shared.Textures;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -22,6 +23,12 @@ public static class AssetThumbnailProvider
 	private static readonly List<string> _lruOrder = new();
 	private const int MaxCacheEntries = 400;
 
+	public static string NormalizePath(string path)
+	{
+		if (string.IsNullOrEmpty(path)) return string.Empty;
+		return Path.GetFullPath(path).Replace('\\', '/').TrimEnd('/');
+	}
+
 	static AssetThumbnailProvider()
 	{
 		GlbThumbnailRenderer.Instance.ThumbnailGenerated += OnGlbThumbnailGenerated;
@@ -29,12 +36,13 @@ public static class AssetThumbnailProvider
 
 	private static void OnGlbThumbnailGenerated(string filePath, Texture2D texture)
 	{
+		string normPath = NormalizePath(filePath);
 		lock (_thumbnailCache)
 		{
-			_thumbnailCache[filePath] = texture;
-			TouchLru(filePath);
+			_thumbnailCache[normPath] = texture;
+			TouchLru(normPath);
 		}
-		ThumbnailGenerated?.Invoke(filePath, texture);
+		ThumbnailGenerated?.Invoke(normPath, texture);
 	}
 
 	public static Texture2D? GetThumbnail(IndexedAsset asset)
@@ -44,6 +52,7 @@ public static class AssetThumbnailProvider
 			return GetPlaceholderTexture("?");
 		}
 
+		string normPath = NormalizePath(asset.FilePath);
 		string ext = asset.Extension.ToLowerInvariant();
 		if (ext == ".ranim")
 		{
@@ -57,42 +66,43 @@ public static class AssetThumbnailProvider
 
 		lock (_thumbnailCache)
 		{
-			if (_thumbnailCache.TryGetValue(asset.FilePath, out var cachedTexture) && cachedTexture != null)
+			if (_thumbnailCache.TryGetValue(normPath, out var cachedTexture) && cachedTexture != null)
 			{
-				TouchLru(asset.FilePath);
+				TouchLru(normPath);
 				return cachedTexture;
 			}
 		}
 
 		Texture2D? generatedTexture = GenerateThumbnailDirect(asset);
-		if (generatedTexture == null)
+		if (generatedTexture != null)
 		{
-			generatedTexture = GetPlaceholderTexture(asset.Extension.TrimStart('.').ToUpperInvariant());
-		}
-
-		lock (_thumbnailCache)
-		{
-			if (_thumbnailCache.Count >= MaxCacheEntries && _lruOrder.Count > 0)
+			lock (_thumbnailCache)
 			{
-				string oldestKey = _lruOrder[0];
-				_lruOrder.RemoveAt(0);
-				_thumbnailCache.Remove(oldestKey);
+				if (_thumbnailCache.Count >= MaxCacheEntries && _lruOrder.Count > 0)
+				{
+					string oldestKey = _lruOrder[0];
+					_lruOrder.RemoveAt(0);
+					_thumbnailCache.Remove(oldestKey);
+				}
+
+				_thumbnailCache[normPath] = generatedTexture;
+				TouchLru(normPath);
 			}
 
-			_thumbnailCache[asset.FilePath] = generatedTexture;
-			TouchLru(asset.FilePath);
+			return generatedTexture;
 		}
 
-		return generatedTexture;
+		return GetPlaceholderTexture(asset.Extension.TrimStart('.').ToUpperInvariant());
 	}
 
 	public static AnimatedThumbnail? GetAnimatedThumbnail(IndexedAsset asset)
 	{
 		if (asset == null || string.IsNullOrEmpty(asset.FilePath)) return null;
 
+		string normPath = NormalizePath(asset.FilePath);
 		lock (_animatedThumbnailCache)
 		{
-			if (_animatedThumbnailCache.TryGetValue(asset.FilePath, out var cachedAnim) && cachedAnim != null)
+			if (_animatedThumbnailCache.TryGetValue(normPath, out var cachedAnim) && cachedAnim != null)
 			{
 				return cachedAnim;
 			}
@@ -111,7 +121,7 @@ public static class AssetThumbnailProvider
 					{
 						_animatedThumbnailCache.Clear();
 					}
-					_animatedThumbnailCache[asset.FilePath] = animThumb;
+					_animatedThumbnailCache[normPath] = animThumb;
 				}
 				return animThumb;
 			}
@@ -134,9 +144,9 @@ public static class AssetThumbnailProvider
 	{
 		string ext = asset.Extension.ToLowerInvariant();
 
-		if (ext == ".ktx2")
+		if (ext == ".rtex")
 		{
-			return LoadKtx2AlbedoThumbnail(asset.FilePath, asset.LastModifiedUtc);
+			return LoadRtexAlbedoThumbnail(asset.FilePath, asset.LastModifiedUtc);
 		}
 
 		if (ext == ".glb" || ext == ".gltf")
@@ -164,81 +174,73 @@ public static class AssetThumbnailProvider
 
 	private static Texture2D? LoadGlbThumbnail(string glbPath, DateTime lastModifiedUtc)
 	{
-		if (GlbThumbnailRenderer.Instance.TryGetDiskCached(glbPath, lastModifiedUtc, out var cachedTexture))
+		string normPath = NormalizePath(glbPath);
+		if (GlbThumbnailRenderer.Instance.TryGetDiskCached(normPath, lastModifiedUtc, out var cachedTexture))
 		{
 			return cachedTexture;
 		}
 
-		GlbThumbnailRenderer.Instance.EnqueueRequest(glbPath, lastModifiedUtc);
-		return GetPlaceholderTexture("GLB");
+		GlbThumbnailRenderer.Instance.EnqueueRequest(normPath, lastModifiedUtc);
+		return null;
 	}
 
-	private static Texture2D? LoadKtx2AlbedoThumbnail(string ktx2Path, DateTime lastModifiedUtc)
+	private static Texture2D? LoadRtexAlbedoThumbnail(string rtexPath, DateTime lastModifiedUtc)
 	{
-		if (!File.Exists(ktx2Path))
+		if (!File.Exists(rtexPath))
 		{
 			return null;
 		}
 
-		string cacheDirectory = ProjectSettings.GlobalizePath("user://ktx_layer_cache");
-		if (!Directory.Exists(cacheDirectory))
+		try
 		{
-			Directory.CreateDirectory(cacheDirectory);
-		}
-
-		string baseName = Path.GetFileNameWithoutExtension(ktx2Path);
-		string cachedPngPath = Path.Combine(cacheDirectory, $"{baseName}_thumb_l0_{lastModifiedUtc.Ticks}.png");
-
-		bool needsExtraction = true;
-		if (File.Exists(cachedPngPath))
-		{
-			needsExtraction = false;
-		}
-
-		if (needsExtraction)
-		{
-			string? ktxCommandPath = NativeToolRunner.FindKtxPath();
-			if (!string.IsNullOrEmpty(ktxCommandPath))
+			byte[] bytes = File.ReadAllBytes(rtexPath);
+			byte[]? layer0Bytes = null;
+			if (Realm.Shared.Textures.RtexFile.IsRtexBytes(bytes))
 			{
-				try
-				{
-					string tempExtractionPng = Path.Combine(cacheDirectory, $"{baseName}_raw_{Guid.NewGuid():N}.png");
-					var runResult = NativeToolRunner.RunTool(ktxCommandPath, $"extract --layer 0 --level 0 --transcode rgba8 \"{ktx2Path}\" \"{tempExtractionPng}\"", 10000);
-					if (runResult.ExitCode == 0 && File.Exists(tempExtractionPng))
-					{
-						var img = Image.LoadFromFile(tempExtractionPng);
-						if (img != null)
-						{
-							if (img.GetWidth() > 128 || img.GetHeight() > 128)
-							{
-								img.Resize(128, 128, Image.Interpolation.Bilinear);
-							}
-							img.SavePng(cachedPngPath);
-						}
-						try { File.Delete(tempExtractionPng); } catch { }
-					}
-				}
-				catch (Exception ex)
-				{
-					GD.PrintErr($"[AssetThumbnailProvider] KTX extraction error on {ktx2Path}: {ex.Message}");
-				}
+				layer0Bytes = Realm.Shared.Textures.RtexFile.GetLayer(bytes, 0);
 			}
-		}
-
-		if (File.Exists(cachedPngPath))
-		{
-			try
+			else
 			{
-				var image = Image.LoadFromFile(cachedPngPath);
-				if (image != null)
-				{
-					return ImageTexture.CreateFromImage(image);
-				}
+				layer0Bytes = bytes;
 			}
-			catch { }
-		}
 
-		return null;
+			if (layer0Bytes == null || layer0Bytes.Length == 0) return null;
+
+			var img = Image.CreateEmpty(1, 1, false, Image.Format.Rgba8);
+			Error err = img.LoadWebpFromBuffer(layer0Bytes);
+			if (err != Error.Ok)
+			{
+				err = img.LoadPngFromBuffer(layer0Bytes);
+			}
+			if (err != Error.Ok)
+			{
+				err = img.LoadJpgFromBuffer(layer0Bytes);
+			}
+			if (err != Error.Ok)
+			{
+				err = img.LoadTgaFromBuffer(layer0Bytes);
+			}
+			if (err != Error.Ok)
+			{
+				err = img.LoadBmpFromBuffer(layer0Bytes);
+			}
+			if (err != Error.Ok)
+			{
+				return null;
+			}
+
+			if (img.GetWidth() > 128 || img.GetHeight() > 128)
+			{
+				img.Resize(128, 128, Image.Interpolation.Bilinear);
+			}
+
+			return ImageTexture.CreateFromImage(img);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[AssetThumbnailProvider] RTEX thumbnail error on {rtexPath}: {ex.Message}");
+			return null;
+		}
 	}
 
 	private static Texture2D? LoadRasterImageThumbnail(string imagePath)
@@ -408,7 +410,7 @@ public static class AssetThumbnailProvider
 				"GLB" or "GLTF" or "FBX" => new Color(0.18f, 0.28f, 0.42f, 1.0f),
 				"RANIM" or "ANIM" => new Color(0.38f, 0.22f, 0.45f, 1.0f),
 				"OGG" or "WAV" or "MP3" => new Color(0.20f, 0.42f, 0.30f, 1.0f),
-				"KTX2" or "PNG" or "JPG" or "JPEG" => new Color(0.35f, 0.32f, 0.18f, 1.0f),
+				"RTEX" or "KTX2" or "PNG" or "JPG" or "JPEG" or "WEBP" => new Color(0.35f, 0.32f, 0.18f, 1.0f),
 				"JSON" or "TXT" => new Color(0.28f, 0.28f, 0.30f, 1.0f),
 				_ => new Color(0.20f, 0.22f, 0.26f, 1.0f)
 			};

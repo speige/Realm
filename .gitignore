@@ -10,3 +10,7 @@ GeneratedFiles/
 TestResults/
 *.trx
 Realm.Lobby/.data
+*.key
+*.privatekey
+*.admin_key
+admin_private.key

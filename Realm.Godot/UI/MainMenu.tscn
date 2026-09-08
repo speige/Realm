@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=15 format=3]
 
 [ext_resource type="Script" path="res://UI/MainMenu.cs" id="1_script"]
 [ext_resource type="Texture2D" path="res://Assets/UI/gear_icon.png" id="2_gear"]
@@ -11,6 +11,10 @@
 [ext_resource type="Texture2D" path="res://Assets/UI/avatar_icon.png" id="9_avatar"]
 [ext_resource type="Texture2D" path="res://Assets/UI/social_icon.png" id="10_social"]
 [ext_resource type="Texture2D" path="res://Assets/UI/coding_icon.png" id="11_coding"]
+[ext_resource type="Texture2D" path="res://Assets/UI/youtube_icon.png" id="12_youtube"]
+[ext_resource type="Texture2D" path="res://Assets/UI/github_icon.png" id="13_github"]
+[ext_resource type="Texture2D" path="res://Assets/UI/bug_icon.png" id="14_bug"]
+[ext_resource type="Texture2D" path="res://Assets/UI/seed_node_icon.png" id="15_seed_node"]
 
 [node name="MainMenu" type="Control"]
 layout_mode = 3
@@ -182,7 +186,7 @@ anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
 offset_left = 120.0
-offset_top = -670.0
+offset_top = -730.0
 offset_right = 480.0
 offset_bottom = -130.0
 grow_vertical = 0
@@ -205,47 +209,63 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/margin_left = 45
-theme_override_constants/margin_top = 95
+theme_override_constants/margin_top = 80
 theme_override_constants/margin_right = 45
-theme_override_constants/margin_bottom = 55
+theme_override_constants/margin_bottom = 45
 
 [node name="PopoverVBox" type="VBoxContainer" parent="SocialPopover/MarginContainer"]
 layout_mode = 2
-theme_override_constants/separation = 10
+theme_override_constants/separation = 8
 alignment = 1
 
+[node name="WebsiteButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
+custom_minimumSize = Vector2(270, 44)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+icon = ExtResource("7_globe")
+
 [node name="DiscordButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
-custom_minimumSize = Vector2(270, 48)
+custom_minimumSize = Vector2(270, 44)
 layout_mode = 2
 size_flags_horizontal = 4
 focus_mode = 0
 icon = ExtResource("5_discord")
 
+[node name="YoutubeButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
+custom_minimumSize = Vector2(270, 44)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+icon = ExtResource("12_youtube")
+
+[node name="GithubButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
+custom_minimumSize = Vector2(270, 44)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+icon = ExtResource("13_github")
+
 [node name="DonateButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
-custom_minimumSize = Vector2(270, 48)
+custom_minimumSize = Vector2(270, 44)
 layout_mode = 2
 size_flags_horizontal = 4
 focus_mode = 0
 icon = ExtResource("6_donate")
 
-[node name="ContributeButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
-custom_minimumSize = Vector2(270, 48)
-layout_mode = 2
-size_flags_horizontal = 4
-focus_mode = 0
-icon = ExtResource("11_coding")
-
 [node name="BugReportButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
-custom_minimumSize = Vector2(270, 48)
+custom_minimumSize = Vector2(270, 44)
 layout_mode = 2
 size_flags_horizontal = 4
 focus_mode = 0
+icon = ExtResource("14_bug")
 
 [node name="SeedNodeButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
-custom_minimumSize = Vector2(270, 48)
+custom_minimumSize = Vector2(270, 44)
 layout_mode = 2
 size_flags_horizontal = 4
 focus_mode = 0
+icon = ExtResource("15_seed_node")
 
 [node name="SettingsButton" type="Button" parent="."]
 custom_minimumSize = Vector2(206, 68)

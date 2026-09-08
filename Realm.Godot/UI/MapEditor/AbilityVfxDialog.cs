@@ -371,7 +371,12 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 
 		Vector3 newPos = _targetPosition + offset;
 		_camera.Position = newPos;
-		_camera.LookAtFromPosition(newPos, _targetPosition, Vector3.Up);
+		if (newPos.DistanceSquaredTo(_targetPosition) > 0.0001f)
+		{
+			Vector3 dir = (_targetPosition - newPos).Normalized();
+			Vector3 up = Mathf.Abs(dir.Dot(Vector3.Up)) > 0.99f ? Vector3.Forward : Vector3.Up;
+			_camera.LookAtFromPosition(newPos, _targetPosition, up);
+		}
 	}
 
 	private void UpdateAoEIndicator(float radius)
@@ -422,37 +427,27 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 		int rows = 4;
 
 		// Detect columns and rows from metadata if available
-		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
-		string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
-		if (!System.IO.File.Exists(metadataPath))
-		{
-			string tPath = PathUtils.FindPath("MapTemplate/metadata.json");
-			if (System.IO.File.Exists(tPath)) metadataPath = tPath;
-		}
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 
-		if (System.IO.File.Exists(metadataPath))
+		try
 		{
-			try
+			var unionedAssets = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
+			var vfxSheets = unionedAssets?["vfx_spritesheets"] as JsonObject;
+			string fName = System.IO.Path.GetFileName(_currentVisualEffect);
+			if (vfxSheets != null)
 			{
-				string json = System.IO.File.ReadAllText(metadataPath);
-				var root = JsonNode.Parse(json)?.AsObject();
-				var vfxSheets = (root?["Assets"]?["vfx_spritesheets"] ?? root?["MapProperties"]?["Assets"]?["vfx_spritesheets"])?.AsObject();
-				string fName = System.IO.Path.GetFileName(_currentVisualEffect);
-				if (vfxSheets != null)
-				{
-					JsonObject sheetObj = null;
-					if (vfxSheets.ContainsKey(fName) && vfxSheets[fName] is JsonObject so1) sheetObj = so1;
-					else if (vfxSheets.ContainsKey(_currentVisualEffect) && vfxSheets[_currentVisualEffect] is JsonObject so2) sheetObj = so2;
+				JsonObject sheetObj = null;
+				if (vfxSheets.ContainsKey(fName) && vfxSheets[fName] is JsonObject so1) sheetObj = so1;
+				else if (vfxSheets.ContainsKey(_currentVisualEffect) && vfxSheets[_currentVisualEffect] is JsonObject so2) sheetObj = so2;
 
-					if (sheetObj != null)
-					{
-						if (sheetObj.ContainsKey("columns")) cols = (int)sheetObj["columns"];
-						if (sheetObj.ContainsKey("rows")) rows = (int)sheetObj["rows"];
-					}
+				if (sheetObj != null)
+				{
+					if (sheetObj.ContainsKey("columns")) cols = (int)sheetObj["columns"];
+					if (sheetObj.ContainsKey("rows")) rows = (int)sheetObj["rows"];
 				}
 			}
-			catch { }
 		}
+		catch { }
 
 		if (cols <= 0) cols = 1;
 		if (rows <= 0) rows = 1;
@@ -542,7 +537,7 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 				}
 			}
 
-			string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+			string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 			string cleanPath = soundPath.Trim().TrimStart('/', '\\').Replace('\\', '/');
 			string fileName = System.IO.Path.GetFileName(cleanPath);
 
@@ -555,11 +550,6 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 				System.IO.Path.Combine(wsPath, "Assets", "audio", "music", fileName),
 				System.IO.Path.Combine(wsPath, "Assets", "audio", fileName),
 				System.IO.Path.Combine(wsPath, "Assets", "sounds", fileName),
-				PathUtils.FindPath("MapTemplate/" + cleanPath),
-				PathUtils.FindPath("MapTemplate/Assets/" + cleanPath),
-				PathUtils.FindPath("MapTemplate/Assets/audio/sfx/" + fileName),
-				PathUtils.FindPath("MapTemplate/Assets/audio/music/" + fileName),
-				PathUtils.FindPath("MapTemplate/Assets/audio/" + fileName)
 			};
 
 			AudioStream stream = null;
@@ -625,7 +615,7 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 				}
 			}
 
-			string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
+			string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 			string cleanPath = path.Trim().TrimStart('/', '\\').Replace('\\', '/');
 			string fileName = System.IO.Path.GetFileName(cleanPath);
 
@@ -638,25 +628,41 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 				System.IO.Path.Combine(wsPath, "Assets", "icons", fileName),
 				System.IO.Path.Combine(wsPath, "Assets", "decals", fileName),
 				System.IO.Path.Combine(wsPath, "Assets", "textures", fileName),
-				System.IO.Path.Combine(wsPath, "Assets", "textures", "ribbons", fileName),
-				System.IO.Path.Combine(wsPath, "Assets", "textures", "noise", fileName),
+				System.IO.Path.Combine(wsPath, "Assets", "ribbons", fileName),
+				System.IO.Path.Combine(wsPath, "Assets", "noise", fileName),
 				System.IO.Path.Combine(wsPath, "Assets", "skyboxes", fileName),
 				System.IO.Path.Combine(wsPath, "Assets", "UI", fileName),
-				PathUtils.FindPath("MapTemplate/" + cleanPath),
-				PathUtils.FindPath("MapTemplate/Assets/" + cleanPath),
-				PathUtils.FindPath("MapTemplate/Assets/vfx/" + fileName),
-				PathUtils.FindPath("MapTemplate/Assets/icons/" + fileName),
-				PathUtils.FindPath("MapTemplate/Assets/decals/" + fileName),
-				PathUtils.FindPath("MapTemplate/Assets/textures/" + fileName)
 			};
 
 			foreach (var candidate in candidatePaths)
 			{
 				if (!string.IsNullOrWhiteSpace(candidate) && System.IO.File.Exists(candidate))
 				{
-					var img = Image.LoadFromFile(candidate);
+					Image? img = null;
+					if (candidate.EndsWith(".rtex", StringComparison.OrdinalIgnoreCase))
+					{
+						byte[] rtexBytes = System.IO.File.ReadAllBytes(candidate);
+						byte[]? webpBytes = Realm.Shared.Textures.RtexFile.GetLayer(rtexBytes, 0);
+						if (webpBytes != null && webpBytes.Length > 0)
+						{
+							img = Image.CreateEmpty(1, 1, false, Image.Format.Rgba8);
+							if (img.LoadWebpFromBuffer(webpBytes) != Error.Ok)
+							{
+								img.LoadPngFromBuffer(webpBytes);
+							}
+						}
+					}
+					else
+					{
+						img = Image.LoadFromFile(candidate);
+					}
+
 					if (img != null)
 					{
+						if (!img.HasMipmaps())
+						{
+							img.GenerateMipmaps();
+						}
 						return ImageTexture.CreateFromImage(img);
 					}
 				}

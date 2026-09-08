@@ -200,7 +200,9 @@ public partial class GameOver : Control
 		_btnClose.Flat = false;
 		_btnClose.Icon = GD.Load<Texture2D>("res://Assets/UI/cancel_button_2.png");
 		_btnClose.ExpandIcon = true;
-		UIStyle.ApplyButtonText(_btnClose, "Close", 18);
+
+		string closeText = MapEditorHUD.IsTestMode ? "Back to Editor" : "Close";
+		UIStyle.ApplyButtonText(_btnClose, closeText, 18);
 
 		_btnClose.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 		_btnClose.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
@@ -210,22 +212,18 @@ public partial class GameOver : Control
 		_btnClose.Pressed += () => 
 		{
 			UIManager.Instance.PlayClickSound();
-			if (MapEditorHUD.IsTestMode && MapEditorHUD.HasUnsavedChangesStatic())
+			if (MapEditorHUD.IsTestMode)
 			{
-				UIManager.Instance.ShowConfirmationDialog(
-					"You haven't saved yet",
-					onConfirm: () =>
-					{
-						MapEditorHUD.IsTestMode = false;
-						UIManager.Instance.TransitionTo(GameScreen.MainMenu);
-					},
-					confirmText: "Quit",
-					cancelText: "Stay"
-				);
+				MapEditorHUD.IsTestMode = false;
+				MapEditorHUD.ReturningFromTest = true;
+				if (LobbyManager.Instance != null)
+				{
+					LobbyManager.Instance.Disconnect();
+				}
+				UIManager.Instance.TransitionTo(GameScreen.MapEditorHUD);
 			}
 			else
 			{
-				MapEditorHUD.IsTestMode = false;
 				UIManager.Instance.TransitionTo(GameScreen.MainMenu);
 			}
 		};
@@ -634,7 +632,7 @@ public partial class GameOver : Control
 			string[] paths = {
 				ProjectSettings.GlobalizePath($"res://Maps/{rawName}/map.json"),
 				ProjectSettings.GlobalizePath($"user://maps/{rawName}/map.json"),
-				ProjectSettings.GlobalizePath($"user://temp_map_workspace/map.json")
+				ProjectSettings.GlobalizePath($"{MapEditorHUD.TempWorkspaceGodotPath}/map.json")
 			};
 
 			foreach (var path in paths)

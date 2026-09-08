@@ -137,4 +137,29 @@ public partial class GameHost
 
 		def.ManaCost = manaCost;
 	}
+
+	void IGameAPI.ShowSummaryTable(string title, bool visible)
+	{
+		Callable.From(() => InGameHUD.Instance?.ShowSummaryTable(title, visible)).CallDeferred();
+	}
+
+	void IGameAPI.SetSummaryTableRow(string playerName, string damage, string income, string score)
+	{
+		Callable.From(() => InGameHUD.Instance?.SetSummaryTableRow(playerName, damage, income, score)).CallDeferred();
+	}
+
+	void IGameAPI.ClearSummaryTable()
+	{
+		Callable.From(() => InGameHUD.Instance?.ClearSummaryTable()).CallDeferred();
+	}
+
+	string IGameAPI.GetPlayerLanguage(int playerIndex)
+	{
+		return LocalizationManager.GetCurrentLanguageCode();
+	}
+
+	string IGameAPI.Translate(string key, int playerIndex)
+	{
+		return LocalizationManager.TranslateKey(key);
+	}
 }

@@ -7,6 +7,7 @@ using NSec.Cryptography;
 using System.Threading.Tasks;
 using Realm.Godot;
 using Realm.Shared;
+using Realm.Shared.Metadata;
 
 
 public partial class LobbyRoom : Control
@@ -602,7 +603,8 @@ public partial class LobbyRoom : Control
 			}
 			
 			byte[] fileBytes = System.IO.File.ReadAllBytes(mapJsonPath);
-			string hash = MapAssetManager.ComputeBlake3(fileBytes);
+			string mapBlake3 = RealmMetadataHelper.ComputeBlake3(fileBytes, ".json");
+			string hash = $"{mapBlake3}.json";
 			
 			string seedServerUrl = LobbyManager.Instance.RegistryServerUrl;
 			var assetAuthorRes = await _sharedHttpClient.GetAsync(seedServerUrl + "/api/publish_map/asset_author/" + hash);

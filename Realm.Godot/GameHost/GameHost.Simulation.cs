@@ -12,6 +12,7 @@ using Realm.MapAPI;
 using System;
 using System.Collections.Generic;
 using static Realm.Ecs.Common.ResourceConstants;
+using Realm.Godot.Utils;
 
 public partial class GameHost
 {
@@ -38,6 +39,11 @@ public partial class GameHost
 	}
 
 	private void KillUnit(Unit3D unit)
+	{
+		KillUnit(unit, true, true);
+	}
+
+	private void KillUnit(Unit3D unit, bool executeDespawnShader, bool playDeathAnimation)
 	{
 		IUnit killer = null;
 		if (EcsWorld.IsAlive(unit.Entity))
@@ -113,11 +119,42 @@ public partial class GameHost
 			EcsWorld.Destroy(unit.Entity);
 		}
 
-		var tween = CreateTween();
-		tween.SetParallel(true);
-		tween.TweenProperty(unit, "position:y", -3.0f, 1.0f);
-		tween.TweenProperty(unit, "scale", Vector3.Zero, 1.0f);
-		tween.Chain().TweenCallback(Callable.From(unit.QueueFree));
+		if (playDeathAnimation && GodotObject.IsInstanceValid(unit))
+		{
+			unit.PlayAnimation("Death");
+		}
+
+		if (GodotObject.IsInstanceValid(unit))
+		{
+			unit.CollisionLayer = 0;
+			unit.CollisionMask = 0;
+		}
+
+		string deathShader = executeDespawnShader ? GetModelDeathShader(unitId) : "";
+		if (executeDespawnShader && string.IsNullOrEmpty(deathShader))
+		{
+			deathShader = GetModelDeathShader(unit);
+		}
+
+		if (!string.IsNullOrEmpty(deathShader))
+		{
+			SpawnDeathShaderManager.AnimateTransition(unit, deathShader, false, null, () =>
+			{
+				if (GodotObject.IsInstanceValid(unit)) unit.QueueFree();
+			});
+		}
+		else if (playDeathAnimation)
+		{
+			var tween = CreateTween();
+			tween.SetParallel(true);
+			tween.TweenProperty(unit, "position:y", -3.0f, 1.0f);
+			tween.TweenProperty(unit, "scale", Vector3.Zero, 1.0f);
+			tween.Chain().TweenCallback(Callable.From(unit.QueueFree));
+		}
+		else
+		{
+			if (GodotObject.IsInstanceValid(unit)) unit.QueueFree();
+		}
 
 		if (unitId == "castle")
 		{
@@ -152,8 +189,20 @@ public partial class GameHost
 				EcsWorld.Destroy(prop.Entity);
 			}
 			PropMultiMeshManager.Instance?.MarkDirty(propId);
-			prop.QueueFree();
 			UncarveObstacle(propPos, radius);
+
+			string deathShader = GetModelDeathShader(propId);
+			if (!string.IsNullOrEmpty(deathShader))
+			{
+				SpawnDeathShaderManager.AnimateTransition(prop, deathShader, false, null, () =>
+				{
+					if (GodotObject.IsInstanceValid(prop)) prop.QueueFree();
+				});
+			}
+			else
+			{
+				prop.QueueFree();
+			}
 		}
 	}
 
@@ -206,15 +255,18 @@ public partial class GameHost
 			if (EcsWorld.Has<DefinitionId>(buildTask.BuildingEntity))
 			{
 				string bType = EcsWorld.Get<DefinitionId>(buildTask.BuildingEntity).Value;
-				if (UnitRegistry.TryGetValue(bType, out var m) && !TryGetUnit3D(buildTask.BuildingEntity, out _))
+				if ((UnitRegistry.TryGetValue(bType, out var m) || BuildingRegistry.TryGetValue(bType, out m)) && !TryGetUnit3D(buildTask.BuildingEntity, out _))
 				{
-					string targetModel = !string.IsNullOrEmpty(m.ModelPath) ? m.ModelPath : bType;
-					string modelPath = GetFallbackModelPath(targetModel, true);
-					SpawnUnit3D(buildTask.BuildingEntity, bType, modelPath, new Godot.Vector3(buildingPos.X, buildingPos.Y, buildingPos.Z), true, false);
-
-					if (TryGetUnit3D(buildTask.BuildingEntity, out var bNode) && GodotObject.IsInstanceValid(bNode))
+					string targetModel = m.ModelPath;
+					if (!string.IsNullOrEmpty(targetModel))
 					{
-						bNode.Modulate = new Godot.Color(1f, 1f, 1f, 0.4f);
+						string modelPath = GetFallbackModelPath(targetModel, true);
+						SpawnUnit3D(buildTask.BuildingEntity, bType, modelPath, new Godot.Vector3(buildingPos.X, buildingPos.Y, buildingPos.Z), true, false);
+
+						if (TryGetUnit3D(buildTask.BuildingEntity, out var bNode) && GodotObject.IsInstanceValid(bNode))
+						{
+							bNode.Modulate = new Godot.Color(1f, 1f, 1f, 0.4f);
+						}
 					}
 				}
 			}
@@ -286,6 +338,7 @@ public partial class GameHost
 			if (TryGetUnit3D(buildingEntity, out var buildingNode) && GodotObject.IsInstanceValid(buildingNode))
 			{
 				buildingNode.Modulate = new Godot.Color(1f, 1f, 1f, 1f);
+				SpawnDeathShaderManager.ClearShaderOverride(buildingNode);
 			}
 
 			InGameHUD.Instance?.ShowFeedbackText("Construction complete!", new Godot.Color(0.3f, 0.9f, 0.4f));
@@ -459,11 +512,12 @@ public partial class GameHost
 
 	internal void AssignBuildTaskToWorker(Entity workerEntity, string buildType, System.Numerics.Vector3 targetPos)
 	{
-		if (!UnitRegistry.TryGetValue(buildType, out var meta)) return;
+		if (!UnitRegistry.TryGetValue(buildType, out var meta) && !BuildingRegistry.TryGetValue(buildType, out meta)) return;
+		string targetModel = meta.ModelPath;
+		if (string.IsNullOrEmpty(targetModel)) return;
 		float buildTime = meta.ProductionTime > 0f ? meta.ProductionTime : 30f;
 
 		var playerOwner = _playerEntity.AsPlayerEntity(EcsWorld);
-		string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : buildType;
 		string modelPath = GetFallbackModelPath(targetModel, true);
 
 		var bldEntity = CreateEcsUnit(buildType, meta.Name, meta.MaxHp, meta.Damage, meta.Range, meta.Armor, 0f,

@@ -312,7 +312,8 @@
                         entityId: unit.UnitId || unit.Id || selectedUnitId,
                         field: field,
                         domain: domain,
-                        currentPath: currentPath
+                        currentPath: currentPath,
+                        focusGodot: true
                     })
                 }).catch(() => {});
             }
@@ -329,7 +330,8 @@
                 body: JSON.stringify({
                     action: 'openAnimationStudio',
                     unitId: unit.UnitId || unit.Id || selectedUnitId,
-                    modelPath: unit.ModelPath || ''
+                    modelPath: unit.ModelPath || '',
+                    focusGodot: true
                 })
             }).catch(() => {});
         }
@@ -461,22 +463,20 @@
                 for (const [key, val] of Object.entries(units)) {
                     if (!knownTopKeys.includes(key) && val && typeof val === 'object' && !Array.isArray(val) && (val.UnitId || val.MaxHp !== undefined || val.CostGold !== undefined || val.AttackType !== undefined || val.PathingCapabilities || val.MovementType)) {
                         if (!val.UnitId) val.UnitId = key;
-                        const armorType = (val.ArmorType || '').toLowerCase();
-                        if (armorType === 'building') units.CustomBuildings.push(val);
-                        else units.CustomUnits.push(val);
+                        units.CustomUnits.push(val);
                         delete units[key];
                         migrated = true;
                     }
                 }
 
-                for (const u of getAllEntities()) {
+                const applyEntityMigration = (u, defaultPathing) => {
                     if (u.PathingType === undefined || u.PathingType === null) {
                         if (u.MovementType === 'air' || u.MovementType === 'flying') {
                             u.PathingType = 4;
                         } else if (u.MovementType === 'amphibious') {
                             u.PathingType = 9;
                         } else {
-                            u.PathingType = (u.ArmorType === 'building') ? 32 : 8;
+                            u.PathingType = defaultPathing;
                         }
                     }
                     if (u.NormalMode === undefined || u.NormalMode === null) {
@@ -486,7 +486,9 @@
                     delete u.MovementType;
                     delete u.PathingCapabilities;
                     delete u.DefaultAssetType;
-                }
+                };
+                for (const u of (units.CustomBuildings || [])) applyEntityMigration(u, 32);
+                for (const u of [...(units.CustomUnits || []), ...(units.CustomResources || []), ...(units.CustomProps || [])]) applyEntityMigration(u, 8);
 
                 if (migrated) {
                     saveChanges();
@@ -1335,7 +1337,8 @@
                         action: 'openVfxDialog',
                         weaponId: item.WeaponId || '',
                         weaponIndex: idx,
-                        weaponData: item
+                        weaponData: item,
+                        focusGodot: true
                     })
                 }).catch(() => {});
             });
@@ -1576,7 +1579,8 @@
                         action: 'openAbilityVfxDialog',
                         abilityId: item.AbilityId || '',
                         abilityIndex: idx,
-                        abilityData: item
+                        abilityData: item,
+                        focusGodot: true
                     })
                 }).catch(() => {});
             });
@@ -3804,14 +3808,7 @@
             const wLine = `    ${JSON.stringify(sortedW)}${wIdx === sortedWeapons.length - 1 ? '' : ','}`;
             lines.push(wLine);
         });
-        lines.push('  ],');
-
-        // 7. Assets
-        if (data.Assets) {
-            lines.push(`  "Assets": ${JSON.stringify(sortObjectKeys(data.Assets))}`);
-        } else {
-            lines.push('  "Assets": {}');
-        }
+        lines.push('  ]');
 
         lines.push('}');
         return lines.join('\n');

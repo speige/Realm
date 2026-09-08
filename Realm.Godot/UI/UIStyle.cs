@@ -229,7 +229,6 @@ public static class UIStyle
 		}
 		return CreateStonePanel(true);
 	}
-
 	public static StyleBox CreateBackdropPanel()
 	{
 		var style = new StyleBoxFlat();

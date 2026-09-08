@@ -6,7 +6,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-
+using System.Text.Json.Nodes;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -268,6 +268,49 @@ public class VSCodeManager
 
 	[DllImport("user32.dll")]
 	public static extern bool BringWindowToTop(IntPtr hWnd);
+
+	[DllImport("user32.dll")]
+	public static extern void SwitchToThisWindow(IntPtr hWnd, bool fUnknown);
+
+	public static void RestoreAndFocusGodotWindow()
+	{
+		Callable.From(() =>
+		{
+			try
+			{
+				var currentMode = DisplayServer.WindowGetMode();
+				if (currentMode == DisplayServer.WindowMode.Minimized)
+				{
+					var targetMode = GameSettings.WindowModeIdx switch
+					{
+						WindowMode.Fullscreen => DisplayServer.WindowMode.ExclusiveFullscreen,
+						WindowMode.Borderless => DisplayServer.WindowMode.Windowed,
+						_ => DisplayServer.WindowMode.Windowed
+					};
+					DisplayServer.WindowSetMode(targetMode);
+				}
+
+				DisplayServer.WindowMoveToForeground();
+
+				if (OperatingSystem.IsWindows())
+				{
+					long rawHandle = DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle);
+					if (rawHandle != 0)
+					{
+						IntPtr hWnd = (IntPtr)rawHandle;
+						ShowWindow(hWnd, 9); // SW_RESTORE
+						SwitchToThisWindow(hWnd, true);
+						SetForegroundWindow(hWnd);
+						BringWindowToTop(hWnd);
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"[VSCodeManager] RestoreAndFocusGodotWindow error: {ex.Message}");
+			}
+		}).CallDeferred();
+	}
 
 	[DllImport("user32.dll")]
 	public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
@@ -642,6 +685,11 @@ public class VSCodeManager
 			string body = await reader.ReadToEndAsync();
 			var node = System.Text.Json.Nodes.JsonNode.Parse(body);
 			string action = node?["action"]?.ToString() ?? node?["type"]?.ToString();
+			if (action == "openVfxDialog" || action == "openModelPicker" || action == "openAbilityVfxDialog" || action == "openAnimationStudio" || action == "openAnimationPreview" || action == "openEditAnimations" || (node?["focusGodot"]?.GetValue<bool>() ?? false))
+			{
+				RestoreAndFocusGodotWindow();
+			}
+
 			var responseObj = new System.Text.Json.Nodes.JsonObject();
 
 			if (action == "openVfxDialog")
@@ -754,12 +802,12 @@ public class VSCodeManager
 
 				if (string.IsNullOrEmpty(filePath))
 				{
-					string wsPath = MapEditorHUD.Instance?.TempWorkspacePath ?? Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+					string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
 					filePath = System.IO.Path.Combine(wsPath, action == "saveTerrain" ? "terrain.json" : "metadata.json");
 				}
 				else if (!System.IO.Path.IsPathRooted(filePath))
 				{
-					string wsPath = MapEditorHUD.Instance?.TempWorkspacePath ?? Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+					string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
 					filePath = System.IO.Path.Combine(wsPath, filePath);
 				}
 
@@ -769,20 +817,57 @@ public class VSCodeManager
 
 				try
 				{
+					string fileName = System.IO.Path.GetFileName(filePath).ToLowerInvariant();
+					if (fileName == "metadata.json")
+					{
+						try
+						{
+							var rootObj = JsonNode.Parse(content)?.AsObject();
+							if (rootObj != null && (rootObj.ContainsKey("Assets") || rootObj.ContainsKey("textures")))
+							{
+								string mapDir = System.IO.Path.GetDirectoryName(filePath) ?? MapWorkspaceService.GetActiveWorkspacePath();
+								var unionedAssets = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(mapDir) ?? new JsonObject();
+								if (rootObj.TryGetPropertyValue("Assets", out var aNode) && aNode is JsonObject aObj)
+								{
+									foreach (var kvp in aObj)
+									{
+										if (kvp.Value != null)
+										{
+											unionedAssets[kvp.Key] = kvp.Value.DeepClone();
+										}
+									}
+								}
+								if (rootObj.TryGetPropertyValue("textures", out var tNode) && tNode is JsonObject tObj)
+								{
+									var existingTextures = unionedAssets["textures"] as JsonObject ?? new JsonObject();
+									foreach (var kvp in tObj)
+									{
+										if (kvp.Value != null) existingTextures[kvp.Key] = kvp.Value.DeepClone();
+									}
+									unionedAssets["textures"] = existingTextures;
+								}
+								Realm.Godot.Utils.MapAssetHelper.SaveAssetsToManifest(mapDir, unionedAssets, removeFromMetadata: true);
+								SaveLoadService.CleanMetadataJsonSchema(rootObj);
+								content = rootObj.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+							}
+						}
+						catch { }
+					}
+
 					formattedContent = MapJsonFormatter.FormatJson(content);
 					EditorService.LastInternalSaveTimeUtc = DateTime.UtcNow;
 					MapJsonFormatter.SaveFormattedJson(filePath, formattedContent);
 					success = true;
 
-					string fileName = System.IO.Path.GetFileName(filePath).ToLowerInvariant();
 					Callable.From(() =>
 					{
-						if (fileName == "metadata.json")
+						if (fileName == "metadata.json" || fileName == "manifest.json")
 						{
 							if (MapEditorHUD.Instance != null)
 							{
 								MapEditorHUD.Instance.ReadMetadataAndRefreshTextures();
-								MapEditorHUD.Instance.ShowFeedback(TranslationServer.Translate("metadata.json updated externally — reloaded."));
+								string display = fileName == "manifest.json" ? "manifest.json" : "metadata.json";
+								MapEditorHUD.Instance.ShowFeedback(string.Format(TranslationServer.Translate("{0} updated externally — reloaded."), display));
 							}
 							else if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
 							{

@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Godot;
 using Realm.Shared;
+using Realm.Shared.ModelOptimization;
 using Realm.Ecs.Services;
 using Realm.Godot.Utils;
 
@@ -164,6 +165,7 @@ public class ModelOptimizerService
 			bool alreadyDecimated = !options.ForceReDecimate && HasDecimationCompletedFlag(glbBytes);
 			result.DecimationSkipped = alreadyDecimated;
 
+			glbBytes = GlbManifestUtils.SanitizeMaterials(glbBytes);
 			List<string> originalImageNames = GetOriginalImageNames(glbBytes);
 
 			var gltfDocument = new GltfDocument();
@@ -385,7 +387,7 @@ public class ModelOptimizerService
 		return res;
 	}
 
-	public static bool HasDecimationCompletedFlag(string filePath)
+	public static bool HasOptimizationCompletedFlag(string filePath)
 	{
 		try
 		{
@@ -445,17 +447,23 @@ public class ModelOptimizerService
 
 			if (root.TryGetProperty("asset", out var assetElement) &&
 				assetElement.TryGetProperty("extras", out var assetExtras) &&
-				assetExtras.TryGetProperty("realm_decimate_completed", out var flag1) &&
-				flag1.GetBoolean())
+				(IsTrueProperty(assetExtras, "realm_optimize_completed") || IsTrueProperty(assetExtras, "realm_decimate_completed")))
 			{
 				return true;
 			}
 
 			if (root.TryGetProperty("extras", out var rootExtras) &&
-				rootExtras.TryGetProperty("realm_decimate_completed", out var flag2) &&
-				flag2.GetBoolean())
+				(IsTrueProperty(rootExtras, "realm_optimize_completed") || IsTrueProperty(rootExtras, "realm_decimate_completed")))
 			{
 				return true;
+			}
+
+			if (root.TryGetProperty("extensionsUsed", out var extUsed) && extUsed.ValueKind == JsonValueKind.Array)
+			{
+				foreach (var ext in extUsed.EnumerateArray())
+				{
+					if (ext.ValueKind == JsonValueKind.String && ext.GetString() == "MSFT_lod") return true;
+				}
 			}
 
 			return false;
@@ -466,7 +474,20 @@ public class ModelOptimizerService
 		}
 	}
 
-	public static bool HasDecimationCompletedFlag(byte[] glbBytes)
+	private static bool IsTrueProperty(JsonElement element, string propName)
+	{
+		if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty(propName, out var prop))
+		{
+			if (prop.ValueKind == JsonValueKind.True) return true;
+			if (prop.ValueKind == JsonValueKind.String && bool.TryParse(prop.GetString(), out var b)) return b;
+			if (prop.ValueKind == JsonValueKind.Number && prop.TryGetInt32(out var n)) return n != 0;
+		}
+		return false;
+	}
+
+	public static bool HasDecimationCompletedFlag(string filePath) => HasOptimizationCompletedFlag(filePath);
+
+	public static bool HasOptimizationCompletedFlag(byte[] glbBytes)
 	{
 		if (GlbManifestUtils.HasOptimizationFlag(glbBytes))
 		{
@@ -500,17 +521,23 @@ public class ModelOptimizerService
 
 					if (root.TryGetProperty("asset", out var assetElement) &&
 						assetElement.TryGetProperty("extras", out var assetExtras) &&
-						assetExtras.TryGetProperty("realm_decimate_completed", out var flag1) &&
-						flag1.GetBoolean())
+						(IsTrueProperty(assetExtras, "realm_optimize_completed") || IsTrueProperty(assetExtras, "realm_decimate_completed")))
 					{
 						return true;
 					}
 
 					if (root.TryGetProperty("extras", out var rootExtras) &&
-						rootExtras.TryGetProperty("realm_decimate_completed", out var flag2) &&
-						flag2.GetBoolean())
+						(IsTrueProperty(rootExtras, "realm_optimize_completed") || IsTrueProperty(rootExtras, "realm_decimate_completed")))
 					{
 						return true;
+					}
+
+					if (root.TryGetProperty("extensionsUsed", out var extUsed) && extUsed.ValueKind == JsonValueKind.Array)
+					{
+						foreach (var ext in extUsed.EnumerateArray())
+						{
+							if (ext.ValueKind == JsonValueKind.String && ext.GetString() == "MSFT_lod") return true;
+						}
 					}
 
 					return false;
@@ -525,6 +552,8 @@ public class ModelOptimizerService
 
 		return false;
 	}
+
+	public static bool HasDecimationCompletedFlag(byte[] glbBytes) => HasOptimizationCompletedFlag(glbBytes);
 
 	private static List<string> GetOriginalImageNames(byte[] glbBytes)
 	{
@@ -635,7 +664,7 @@ public class ModelOptimizerService
 				assetObj["extras"] = new JsonObject();
 			}
 
-			assetObj["extras"].AsObject()["realm_decimate_completed"] = true;
+			assetObj["extras"].AsObject()["realm_optimize_completed"] = true;
 
 			if (!rootObj.ContainsKey("extensionsUsed") || rootObj["extensionsUsed"] == null)
 			{
@@ -1903,7 +1932,7 @@ public class ModelOptimizerService
 			if (glbBytes != null && glbBytes.Length > 0)
 			{
 				glbBytes = SanitizeGlbMaterialsBeforeGltfpack(glbBytes);
-				glbBytes = ApplyKhrTextureBasisu(glbBytes, maxTextureResolution);
+				glbBytes = ApplyTextureWebp(glbBytes, maxTextureResolution);
 				if (embedCompletedFlag)
 				{
 					glbBytes = EmbedMsftLodAndFlags(glbBytes, originalImageNames);
@@ -1928,7 +1957,7 @@ public class ModelOptimizerService
 		return NativeToolRunner.FindGltfPackPath() ?? "gltfpack.exe";
 	}
 
-	public static byte[] ApplyKhrTextureBasisu(byte[] glbBytes, int maxTextureResolution = 1024)
+	public static byte[] ApplyTextureWebp(byte[] glbBytes, int maxTextureResolution = 1024)
 	{
 		if (glbBytes == null || glbBytes.Length == 0)
 		{
@@ -1941,6 +1970,13 @@ public class ModelOptimizerService
 			return glbBytes;
 		}
 
+		byte[] effectiveInput = glbBytes;
+		var (decompOk, decompBytes, _) = Realm.Shared.NativeToolRunner.DecompressKhrTextureBasisuIfNeeded(glbBytes);
+		if (decompOk && decompBytes != null && decompBytes.Length > 0)
+		{
+			effectiveInput = decompBytes;
+		}
+
 		string tempDir = Path.Combine(Path.GetTempPath(), $"realm_gltf_{Guid.NewGuid():N}");
 		Directory.CreateDirectory(tempDir);
 		string tempInput = Path.Combine(tempDir, "input.glb");
@@ -1948,29 +1984,20 @@ public class ModelOptimizerService
 
 		try
 		{
-			File.WriteAllBytes(tempInput, glbBytes);
+			File.WriteAllBytes(tempInput, effectiveInput);
 
-			var psi = new System.Diagnostics.ProcessStartInfo
-			{
-				FileName = gltfpackPath,
-				Arguments = $"-i \"{tempInput}\" -o \"{tempOutput}\" -tc -tl {maxTextureResolution} -kn -km -ke -noq",
-				CreateNoWindow = true,
-				UseShellExecute = false,
-				RedirectStandardOutput = true,
-				RedirectStandardError = true
-			};
+			var (exitCode, stdout, stderr) = Realm.Shared.NativeToolRunner.RunTool(
+				gltfpackPath,
+				$"-i \"{tempInput}\" -o \"{tempOutput}\" -tw -tl {maxTextureResolution} -kn -km -ke -noq",
+				timeoutMs: 30000,
+				workingDir: tempDir);
 
-			using var proc = System.Diagnostics.Process.Start(psi);
-			if (proc != null)
+			if (exitCode == 0 && File.Exists(tempOutput))
 			{
-				proc.WaitForExit(30000);
-				if (proc.ExitCode == 0 && File.Exists(tempOutput))
+				byte[] resultBytes = File.ReadAllBytes(tempOutput);
+				if (resultBytes != null && resultBytes.Length > 0)
 				{
-					byte[] resultBytes = File.ReadAllBytes(tempOutput);
-					if (resultBytes != null && resultBytes.Length > 0)
-					{
-						return resultBytes;
-					}
+					return GlbManifestUtils.EncodeGlbTexturesWebp(resultBytes, maxTextureResolution);
 				}
 			}
 		}

@@ -34,8 +34,9 @@ public interface IGameAPI
     /// <param name="position">The spawn coordinates in 3D world space.</param>
     /// <param name="isEnemy">True if the unit should belong to the enemy, false if friendly.</param>
     /// <param name="bypassPopulation">True to spawn the unit without consuming the player's population limit, false to consume it normally.</param>
+    /// <param name="executeSpawnShader">True to play the spawn shader effect if configured, false to skip.</param>
     /// <returns>A reference to the spawned unit.</returns>
-    IUnit SpawnUnit(string unitTypeId, Vector3 position, bool isEnemy, bool bypassPopulation = false);
+    IUnit SpawnUnit(string unitTypeId, Vector3 position, bool isEnemy, bool bypassPopulation = false, bool executeSpawnShader = true);
 
 
     /// <summary>
@@ -306,6 +307,42 @@ public interface IGameAPI
     void ClearLeaderboard();
 
     /// <summary>
+    /// Displays or hides the multi-column stats summary table on all players' screens.
+    /// </summary>
+    /// <param name="title">Header title of the summary table.</param>
+    /// <param name="visible">True to display the table, false to hide it.</param>
+    void ShowSummaryTable(string title, bool visible);
+
+    /// <summary>
+    /// Sets or updates a row in the stats summary table.
+    /// </summary>
+    /// <param name="playerName">Name or label of the player for this row.</param>
+    /// <param name="damage">Total damage metric string.</param>
+    /// <param name="income">Total income metric string.</param>
+    /// <param name="score">Overall score metric string.</param>
+    void SetSummaryTableRow(string playerName, string damage, string income, string score);
+
+    /// <summary>
+    /// Clears all rows from the active stats summary table.
+    /// </summary>
+    void ClearSummaryTable();
+
+    /// <summary>
+    /// Retrieves the preferred language code of the specified player (e.g. "en", "es").
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player index.</param>
+    /// <returns>ISO language code string.</returns>
+    string GetPlayerLanguage(int playerIndex);
+
+    /// <summary>
+    /// Translates a localization key using the player's preferred language with English fallback.
+    /// </summary>
+    /// <param name="key">Localization translation key.</param>
+    /// <param name="playerIndex">Zero-based player index, or -1 for current local player.</param>
+    /// <returns>Translated text string.</returns>
+    string Translate(string key, int playerIndex);
+
+    /// <summary>
     /// Starts a countdown timer UI on the screen.
     /// </summary>
     /// <param name="duration">The duration in seconds.</param>
@@ -347,13 +384,17 @@ public interface IGameAPI
     /// Kills the specified unit naturally, triggering death animations and bounties.
     /// </summary>
     /// <param name="unit">The unit to kill.</param>
-    void KillUnit(IUnit unit);
+    /// <param name="executeDespawnShader">True to execute the despawn or death shader effect if configured, false to skip.</param>
+    /// <param name="playDeathAnimation">True to play the death animation if available, false to skip.</param>
+    void KillUnit(IUnit unit, bool executeDespawnShader = true, bool playDeathAnimation = true);
 
     /// <summary>
     /// Instantly removes the specified unit from the game.
     /// </summary>
     /// <param name="unit">The unit to destroy.</param>
-    void DestroyUnit(IUnit unit);
+    /// <param name="executeDespawnShader">True to execute the despawn or death shader effect if configured, false to skip.</param>
+    /// <param name="playDeathAnimation">True to play the death animation if available, false to skip.</param>
+    void DestroyUnit(IUnit unit, bool executeDespawnShader = true, bool playDeathAnimation = true);
 
 
 
@@ -402,8 +443,9 @@ public interface IGameAPI
     /// <param name="unitTypeId">The type identifier of the unit to spawn.</param>
     /// <param name="position">The spawn coordinates in 3D world space.</param>
     /// <param name="playerIndex">Zero-based player slot index that will own the unit.</param>
+    /// <param name="executeSpawnShader">True to play the spawn shader effect if configured, false to skip.</param>
     /// <returns>A reference to the spawned unit.</returns>
-    IUnit SpawnUnitForPlayer(string unitTypeId, Vector3 position, int playerIndex);
+    IUnit SpawnUnitForPlayer(string unitTypeId, Vector3 position, int playerIndex, bool executeSpawnShader = true);
 
     /// <summary>
     /// Retrieves all alive units owned by the specified player slot.
@@ -1061,9 +1103,19 @@ public interface IGameAPI
     void SetAbilityManaCost(IUnit unit, string abilityId, float manaCost) { }
 
     /// <summary>
-    /// Plays a named visual animation on the unit's 3D model.
+    /// Plays a named visual animation on the unit's 3D model and equips any configured hand attachments for that animation.
     /// </summary>
+    /// <param name="unit">The unit to animate.</param>
+    /// <param name="animationName">The animation name (e.g., "Idle", "Labor", "Attack").</param>
     void SetUnitAnimation(IUnit unit, string animationName) { }
+
+    /// <summary>
+    /// Attaches or removes a 3D model object on the specified hand bone of the unit's rigged skeleton.
+    /// </summary>
+    /// <param name="unit">The target unit.</param>
+    /// <param name="hand">The target hand ("RightHand" or "LeftHand").</param>
+    /// <param name="attachmentId">The attachment identifier or model filename, or null/empty to clear the hand attachment.</param>
+    void SetUnitHandAttachment(IUnit unit, string hand, string? attachmentId) { }
 
     /// <summary>
     /// Orders the unit to move to a world position without attacking along the way.

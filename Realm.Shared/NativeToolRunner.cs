@@ -101,18 +101,17 @@ public static class NativeToolRunner
 		return null;
 	}
 
-	private static string? _cachedKtxPath;
+	private static string? _cachedFfmpegPath;
 
-	public static string? FindKtxPath()
+	public static string? FindFfmpegPath()
 	{
-		if (!string.IsNullOrEmpty(_cachedKtxPath) && File.Exists(_cachedKtxPath))
+		if (!string.IsNullOrEmpty(_cachedFfmpegPath) && File.Exists(_cachedFfmpegPath))
 		{
-			return _cachedKtxPath;
+			return _cachedFfmpegPath;
 		}
 
 		bool isWindows = Environment.OSVersion.Platform == PlatformID.Win32NT;
-		string exeName = isWindows ? "ktx.exe" : "ktx";
-		string dllName = "ktx.dll";
+		string exeName = isWindows ? "ffmpeg.exe" : "ffmpeg";
 
 		string baseDir = AppContext.BaseDirectory;
 		string cwd = Directory.GetCurrentDirectory();
@@ -124,18 +123,15 @@ public static class NativeToolRunner
 			Path.Combine(cwd, exeName),
 			Path.Combine(cwd, "ThirdPartyBinaries", exeName),
 			Path.Combine(cwd, "..", "ThirdPartyBinaries", exeName),
-			Path.Combine(cwd, "..", "..", "ThirdPartyBinaries", exeName),
-			Path.Combine(cwd, "ktx_tools", "v5.0.0-rc1", "bin", exeName),
-			Path.Combine(baseDir, "..", "ktx_tools", "v5.0.0-rc1", "bin", exeName),
-			Path.Combine(cwd, "..", "ktx_tools", "v5.0.0-rc1", "bin", exeName)
+			Path.Combine(cwd, "..", "..", "ThirdPartyBinaries", exeName)
 		};
 
 		foreach (var path in candidatePaths)
 		{
 			if (File.Exists(path))
 			{
-				_cachedKtxPath = Path.GetFullPath(path);
-				return _cachedKtxPath;
+				_cachedFfmpegPath = Path.GetFullPath(path);
+				return _cachedFfmpegPath;
 			}
 		}
 
@@ -146,27 +142,9 @@ public static class NativeToolRunner
 			var candidate = Path.Combine(dir.Trim(), exeName);
 			if (File.Exists(candidate))
 			{
-				_cachedKtxPath = Path.GetFullPath(candidate);
-				return _cachedKtxPath;
+				_cachedFfmpegPath = Path.GetFullPath(candidate);
+				return _cachedFfmpegPath;
 			}
-		}
-
-		try
-		{
-			string tempDir = Path.Combine(Path.GetTempPath(), "realm_tools_bin");
-			Directory.CreateDirectory(tempDir);
-			string tempExe = Path.Combine(tempDir, exeName);
-			string tempDll = Path.Combine(tempDir, dllName);
-
-			ExtractEmbeddedResource("ktx.dll", tempDll);
-			if (ExtractEmbeddedResource("ktx.exe", tempExe))
-			{
-				_cachedKtxPath = tempExe;
-				return _cachedKtxPath;
-			}
-		}
-		catch
-		{
 		}
 
 		return null;
@@ -208,14 +186,16 @@ public static class NativeToolRunner
 		return false;
 	}
 
-	public static (int ExitCode, string Stdout, string Stderr) RunTool(string toolFileName, string arguments, int timeoutMs = 60000)
+	public static (int ExitCode, string Stdout, string Stderr) RunTool(string toolFileName, string arguments, int timeoutMs = 60000, string? workingDir = null)
 	{
-		string workingDir = Path.GetDirectoryName(toolFileName) ?? Directory.GetCurrentDirectory();
+		string effectiveWorkingDir = !string.IsNullOrEmpty(workingDir) && Directory.Exists(workingDir)
+			? workingDir
+			: Directory.GetCurrentDirectory();
 		var psi = new ProcessStartInfo
 		{
 			FileName = toolFileName,
 			Arguments = arguments,
-			WorkingDirectory = workingDir,
+			WorkingDirectory = effectiveWorkingDir,
 			CreateNoWindow = true,
 			UseShellExecute = false,
 			RedirectStandardOutput = true,
@@ -235,6 +215,76 @@ public static class NativeToolRunner
 		return (proc.ExitCode, stdout, stderr);
 	}
 
+	public static (bool Success, byte[] OutputBytes, string ErrorMessage) DecompressKhrTextureBasisuIfNeeded(byte[] glbBytes)
+	{
+		if (glbBytes == null || glbBytes.Length == 0) return (true, glbBytes ?? Array.Empty<byte>(), string.Empty);
+
+		var (json, _, _) = GlbManifestUtils.ParseGlb(glbBytes);
+		if (json is not System.Text.Json.Nodes.JsonObject root) return (true, glbBytes, string.Empty);
+
+		bool hasBasisu = false;
+		if (root.TryGetPropertyValue("extensionsUsed", out var extUsed) && extUsed is System.Text.Json.Nodes.JsonArray usedArray)
+		{
+			foreach (var node in usedArray)
+			{
+				if (node?.GetValue<string>() == "KHR_texture_basisu")
+				{
+					hasBasisu = true;
+					break;
+				}
+			}
+		}
+
+		if (!hasBasisu && root.TryGetPropertyValue("extensionsRequired", out var extReq) && extReq is System.Text.Json.Nodes.JsonArray reqArray)
+		{
+			foreach (var node in reqArray)
+			{
+				if (node?.GetValue<string>() == "KHR_texture_basisu")
+				{
+					hasBasisu = true;
+					break;
+				}
+			}
+		}
+
+		if (!hasBasisu)
+		{
+			return (true, glbBytes, string.Empty);
+		}
+
+		string tempDir = Path.Combine(Path.GetTempPath(), $"realm_decomp_{Guid.NewGuid():N}");
+		Directory.CreateDirectory(tempDir);
+		string tempIn = Path.Combine(tempDir, "input.glb");
+		string tempOut = Path.Combine(tempDir, "output.glb");
+
+		try
+		{
+			File.WriteAllBytes(tempIn, glbBytes);
+			bool isWindows = Environment.OSVersion.Platform == PlatformID.Win32NT;
+			string exeName = isWindows ? "cmd.exe" : "npx";
+			string args = isWindows
+				? $"/c npx --yes @gltf-transform/cli ktxdecompress \"{tempIn}\" \"{tempOut}\""
+				: $"--yes @gltf-transform/cli ktxdecompress \"{tempIn}\" \"{tempOut}\"";
+
+			var runResult = RunTool(exeName, args, timeoutMs: 60000, workingDir: tempDir);
+			if (runResult.ExitCode == 0 && File.Exists(tempOut))
+			{
+				byte[] decompressed = File.ReadAllBytes(tempOut);
+				return (true, decompressed, string.Empty);
+			}
+
+			return (false, glbBytes, $"ktxdecompress failed (exit code {runResult.ExitCode}): {runResult.Stderr}\n{runResult.Stdout}");
+		}
+		catch (Exception ex)
+		{
+			return (false, glbBytes, $"Exception during ktxdecompress: {ex.Message}");
+		}
+		finally
+		{
+			try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true); } catch { }
+		}
+	}
+
 	public static (bool Success, byte[]? OutputBytes, string ErrorMessage) RunGltfPack(
 		byte[] inputBytes,
 		float simplificationRatio = 0.5f,
@@ -247,6 +297,13 @@ public static class NativeToolRunner
 			return (false, null, "gltfpack binary not found on system or candidate paths.");
 		}
 
+		byte[] effectiveInput = inputBytes;
+		var (decompOk, decompBytes, _) = DecompressKhrTextureBasisuIfNeeded(inputBytes);
+		if (decompOk && decompBytes != null && decompBytes.Length > 0)
+		{
+			effectiveInput = decompBytes;
+		}
+
 		string tempDir = Path.Combine(Path.GetTempPath(), $"realm_pipeline_{Guid.NewGuid():N}");
 		Directory.CreateDirectory(tempDir);
 		string tempInput = Path.Combine(tempDir, "input.glb");
@@ -254,10 +311,10 @@ public static class NativeToolRunner
 
 		try
 		{
-			File.WriteAllBytes(tempInput, inputBytes);
+			File.WriteAllBytes(tempInput, effectiveInput);
 
 			string textureArgs = compressTextures
-				? $"-tc -tl {Math.Max(128, maxTextureResolution)}"
+				? $"-tw -tl {Math.Max(128, maxTextureResolution)}"
 				: "";
 
 			string ratioArg = simplificationRatio is > 0f and < 1.0f

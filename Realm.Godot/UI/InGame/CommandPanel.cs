@@ -1,9 +1,12 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using Arch.Core;
+using Realm.Godot.UI;
+using Realm.Godot.Utils;
 
-public class CommandPanel
+public partial class CommandPanel
 {
 	private GridContainer _commandGrid;
 	private List<Button> _dynamicBuildButtons = new();
@@ -46,6 +49,9 @@ public class CommandPanel
 		return s_whiteTexture;
 	}
 
+	[GeneratedRegex(@"^\[.*?\] ")]
+	private static partial Regex HotkeyPrefixRegex();
+
 	public class CommandCardItem
 	{
 		public string Id { get; set; }
@@ -58,6 +64,14 @@ public class CommandPanel
 		public string AbilityId { get; set; }
 		public Entity CasterEntity { get; set; } = Entity.Null;
 		public float ManaCost { get; set; } = 0f;
+	}
+
+	public partial class CommandCardButton : Button
+	{
+		public override Control _MakeCustomTooltip(string forText)
+		{
+			return RichTooltip.Create(forText);
+		}
 	}
 
 	private int _pageIndex = 0;
@@ -138,9 +152,13 @@ public class CommandPanel
 								btn.TooltipText = transTooltip;
 							}
 
-							if (!string.IsNullOrEmpty(def.IconPath) && btn.Icon?.ResourcePath != def.IconPath)
+							if (!string.IsNullOrEmpty(def.IconPath))
 							{
-								btn.Icon = GD.Load<Texture2D>(def.IconPath);
+								var loadedIcon = LoadCommandIcon(def.IconPath);
+								if (btn.Icon != loadedIcon)
+								{
+									btn.Icon = loadedIcon;
+								}
 							}
 						}
 						UpdateAbilityButtonVisuals(btn, item);
@@ -332,7 +350,7 @@ public class CommandPanel
 			if (localIdx >= 0 && localIdx < 12)
 			{
 				_activeItems[i].Hotkey = gridHotkeys[localIdx];
-				_activeItems[i].Tooltip = System.Text.RegularExpressions.Regex.Replace(_activeItems[i].Tooltip, @"^\[.*?\] ", "[" + gridHotkeys[localIdx].ToString() + "] ");
+				_activeItems[i].Tooltip = HotkeyPrefixRegex().Replace(_activeItems[i].Tooltip, "[" + gridHotkeys[localIdx].ToString() + "] ");
 			}
 			else
 			{
@@ -485,13 +503,25 @@ public class CommandPanel
 		return btn;
 	}
 
+	private Texture2D LoadCommandIcon(string iconPath)
+	{
+		if (string.IsNullOrEmpty(iconPath)) return null;
+		var tex = RtexIconLoader.Load(iconPath);
+		if (tex == null)
+		{
+			GD.PushWarning($"[CommandPanel] Failed to load ability icon at '{iconPath}', using fallback.");
+			tex = RtexIconLoader.Load("res://Assets/UI/alliance_flag.png");
+		}
+		return tex;
+	}
+
 	private Button CreateButtonForItem(CommandCardItem item)
 	{
-		var btn = new Button();
+		var btn = new CommandCardButton();
 		btn.Flat = false;
 		btn.Text = item.GetButtonText?.Invoke() ?? "";
 		btn.ExpandIcon = true;
-		btn.Icon = !string.IsNullOrEmpty(item.IconPath) ? GD.Load<Texture2D>(item.IconPath) : null;
+		btn.Icon = !string.IsNullOrEmpty(item.IconPath) ? LoadCommandIcon(item.IconPath) : null;
 		
 		string transTooltip = TranslationServer.Translate(item.Tooltip);
 		btn.TooltipText = string.IsNullOrEmpty(transTooltip) ? item.Tooltip : transTooltip;
@@ -636,72 +666,187 @@ public class CommandPanel
 			}
 			else
 			{
-				items.Add(new CommandCardItem
-				{
-					Id = "move",
-					IconPath = "res://Assets/UI/move_speed.png",
-					Tooltip = "[M] Move / Right-Click Ground",
-					Hotkey = Key.M,
-					Callback = () => GameHost.Instance?.EnterCommandTargeting("move")
-				});
-				items.Add(new CommandCardItem
-				{
-					Id = "stop",
-					IconPath = "res://Assets/UI/cancel_button_2.png",
-					Tooltip = "[S] Stop Selected Units",
-					Hotkey = Key.S,
-					Callback = () => {
-						InGameHUD.Instance?.ShowFeedbackText(TranslationServer.Translate("Command: Stop Current Action"), new Color(0.9f, 0.2f, 0.2f));
-						GameHost.Instance?.StopSelectedUnits();
-					}
-				});
-				items.Add(new CommandCardItem
-				{
-					Id = "hold",
-					IconPath = "res://Assets/UI/magic_upgrade_arrow.png",
-					Tooltip = "[H] Hold Position — Unit stays put and attacks in place",
-					Hotkey = Key.H,
-					Callback = () => {
-						InGameHUD.Instance?.ShowFeedbackText(TranslationServer.Translate("Command: Hold Position"), new Color(0.9f, 0.8f, 0.1f));
-						GameHost.Instance?.HoldSelectedUnits();
-					}
-				});
-				items.Add(new CommandCardItem
-				{
-					Id = "attack",
-					IconPath = "res://Assets/UI/battle_axe.png",
-					Tooltip = "[A] Attack / Attack-Move — Click enemy to attack, click ground to attack-move",
-					Hotkey = Key.A,
-					Callback = () => GameHost.Instance?.EnterCommandTargeting("attack")
-				});
-				items.Add(new CommandCardItem
-				{
-					Id = "patrol",
-					IconPath = "res://Assets/UI/patrol.jpg",
-					Tooltip = "[P] Patrol — Unit patrols between current position and target, engaging enemies",
-					Hotkey = Key.P,
-					Callback = () => GameHost.Instance?.EnterCommandTargeting("patrol")
-				});
+				bool isStationary = focusedUnit.Speed <= 0.001f;
 
-				bool canBuild = hasMetadata && meta.BuildOptions != null && meta.BuildOptions.Length > 0;
-				if (canBuild)
+				if (isStationary)
+				{
+					var perkAbilities = new List<string>();
+					var otherAbilities = new List<string>();
+					foreach (var ab in focusedUnit.Abilities)
+					{
+						if (ab.StartsWith("perk_"))
+						{
+							perkAbilities.Add(ab);
+						}
+						else
+						{
+							otherAbilities.Add(ab);
+						}
+					}
+
+					if (perkAbilities.Count > 0)
+					{
+						foreach (var ab in perkAbilities)
+						{
+							items.Add(CreateAbilityItem(ab, focusedUnit.Entity));
+						}
+
+						items.Add(new CommandCardItem
+						{
+							Id = "attack",
+							IconPath = "res://Assets/UI/battle_axe.png",
+							Tooltip = "[A] Attack / Attack-Move — Click enemy to attack, click ground to attack-move",
+							Hotkey = Key.A,
+							Callback = () => GameHost.Instance?.EnterCommandTargeting("attack")
+						});
+						items.Add(new CommandCardItem
+						{
+							Id = "stop",
+							IconPath = "res://Assets/UI/cancel_button_2.png",
+							Tooltip = "[S] Stop Selected Units",
+							Hotkey = Key.S,
+							Callback = () => {
+								InGameHUD.Instance?.ShowFeedbackText(TranslationServer.Translate("Command: Stop Current Action"), new Color(0.9f, 0.2f, 0.2f));
+								GameHost.Instance?.StopSelectedUnits();
+							}
+						});
+
+						foreach (var ab in otherAbilities)
+						{
+							items.Add(CreateAbilityItem(ab, focusedUnit.Entity));
+						}
+
+						items.Add(new CommandCardItem
+						{
+							Id = "hold",
+							IconPath = "res://Assets/UI/magic_upgrade_arrow.png",
+							Tooltip = "[H] Hold Position — Unit stays put and attacks in place",
+							Hotkey = Key.H,
+							Callback = () => {
+								InGameHUD.Instance?.ShowFeedbackText(TranslationServer.Translate("Command: Hold Position"), new Color(0.9f, 0.8f, 0.1f));
+								GameHost.Instance?.HoldSelectedUnits();
+							}
+						});
+					}
+					else
+					{
+						foreach (var ab in focusedUnit.Abilities)
+						{
+							items.Add(CreateAbilityItem(ab, focusedUnit.Entity));
+						}
+
+						items.Add(new CommandCardItem
+						{
+							Id = "attack",
+							IconPath = "res://Assets/UI/battle_axe.png",
+							Tooltip = "[A] Attack / Attack-Move — Click enemy to attack, click ground to attack-move",
+							Hotkey = Key.A,
+							Callback = () => GameHost.Instance?.EnterCommandTargeting("attack")
+						});
+						items.Add(new CommandCardItem
+						{
+							Id = "stop",
+							IconPath = "res://Assets/UI/cancel_button_2.png",
+							Tooltip = "[S] Stop Selected Units",
+							Hotkey = Key.S,
+							Callback = () => {
+								InGameHUD.Instance?.ShowFeedbackText(TranslationServer.Translate("Command: Stop Current Action"), new Color(0.9f, 0.2f, 0.2f));
+								GameHost.Instance?.StopSelectedUnits();
+							}
+						});
+						items.Add(new CommandCardItem
+						{
+							Id = "hold",
+							IconPath = "res://Assets/UI/magic_upgrade_arrow.png",
+							Tooltip = "[H] Hold Position — Unit stays put and attacks in place",
+							Hotkey = Key.H,
+							Callback = () => {
+								InGameHUD.Instance?.ShowFeedbackText(TranslationServer.Translate("Command: Hold Position"), new Color(0.9f, 0.8f, 0.1f));
+								GameHost.Instance?.HoldSelectedUnits();
+							}
+						});
+					}
+
+					bool canBuild = hasMetadata && meta.BuildOptions != null && meta.BuildOptions.Length > 0;
+					if (canBuild)
+					{
+						items.Add(new CommandCardItem
+						{
+							Id = "build",
+							IconPath = "res://Assets/UI/golden_hammers.png",
+							Tooltip = "[B] Build Structure",
+							Hotkey = Key.B,
+							Callback = () => InGameHUD.Instance?.EnterBuildSubMenu()
+						});
+					}
+				}
+				else
 				{
 					items.Add(new CommandCardItem
 					{
-						Id = "build",
-						IconPath = "res://Assets/UI/golden_hammers.png",
-						Tooltip = "[B] Build Structure",
-						Hotkey = Key.B,
-						Callback = () => InGameHUD.Instance?.EnterBuildSubMenu()
+						Id = "move",
+						IconPath = "res://Assets/UI/move_speed.png",
+						Tooltip = "[M] Move / Right-Click Ground",
+						Hotkey = Key.M,
+						Callback = () => GameHost.Instance?.EnterCommandTargeting("move")
 					});
+					items.Add(new CommandCardItem
+					{
+						Id = "stop",
+						IconPath = "res://Assets/UI/cancel_button_2.png",
+						Tooltip = "[S] Stop Selected Units",
+						Hotkey = Key.S,
+						Callback = () => {
+							InGameHUD.Instance?.ShowFeedbackText(TranslationServer.Translate("Command: Stop Current Action"), new Color(0.9f, 0.2f, 0.2f));
+							GameHost.Instance?.StopSelectedUnits();
+						}
+					});
+					items.Add(new CommandCardItem
+					{
+						Id = "hold",
+						IconPath = "res://Assets/UI/magic_upgrade_arrow.png",
+						Tooltip = "[H] Hold Position — Unit stays put and attacks in place",
+						Hotkey = Key.H,
+						Callback = () => {
+							InGameHUD.Instance?.ShowFeedbackText(TranslationServer.Translate("Command: Hold Position"), new Color(0.9f, 0.8f, 0.1f));
+							GameHost.Instance?.HoldSelectedUnits();
+						}
+					});
+					items.Add(new CommandCardItem
+					{
+						Id = "attack",
+						IconPath = "res://Assets/UI/battle_axe.png",
+						Tooltip = "[A] Attack / Attack-Move — Click enemy to attack, click ground to attack-move",
+						Hotkey = Key.A,
+						Callback = () => GameHost.Instance?.EnterCommandTargeting("attack")
+					});
+					items.Add(new CommandCardItem
+					{
+						Id = "patrol",
+						IconPath = "res://Assets/UI/patrol.jpg",
+						Tooltip = "[P] Patrol — Unit patrols between current position and target, engaging enemies",
+						Hotkey = Key.P,
+						Callback = () => GameHost.Instance?.EnterCommandTargeting("patrol")
+					});
+
+					bool canBuild = hasMetadata && meta.BuildOptions != null && meta.BuildOptions.Length > 0;
+					if (canBuild)
+					{
+						items.Add(new CommandCardItem
+						{
+							Id = "build",
+							IconPath = "res://Assets/UI/golden_hammers.png",
+							Tooltip = "[B] Build Structure",
+							Hotkey = Key.B,
+							Callback = () => InGameHUD.Instance?.EnterBuildSubMenu()
+						});
+					}
+
+					foreach (var ab in focusedUnit.Abilities)
+					{
+						items.Add(CreateAbilityItem(ab, focusedUnit.Entity));
+					}
 				}
-
-				foreach (var ab in focusedUnit.Abilities)
-				{
-					items.Add(CreateAbilityItem(ab, focusedUnit.Entity));
-				}
-
-
 			}
 		}
 		else
@@ -1025,7 +1170,7 @@ public class CommandPanel
 		btn.Flat = false;
 		btn.Text = "";
 		btn.ExpandIcon = true;
-		btn.Icon = GD.Load<Texture2D>(iconPath);
+		btn.Icon = RtexIconLoader.Load(iconPath);
 		btn.TooltipText = tooltip;
 		btn.CustomMinimumSize = new Vector2(44, 44);
 		btn.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;

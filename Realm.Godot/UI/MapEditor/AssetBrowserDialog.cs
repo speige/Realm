@@ -3,6 +3,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json.Nodes;
+using Realm.Ecs.Services;
+using Realm.Godot.Services.ModelOptimization;
 
 public partial class AssetBrowserDialog : FloatingDialogBase
 {
@@ -15,7 +18,6 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 	private HBoxContainer _folderChipsContainer;
 	private Button _btnAddFolder;
 	private Button _btnRescanAll;
-	private Button _btnConvertMixamo;
 	private OptionButton _optDirectoryFilter;
 	private LineEdit _txtSearch;
 	private Label _lblResultsCount;
@@ -32,7 +34,9 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 	private Label _lblSelectedSize;
 	private Button _btnAudioPlayPause;
 	private LineEdit _txtTagsEdit;
-	private Button _btnSaveTags;
+	private Button _btnEditTags;
+	private LineEdit _txtAssetTypeEdit;
+	private Button _btnEditAssetType;
 
 	private readonly AudioStreamPlayer _audioPlayer;
 
@@ -41,6 +45,9 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 
 	private static bool _hasAutoRescannedOnFirstOpen = false;
 	private HashSet<string> _allowedExtensions = new(StringComparer.OrdinalIgnoreCase);
+	private bool _requireRealmMetadata = false;
+	private string? _selectedAssetTypeFilter;
+	private OptionButton _optAssetTypeFilter;
 	private string? _selectedDirectoryFilter;
 	private IndexedAsset? _selectedAsset;
 	private Action<string>? _onAssetSelectedCallback;
@@ -91,9 +98,14 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 
 	private void OnThumbnailGenerated(string filePath, Texture2D texture)
 	{
-		if (_selectedAsset != null && string.Equals(_selectedAsset.FilePath, filePath, StringComparison.OrdinalIgnoreCase))
+		if (_selectedAsset != null)
 		{
-			_bottomThumbnail.Texture = texture;
+			string selectedNorm = AssetThumbnailProvider.NormalizePath(_selectedAsset.FilePath);
+			string eventNorm = AssetThumbnailProvider.NormalizePath(filePath);
+			if (string.Equals(selectedNorm, eventNorm, StringComparison.OrdinalIgnoreCase))
+			{
+				_bottomThumbnail.Texture = texture;
+			}
 		}
 	}
 
@@ -132,17 +144,6 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 		_btnRescanAll.Pressed += OnRescanAllPressed;
 		folderHeaderRow.AddChild(_btnRescanAll);
 
-		_btnConvertMixamo = new Button();
-		_btnConvertMixamo.Set("icon_max_width", 0);
-		_btnConvertMixamo.Text = "🔄 " + TranslationServer.Translate("Convert Mixamo FBX/GLB to .ranim...");
-		_btnConvertMixamo.AddThemeFontSizeOverride("font_size", 11);
-		_btnConvertMixamo.CustomMinimumSize = new Vector2(230, 24);
-		_btnConvertMixamo.FocusMode = FocusModeEnum.None;
-		_btnConvertMixamo.TooltipText = TranslationServer.Translate("Select a Mixamo .fbx or .glb file from disk to extract and convert into .ranim animations");
-		_btnConvertMixamo.Pressed += OnConvertMixamoPressed;
-		_btnConvertMixamo.Visible = false;
-		folderHeaderRow.AddChild(_btnConvertMixamo);
-
 		topFoldersSection.AddChild(folderHeaderRow);
 
 		var folderScroll = new ScrollContainer();
@@ -165,6 +166,13 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 		_txtSearch.AddThemeFontSizeOverride("font_size", 11);
 		_txtSearch.TextChanged += (_) => RefreshSearchResults();
 		filterRow.AddChild(_txtSearch);
+
+		_optAssetTypeFilter = new OptionButton();
+		_optAssetTypeFilter.CustomMinimumSize = new Vector2(150, 24);
+		_optAssetTypeFilter.AddThemeFontSizeOverride("font_size", 11);
+		_optAssetTypeFilter.FocusMode = FocusModeEnum.None;
+		_optAssetTypeFilter.ItemSelected += OnAssetTypeFilterChanged;
+		filterRow.AddChild(_optAssetTypeFilter);
 
 		_optDirectoryFilter = new OptionButton();
 		_optDirectoryFilter.CustomMinimumSize = new Vector2(180, 24);
@@ -296,30 +304,62 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 		tagsRow.AddChild(lblTagsTitle);
 
 		_txtTagsEdit = new LineEdit();
-		_txtTagsEdit.PlaceholderText = TranslationServer.Translate("comma, separated, tags");
+		_txtTagsEdit.PlaceholderText = TranslationServer.Translate("No tags");
 		_txtTagsEdit.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		_txtTagsEdit.AddThemeFontSizeOverride("font_size", 10);
+		_txtTagsEdit.Editable = false;
 		tagsRow.AddChild(_txtTagsEdit);
 
-		_btnSaveTags = new Button();
-		_btnSaveTags.Set("icon_max_width", 0);
-		_btnSaveTags.Text = "💾 " + TranslationServer.Translate("Save Tags");
-		_btnSaveTags.AddThemeFontSizeOverride("font_size", 10);
-		_btnSaveTags.CustomMinimumSize = new Vector2(90, 22);
-		_btnSaveTags.FocusMode = FocusModeEnum.None;
-		_btnSaveTags.Pressed += OnSaveTagsPressed;
-		tagsRow.AddChild(_btnSaveTags);
+		_btnEditTags = new Button();
+		_btnEditTags.Set("icon_max_width", 0);
+		_btnEditTags.Text = "✏️";
+		_btnEditTags.AddThemeFontSizeOverride("font_size", 11);
+		_btnEditTags.CustomMinimumSize = new Vector2(28, 22);
+		_btnEditTags.FocusMode = FocusModeEnum.None;
+		_btnEditTags.TooltipText = TranslationServer.Translate("Edit tags");
+		_btnEditTags.Pressed += OnEditTagsPressed;
+		tagsRow.AddChild(_btnEditTags);
 
 		bottomInfoVBox.AddChild(tagsRow);
+
+		var assetTypeRow = new HBoxContainer();
+		assetTypeRow.AddThemeConstantOverride("separation", 6);
+
+		var lblAssetTypeTitle = new Label();
+		lblAssetTypeTitle.Text = TranslationServer.Translate("Asset Type:");
+		lblAssetTypeTitle.AddThemeFontSizeOverride("font_size", 10);
+		lblAssetTypeTitle.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		assetTypeRow.AddChild(lblAssetTypeTitle);
+
+		_txtAssetTypeEdit = new LineEdit();
+		_txtAssetTypeEdit.PlaceholderText = TranslationServer.Translate("None");
+		_txtAssetTypeEdit.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_txtAssetTypeEdit.AddThemeFontSizeOverride("font_size", 10);
+		_txtAssetTypeEdit.Editable = false;
+		assetTypeRow.AddChild(_txtAssetTypeEdit);
+
+		_btnEditAssetType = new Button();
+		_btnEditAssetType.Set("icon_max_width", 0);
+		_btnEditAssetType.Text = "✏️";
+		_btnEditAssetType.AddThemeFontSizeOverride("font_size", 11);
+		_btnEditAssetType.CustomMinimumSize = new Vector2(28, 22);
+		_btnEditAssetType.FocusMode = FocusModeEnum.None;
+		_btnEditAssetType.TooltipText = TranslationServer.Translate("Edit asset type");
+		_btnEditAssetType.Pressed += OnEditAssetTypePressed;
+		assetTypeRow.AddChild(_btnEditAssetType);
+
+		bottomInfoVBox.AddChild(assetTypeRow);
 
 		ApplyButton.Text = TranslationServer.Translate("Select");
 	}
 
-	public void OpenForImport(string titleText, IEnumerable<string> allowedExtensions, Action<string> onAssetSelected)
+	public void OpenForImport(string titleText, IEnumerable<string> allowedExtensions, Action<string> onAssetSelected, bool requireRealmMetadata = false, string? requiredAssetType = null)
 	{
 		_onAssetSelectedCallback = onAssetSelected;
 		_selectedAsset = null;
 		_txtSearch.Text = string.Empty;
+		_requireRealmMetadata = requireRealmMetadata;
+		_selectedAssetTypeFilter = requiredAssetType;
 
 		TitleLabel.Text = string.IsNullOrWhiteSpace(titleText)
 			? TranslationServer.Translate("Asset Browser")
@@ -329,6 +369,12 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 			.Select(e => e.Trim().ToLowerInvariant())
 			.Select(e => e.StartsWith(".") ? e : "." + e)
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+		if (_allowedExtensions.Contains(".glb"))
+		{
+			requireRealmMetadata = true;
+		}
+		_requireRealmMetadata = requireRealmMetadata;
 
 		if (_allowedExtensions.Count > 0)
 		{
@@ -340,11 +386,6 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 			_lblFilterExtensions.Visible = false;
 		}
 
-		if (_btnConvertMixamo != null)
-		{
-			_btnConvertMixamo.Visible = _allowedExtensions.Contains(".ranim");
-		}
-
 		if (!_hasAutoRescannedOnFirstOpen)
 		{
 			_hasAutoRescannedOnFirstOpen = true;
@@ -352,6 +393,7 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 		}
 
 		RefreshFolderChips();
+		RefreshAssetTypeFilterOptions();
 		RefreshSearchResults();
 		UpdateSelectedAssetDisplay();
 
@@ -372,7 +414,10 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 		for (int i = 0; i < indexedDirs.Count; i++)
 		{
 			string dirPath = indexedDirs[i];
-			string folderName = Path.GetFileName(dirPath.TrimEnd('/', '\\'));
+			bool isGlobalCas = string.Equals(dirPath, AssetIndexService.GlobalCasAssetsDirectory, StringComparison.OrdinalIgnoreCase);
+			string folderName = isGlobalCas
+				? TranslationServer.Translate("Global Assets (CAS)")
+				: Path.GetFileName(dirPath.TrimEnd('/', '\\'));
 			if (string.IsNullOrEmpty(folderName))
 			{
 				folderName = dirPath;
@@ -410,20 +455,23 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 			lblName.AddThemeColorOverride("font_color", isIndexing ? UIStyle.ColorCyanGlow : UIStyle.ColorGold);
 			chipHBox.AddChild(lblName);
 
-			var btnRemove = new Button();
-			btnRemove.Set("icon_max_width", 0);
-			btnRemove.Text = "✕";
-			btnRemove.AddThemeFontSizeOverride("font_size", 9);
-			btnRemove.CustomMinimumSize = new Vector2(16, 16);
-			btnRemove.FocusMode = FocusModeEnum.None;
-			btnRemove.TooltipText = $"{TranslationServer.Translate("Remove folder from index")}: {dirPath}";
-			btnRemove.Pressed += () =>
+			if (!isGlobalCas)
 			{
-				AssetIndexService.Instance.RemoveDirectory(dirPath);
-				RefreshFolderChips();
-				RefreshSearchResults();
-			};
-			chipHBox.AddChild(btnRemove);
+				var btnRemove = new Button();
+				btnRemove.Set("icon_max_width", 0);
+				btnRemove.Text = "✕";
+				btnRemove.AddThemeFontSizeOverride("font_size", 9);
+				btnRemove.CustomMinimumSize = new Vector2(16, 16);
+				btnRemove.FocusMode = FocusModeEnum.None;
+				btnRemove.TooltipText = $"{TranslationServer.Translate("Remove folder from index")}: {dirPath}";
+				btnRemove.Pressed += () =>
+				{
+					AssetIndexService.Instance.RemoveDirectory(dirPath);
+					RefreshFolderChips();
+					RefreshSearchResults();
+				};
+				chipHBox.AddChild(btnRemove);
+			}
 
 			_folderChipsContainer.AddChild(chip);
 		}
@@ -433,6 +481,66 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 			_selectedDirectoryFilter = null;
 			_optDirectoryFilter.Selected = 0;
 		}
+	}
+
+	private void RefreshAssetTypeFilterOptions()
+	{
+		if (_optAssetTypeFilter == null) return;
+		_optAssetTypeFilter.Clear();
+
+		var validTypes = new List<string>();
+		foreach (var ext in _allowedExtensions)
+		{
+			var types = Realm.Shared.Metadata.RealmMetadataHelper.GetValidAssetTypesForExtension(ext);
+			foreach (var t in types)
+			{
+				if (!validTypes.Contains(t, StringComparer.OrdinalIgnoreCase))
+				{
+					validTypes.Add(t);
+				}
+			}
+		}
+
+		if (validTypes.Count == 0)
+		{
+			_optAssetTypeFilter.Visible = false;
+			_selectedAssetTypeFilter = null;
+			return;
+		}
+
+		_optAssetTypeFilter.Visible = true;
+		_optAssetTypeFilter.AddItem(TranslationServer.Translate("All Types"), 0);
+		_optAssetTypeFilter.SetItemMetadata(0, "");
+
+		int selectedIndex = 0;
+		for (int i = 0; i < validTypes.Count; i++)
+		{
+			string typeName = validTypes[i];
+			int itemIdx = i + 1;
+			_optAssetTypeFilter.AddItem(TranslationServer.Translate(typeName), itemIdx);
+			_optAssetTypeFilter.SetItemMetadata(itemIdx, typeName);
+
+			if (!string.IsNullOrEmpty(_selectedAssetTypeFilter) && typeName.Equals(_selectedAssetTypeFilter, StringComparison.OrdinalIgnoreCase))
+			{
+				selectedIndex = itemIdx;
+			}
+		}
+
+		_optAssetTypeFilter.Selected = selectedIndex;
+	}
+
+	private void OnAssetTypeFilterChanged(long index)
+	{
+		int idx = (int)index;
+		if (idx <= 0 || _optAssetTypeFilter == null)
+		{
+			_selectedAssetTypeFilter = null;
+		}
+		else
+		{
+			_selectedAssetTypeFilter = _optAssetTypeFilter.GetItemMetadata(idx).AsString();
+		}
+		RefreshSearchResults();
 	}
 
 	private void OnDirectoryFilterChanged(long index)
@@ -488,99 +596,11 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 		RefreshSearchResults();
 	}
 
-	private void OnConvertMixamoPressed()
-	{
-		var err = DisplayServer.FileDialogShow(
-			TranslationServer.Translate("Select Mixamo FBX or GLB File to Convert to .ranim"),
-			PathUtils.GetProjectRoot(),
-			"",
-			false,
-			DisplayServer.FileDialogMode.OpenFile,
-			new[] { "*.fbx,*.glb,*.gltf ; 3D Animation Files (*.fbx, *.glb, *.gltf)" },
-			Callable.From((bool status, string[] selectedPaths, int selectedFilterIndex) =>
-			{
-				if (status && selectedPaths.Length > 0)
-				{
-					string sourceFilePath = selectedPaths[0];
-					ConvertMixamoFileToRanim(sourceFilePath);
-				}
-			})
-		);
-
-		if (err != Error.Ok)
-		{
-			Hud?.ShowFeedback(TranslationServer.Translate("Failed to show file dialog"));
-		}
-	}
-
-	private void ConvertMixamoFileToRanim(string sourceFilePath)
-	{
-		if (string.IsNullOrEmpty(sourceFilePath) || !System.IO.File.Exists(sourceFilePath)) return;
-
-		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath ?? "user://temp_map_workspace");
-		string animsDir = System.IO.Path.Combine(wsPath, "Assets", "animations");
-		System.IO.Directory.CreateDirectory(animsDir);
-
-		try
-		{
-			string originalFileName = System.IO.Path.GetFileNameWithoutExtension(sourceFilePath);
-			var extracted = Realm.Godot.Animation.MixamoAnimationImporter.ExtractAnimationsFromFile(sourceFilePath, originalFileName);
-			if (extracted.Count == 0)
-			{
-				Hud?.ShowFeedback(TranslationServer.Translate("No skeletal animations found in the selected file."));
-				return;
-			}
-
-			string metaPath = System.IO.Path.Combine(wsPath, "metadata.json");
-			System.Text.Json.Nodes.JsonObject root = System.IO.File.Exists(metaPath)
-				? (System.Text.Json.Nodes.JsonNode.Parse(System.IO.File.ReadAllText(metaPath))?.AsObject() ?? new System.Text.Json.Nodes.JsonObject())
-				: new System.Text.Json.Nodes.JsonObject();
-
-			if (!root.ContainsKey("Assets") || root["Assets"] == null) root["Assets"] = new System.Text.Json.Nodes.JsonObject();
-			var assetsObj = root["Assets"].AsObject();
-			if (!assetsObj.ContainsKey("animations") || assetsObj["animations"] == null) assetsObj["animations"] = new System.Text.Json.Nodes.JsonObject();
-			var animsObj = assetsObj["animations"].AsObject();
-
-			int importedCount = 0;
-			int skippedCount = 0;
-
-			foreach (var (animName, animData) in extracted)
-			{
-				var (savedFileName, blake3, alreadyExisted) = Realm.Godot.Animation.MixamoAnimationImporter.SaveAnimationWithDeduplication(animsDir, animName, animData);
-				animsObj[savedFileName] = blake3;
-				if (alreadyExisted) skippedCount++;
-				else importedCount++;
-			}
-
-			System.IO.File.WriteAllText(metaPath, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
-
-			AssetIndexService.Instance.AddDirectory(animsDir);
-			AssetIndexService.Instance.RescanDirectory(animsDir);
-
-			RefreshFolderChips();
-			RefreshSearchResults();
-
-			if (importedCount > 0)
-			{
-				Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Successfully converted and imported {0} .ranim animation(s)!"), importedCount));
-			}
-			else
-			{
-				Hud?.ShowFeedback(TranslationServer.Translate("Animation(s) already existed in map workspace (identical BLAKE3 hash)."));
-			}
-		}
-		catch (Exception ex)
-		{
-			GD.PrintErr($"[AssetBrowserDialog] ConvertMixamoFileToRanim error: {ex.Message}");
-			Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Error converting animation: {0}"), ex.Message));
-		}
-	}
-
 	private void RefreshSearchResults()
 	{
 		string searchTerm = _txtSearch.Text?.Trim() ?? string.Empty;
 		_matchingAssets.Clear();
-		_matchingAssets.AddRange(AssetIndexService.Instance.SearchAssets(searchTerm, _allowedExtensions, _selectedDirectoryFilter));
+		_matchingAssets.AddRange(AssetIndexService.Instance.SearchAssets(searchTerm, _allowedExtensions, _selectedDirectoryFilter, _requireRealmMetadata, _selectedAssetTypeFilter));
 
 		_lblResultsCount.Text = $"{_matchingAssets.Count} {TranslationServer.Translate("items found")}";
 		_lblEmptyState.Visible = _matchingAssets.Count == 0;
@@ -685,8 +705,14 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 			_lblSelectedSize.Text = FormatFileSize(_selectedAsset.FileSizeBytes);
 			_bottomThumbnail.Texture = AssetThumbnailProvider.GetThumbnail(_selectedAsset);
 			_txtTagsEdit.Text = _selectedAsset.Tags != null ? string.Join(", ", _selectedAsset.Tags) : string.Empty;
-			_txtTagsEdit.Editable = true;
-			_btnSaveTags.Disabled = false;
+			_txtTagsEdit.Editable = false;
+			_btnEditTags.Disabled = false;
+
+			string embeddedAssetType = Realm.Shared.Metadata.RealmMetadataHelper.ExtractAssetType(_selectedAsset.FilePath) ?? string.Empty;
+			_txtAssetTypeEdit.Text = !string.IsNullOrEmpty(embeddedAssetType) ? embeddedAssetType : TranslationServer.Translate("None");
+			_txtAssetTypeEdit.Editable = false;
+			var validTypes = Realm.Shared.Metadata.RealmMetadataHelper.GetValidAssetTypesForExtension(_selectedAsset.FilePath);
+			_btnEditAssetType.Disabled = (validTypes.Length == 0);
 
 			string ext = _selectedAsset.Extension?.ToLowerInvariant() ?? "";
 			bool isAudio = ext is ".ogg" or ".wav" or ".mp3";
@@ -729,7 +755,10 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 			_bottomThumbnail.Texture = null;
 			_txtTagsEdit.Text = string.Empty;
 			_txtTagsEdit.Editable = false;
-			_btnSaveTags.Disabled = true;
+			_btnEditTags.Disabled = true;
+			_txtAssetTypeEdit.Text = string.Empty;
+			_txtAssetTypeEdit.Editable = false;
+			_btnEditAssetType.Disabled = true;
 			_btnAudioPlayPause.Visible = false;
 		}
 	}
@@ -738,33 +767,22 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 	{
 		if (_audioPlayer == null || _audioPlayer.Stream == null) return;
 
-		if (_audioPlayer.Playing && !_audioPlayer.StreamPaused)
+		if (_audioPlayer.Playing)
 		{
-			_audioPlayer.StreamPaused = true;
+			_audioPlayer.Stop();
 			_btnAudioPlayPause.Text = "▶ " + TranslationServer.Translate("Play");
-			_btnAudioPlayPause.TooltipText = TranslationServer.Translate("Resume audio");
-		}
-		else if (_audioPlayer.Playing && _audioPlayer.StreamPaused)
-		{
-			_audioPlayer.StreamPaused = false;
-			_btnAudioPlayPause.Text = "⏸ " + TranslationServer.Translate("Pause");
-			_btnAudioPlayPause.TooltipText = TranslationServer.Translate("Pause audio");
+			_btnAudioPlayPause.TooltipText = TranslationServer.Translate("Play audio");
 		}
 		else
 		{
 			_audioPlayer.Play();
-			_audioPlayer.StreamPaused = false;
-			_btnAudioPlayPause.Text = "⏸ " + TranslationServer.Translate("Pause");
-			_btnAudioPlayPause.TooltipText = TranslationServer.Translate("Pause audio");
+			_btnAudioPlayPause.Text = "⏹ " + TranslationServer.Translate("Stop");
+			_btnAudioPlayPause.TooltipText = TranslationServer.Translate("Stop audio");
 		}
 	}
 
 	private void OnAudioFinished()
 	{
-		if (_audioPlayer != null)
-		{
-			_audioPlayer.StreamPaused = false;
-		}
 		if (_btnAudioPlayPause != null)
 		{
 			_btnAudioPlayPause.Text = "▶ " + TranslationServer.Translate("Play");
@@ -776,10 +794,9 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 	{
 		if (_audioPlayer != null)
 		{
-			if (_audioPlayer.Playing || _audioPlayer.StreamPaused)
+			if (_audioPlayer.Playing)
 			{
 				_audioPlayer.Stop();
-				_audioPlayer.StreamPaused = false;
 			}
 			_audioPlayer.Stream = null;
 		}
@@ -790,25 +807,48 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 		}
 	}
 
-	private void OnSaveTagsPressed()
+	private void OnEditTagsPressed()
 	{
 		if (_selectedAsset == null)
 		{
 			return;
 		}
 
-		string rawTags = _txtTagsEdit.Text ?? string.Empty;
-		var tagList = rawTags
-			.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
-			.Select(t => t.Trim().ToLowerInvariant())
-			.Where(t => !string.IsNullOrEmpty(t))
-			.Distinct(StringComparer.OrdinalIgnoreCase)
-			.ToList();
+		var dialog = new TagEditorDialog(Hud, _selectedAsset, OnTagsSaved);
+		Hud?.AddChild(dialog);
+		dialog.OpenDialog();
+	}
 
-		AssetIndexService.Instance.UpdateAssetTags(_selectedAsset.FilePath, tagList);
-		_selectedAsset.Tags = tagList;
+	private void OnTagsSaved(List<string> updatedTags)
+	{
+		if (_selectedAsset == null)
+		{
+			return;
+		}
+
+		AssetIndexService.Instance.UpdateAssetTags(_selectedAsset.FilePath, updatedTags);
+		_selectedAsset.Tags = updatedTags;
+		_txtTagsEdit.Text = string.Join(", ", updatedTags);
 
 		Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Updated tags for {0}"), _selectedAsset.FileName));
+		RefreshSearchResults();
+	}
+
+	private void OnEditAssetTypePressed()
+	{
+		if (_selectedAsset == null) return;
+		var dialog = new AssetTypeEditorDialog(Hud, _selectedAsset, OnAssetTypeSaved);
+		Hud?.AddChild(dialog);
+		dialog.OpenDialog();
+	}
+
+	private void OnAssetTypeSaved(string updatedAssetType)
+	{
+		if (_selectedAsset == null) return;
+		AssetIndexService.Instance.UpdateAssetType(_selectedAsset.FilePath, updatedAssetType);
+		_selectedAsset.AssetType = updatedAssetType;
+		_txtAssetTypeEdit.Text = updatedAssetType;
+		Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Updated asset type for {0} to {1}"), _selectedAsset.FileName, updatedAssetType));
 		RefreshSearchResults();
 	}
 
@@ -817,6 +857,7 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 		StopAudio();
 		if (_selectedAsset != null && File.Exists(_selectedAsset.FilePath))
 		{
+			Realm.Shared.Metadata.RealmMetadataHelper.EnsureMetadata(_selectedAsset.FilePath);
 			_onAssetSelectedCallback?.Invoke(_selectedAsset.FilePath);
 		}
 	}

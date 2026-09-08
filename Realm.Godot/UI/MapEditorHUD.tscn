@@ -127,6 +127,7 @@ anchors_preset = 9
 anchor_bottom = 1.0
 offset_right = 325.0
 grow_vertical = 2
+mouse_filter = 2
 
 [node name="LeftTabButton" type="Button" parent="LeftSlidePanel"]
 visible = false
@@ -158,6 +159,7 @@ offset_right = -10.0
 offset_bottom = -10.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
 horizontal_scroll_mode = 3
 vertical_scroll_mode = 3
 
@@ -165,6 +167,7 @@ vertical_scroll_mode = 3
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 10
+mouse_filter = 2
 
 [node name="FileAccordion" type="VBoxContainer" parent="LeftSlidePanel/LeftScroll/LeftVBox"]
 layout_mode = 2
@@ -236,6 +239,11 @@ layout_mode = 2
 focus_mode = 0
 text = "📹 CAM BOUNDS: OFF"
 
+[node name="BtnToggleWireframe" type="Button" parent="LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport"]
+layout_mode = 2
+focus_mode = 0
+text = "🕸️ WIREFRAME: OFF"
+
 [node name="BtnRotate" type="Button" parent="LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport"]
 layout_mode = 2
 focus_mode = 0
@@ -272,200 +280,6 @@ layout_mode = 2
 layout_mode = 2
 script = ExtResource("2_camera_indicator")
 
-[node name="MapSettingsAccordion" type="VBoxContainer" parent="LeftSlidePanel/LeftScroll/LeftVBox"]
-layout_mode = 2
-
-[node name="BtnHeaderMapSettings" type="Button" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion"]
-layout_mode = 2
-focus_mode = 0
-text = "▶ Map Settings"
-
-[node name="ContentMapSettings" type="VBoxContainer" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion"]
-visible = false
-layout_mode = 2
-theme_override_constants/separation = 8
-
-
-[node name="MapTypeBox" type="VBoxContainer" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings"]
-layout_mode = 2
-
-[node name="LblMapTypeTitle" type="Label" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapTypeBox"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 12
-text = "Map Type"
-
-[node name="OptMapType" type="OptionButton" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapTypeBox"]
-layout_mode = 2
-focus_mode = 0
-
-[node name="MapTagsBox" type="VBoxContainer" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings"]
-layout_mode = 2
-
-[node name="LblMapTagsTitle" type="Label" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapTagsBox"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 12
-text = "Tags"
-
-[node name="ChkTagTD" type="CheckBox" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapTagsBox"]
-layout_mode = 2
-focus_mode = 0
-theme_override_font_sizes/font_size = 11
-text = "Tower Defense"
-
-[node name="ChkTagCampaign" type="CheckBox" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapTagsBox"]
-layout_mode = 2
-focus_mode = 0
-theme_override_font_sizes/font_size = 11
-text = "Campaign"
-
-[node name="ChkTagMelee" type="CheckBox" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapTagsBox"]
-layout_mode = 2
-focus_mode = 0
-theme_override_font_sizes/font_size = 11
-text = "Melee"
-
-[node name="ChkTagCoop" type="CheckBox" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapTagsBox"]
-layout_mode = 2
-focus_mode = 0
-theme_override_font_sizes/font_size = 11
-text = "Coop / Survival"
-
-[node name="ChkTagTutorial" type="CheckBox" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapTagsBox"]
-layout_mode = 2
-focus_mode = 0
-theme_override_font_sizes/font_size = 11
-text = "Tutorial / Skirmish"
-
-
-[node name="CamBoundsBox" type="VBoxContainer" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings"]
-layout_mode = 2
-theme_override_constants/separation = 2
-
-[node name="LblCamBoundsTitle" type="Label" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-text = "ADJUST CAMERA BOUNDS"
-
-[node name="CamBoundsGrid" type="GridContainer" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox"]
-layout_mode = 2
-theme_override_constants/h_separation = 6
-theme_override_constants/v_separation = 4
-columns = 3
-
-[node name="LblCamLeftVal" type="Label" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-
-[node name="BtnLeftDec" type="Button" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid"]
-layout_mode = 2
-focus_mode = 0
-text = "⬅️"
-
-[node name="BtnLeftInc" type="Button" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid"]
-layout_mode = 2
-focus_mode = 0
-text = "➡️"
-
-[node name="LblCamRightVal" type="Label" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-
-[node name="BtnRightDec" type="Button" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid"]
-layout_mode = 2
-focus_mode = 0
-text = "⬅️"
-
-[node name="BtnRightInc" type="Button" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid"]
-layout_mode = 2
-focus_mode = 0
-text = "➡️"
-
-[node name="LblCamTopVal" type="Label" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-
-[node name="BtnTopDec" type="Button" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid"]
-layout_mode = 2
-focus_mode = 0
-text = "⬅️"
-
-[node name="BtnTopInc" type="Button" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid"]
-layout_mode = 2
-focus_mode = 0
-text = "➡️"
-
-[node name="LblCamBottomVal" type="Label" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-
-[node name="BtnBottomDec" type="Button" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid"]
-layout_mode = 2
-focus_mode = 0
-text = "⬅️"
-
-[node name="BtnBottomInc" type="Button" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/CamBoundsBox/CamBoundsGrid"]
-layout_mode = 2
-focus_mode = 0
-text = "➡️"
-
-[node name="MapSizeBox" type="VBoxContainer" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings"]
-layout_mode = 2
-
-[node name="LblMapSizeTitle" type="Label" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 12
-text = "Map Dimensions"
-
-[node name="MapSizeGrid" type="GridContainer" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox"]
-layout_mode = 2
-theme_override_constants/h_separation = 6
-theme_override_constants/v_separation = 4
-columns = 3
-
-[node name="LblMapWidthVal" type="Label" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-
-[node name="BtnWidthDec" type="Button" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid"]
-layout_mode = 2
-focus_mode = 0
-text = "➖"
-
-[node name="BtnWidthInc" type="Button" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid"]
-layout_mode = 2
-focus_mode = 0
-text = "➕"
-
-[node name="LblMapHeightVal" type="Label" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-
-[node name="BtnHeightDec" type="Button" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid"]
-layout_mode = 2
-focus_mode = 0
-text = "➖"
-
-[node name="BtnHeightInc" type="Button" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox/MapSizeGrid"]
-layout_mode = 2
-focus_mode = 0
-text = "➕"
-
-[node name="BtnScaleMap" type="Button" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/MapSizeBox"]
-layout_mode = 2
-focus_mode = 0
-text = "⚖ Scale Map"
-
-[node name="SkyboxBox" type="VBoxContainer" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings"]
-layout_mode = 2
-
-[node name="LblSkyboxTitle" type="Label" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/SkyboxBox"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 12
-text = "🌅 Skybox Environment"
-
-[node name="OptSkybox" type="OptionButton" parent="LeftSlidePanel/LeftScroll/LeftVBox/MapSettingsAccordion/ContentMapSettings/SkyboxBox"]
-layout_mode = 2
-focus_mode = 0
 
 [node name="RightSlidePanel" type="Panel" parent="."]
 custom_minimum_size = Vector2(300, 0)
@@ -477,6 +291,7 @@ anchor_bottom = 1.0
 offset_left = -300.0
 grow_horizontal = 0
 grow_vertical = 2
+mouse_filter = 2
 
 [node name="RightTabButton" type="Button" parent="RightSlidePanel"]
 visible = false
@@ -504,6 +319,7 @@ offset_right = -10.0
 offset_bottom = -10.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
 horizontal_scroll_mode = 3
 vertical_scroll_mode = 3
 
@@ -511,6 +327,7 @@ vertical_scroll_mode = 3
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 10
+mouse_filter = 2
 
 [node name="ToolAccordion" type="VBoxContainer" parent="RightSlidePanel/RightScroll/AccordionContainer"]
 layout_mode = 2

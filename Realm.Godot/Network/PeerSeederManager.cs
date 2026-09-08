@@ -33,6 +33,9 @@ public class PeerSeederManager
 
     private TokenBucket? _tokenBucket;
 
+    public int CapacityPercentage { get; set; } = 1;
+    public bool AcceptingUploads { get; set; } = true;
+
     private PeerSeederManager()
     {
         _seederId = Guid.NewGuid().ToString("N");
@@ -142,7 +145,9 @@ public class PeerSeederManager
                         SeederId = _seederId,
                         ReportedIP = publicIp,
                         Port = publicPort,
-                        MapIds = mapIds
+                        MapIds = mapIds,
+                        CapacityPercentage = CapacityPercentage,
+                        AcceptingUploads = AcceptingUploads
                     };
                     var jsonContent = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
                     var regUrl = $"{LobbyManager.Instance.RegistryServerUrl}/seeders/register";

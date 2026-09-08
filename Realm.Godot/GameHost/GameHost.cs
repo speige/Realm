@@ -15,6 +15,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using Realm.Godot.Animation;
+using Realm.Godot.Utils;
 
 public partial class GameHost : Node3D, IGameAPI
 {
@@ -572,7 +575,7 @@ public partial class GameHost : Node3D, IGameAPI
 				{
 					oldProp.IsSelected = false;
 				}
-				else if (_selectedEditorObject is Decal oldDecal)
+				else if ((_selectedEditorObject as Decal ?? FindDecalInParentChain(_selectedEditorObject)) is Decal oldDecal)
 				{
 					UpdateDecalSelectionRing(oldDecal, false);
 				}
@@ -588,9 +591,19 @@ public partial class GameHost : Node3D, IGameAPI
 				{
 					newProp.IsSelected = true;
 				}
-				else if (_selectedEditorObject is Decal newDecal)
+				else if ((_selectedEditorObject as Decal ?? FindDecalInParentChain(_selectedEditorObject)) is Decal newDecal)
 				{
 					UpdateDecalSelectionRing(newDecal, true);
+				}
+			}
+			else
+			{
+				foreach (var decal in AllDecals)
+				{
+					if (GodotObject.IsInstanceValid(decal))
+					{
+						UpdateDecalSelectionRing(decal, false);
+					}
 				}
 			}
 			MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
@@ -632,6 +645,204 @@ public partial class GameHost : Node3D, IGameAPI
 		Original = 0,
 		Smooth = 1,
 		Flat = 2
+	}
+
+	public struct AttachmentMetadata
+	{
+		public AttachmentMetadata()
+		{
+			Scale = 1.0f;
+			PositionOffset = Vector3.Zero;
+			RotationOffset = Vector3.Zero;
+			DefaultHand = "RightHand";
+		}
+
+		public string AttachmentId { get; set; }
+		public string Name { get; set; }
+		public string ModelPath { get; set; }
+		public float Scale { get; set; } = 1.0f;
+		public Vector3 PositionOffset { get; set; }
+		public Vector3 RotationOffset { get; set; }
+		public string DefaultHand { get; set; } = "RightHand";
+	}
+
+	public struct HandAttachmentOrientation
+	{
+		public float PositionX { get; set; }
+		public float PositionY { get; set; }
+		public float PositionZ { get; set; }
+		public float PitchX { get; set; }
+		public float YawY { get; set; }
+		public float RollZ { get; set; }
+		public float Scale { get; set; }
+
+		[JsonIgnore]
+		public Vector3 Position => new Vector3(PositionX, PositionY, PositionZ);
+		[JsonIgnore]
+		public Vector3 RotationDegrees => new Vector3(PitchX, YawY, RollZ);
+	}
+
+	public struct UnitObjectAttachments
+	{
+		public List<Dictionary<string, HandAttachmentOrientation>>? right_hand { get; set; }
+		public List<Dictionary<string, HandAttachmentOrientation>>? left_hand { get; set; }
+
+		public bool TryGetOrientation(HumanoidBone hand, string attachmentId, out HandAttachmentOrientation orientation)
+		{
+			var list = hand == HumanoidBone.LeftHand ? left_hand : right_hand;
+			if (list != null && !string.IsNullOrEmpty(attachmentId))
+			{
+				string cleanId = System.IO.Path.GetFileNameWithoutExtension(attachmentId);
+				foreach (var dict in list)
+				{
+					if (dict != null)
+					{
+						foreach (var kvp in dict)
+						{
+							if (kvp.Key.Equals(attachmentId, StringComparison.OrdinalIgnoreCase) ||
+								kvp.Key.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
+								System.IO.Path.GetFileNameWithoutExtension(kvp.Key).Equals(cleanId, StringComparison.OrdinalIgnoreCase))
+							{
+								orientation = kvp.Value;
+								return true;
+							}
+						}
+					}
+				}
+			}
+			orientation = default;
+			return false;
+		}
+
+		public void SetOrientation(HumanoidBone hand, string attachmentId, HandAttachmentOrientation orientation)
+		{
+			string cleanId = System.IO.Path.GetFileNameWithoutExtension(attachmentId);
+			if (hand == HumanoidBone.LeftHand)
+			{
+				left_hand ??= new List<Dictionary<string, HandAttachmentOrientation>>();
+				UpdateList(left_hand, cleanId, orientation);
+			}
+			else
+			{
+				right_hand ??= new List<Dictionary<string, HandAttachmentOrientation>>();
+				UpdateList(right_hand, cleanId, orientation);
+			}
+		}
+
+		private static void UpdateList(List<Dictionary<string, HandAttachmentOrientation>> list, string attachmentId, HandAttachmentOrientation orientation)
+		{
+			foreach (var dict in list)
+			{
+				if (dict != null)
+				{
+					foreach (var key in dict.Keys.ToList())
+					{
+						if (key.Equals(attachmentId, StringComparison.OrdinalIgnoreCase) ||
+							System.IO.Path.GetFileNameWithoutExtension(key).Equals(attachmentId, StringComparison.OrdinalIgnoreCase))
+						{
+							dict[key] = orientation;
+							return;
+						}
+					}
+				}
+			}
+			list.Add(new Dictionary<string, HandAttachmentOrientation>(StringComparer.OrdinalIgnoreCase)
+			{
+				[attachmentId] = orientation
+			});
+		}
+	}
+
+	[JsonConverter(typeof(UnitAnimationEntryJsonConverter))]
+	public struct UnitAnimationEntry
+	{
+		public string Animation { get; set; }
+		public string? RightHandAttachment { get; set; }
+		public string? LeftHandAttachment { get; set; }
+	}
+
+	public class UnitAnimationEntryJsonConverter : JsonConverter<UnitAnimationEntry>
+	{
+		public override UnitAnimationEntry Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+		{
+			if (reader.TokenType == JsonTokenType.String)
+			{
+				return new UnitAnimationEntry
+				{
+					Animation = reader.GetString() ?? string.Empty
+				};
+			}
+
+			if (reader.TokenType == JsonTokenType.StartObject)
+			{
+				using var doc = JsonDocument.ParseValue(ref reader);
+				var root = doc.RootElement;
+				string anim = string.Empty;
+				string? right = null;
+				string? left = null;
+
+				foreach (var prop in root.EnumerateObject())
+				{
+					if (prop.Name.Equals("Animation", StringComparison.OrdinalIgnoreCase) ||
+						prop.Name.Equals("Name", StringComparison.OrdinalIgnoreCase) ||
+						prop.Name.Equals("Path", StringComparison.OrdinalIgnoreCase))
+					{
+						anim = prop.Value.GetString() ?? string.Empty;
+					}
+					else if (prop.Name.Equals("RightHandAttachment", StringComparison.OrdinalIgnoreCase) ||
+							 prop.Name.Equals("RightHand", StringComparison.OrdinalIgnoreCase) ||
+							 prop.Name.Equals("AttachmentRight", StringComparison.OrdinalIgnoreCase))
+					{
+						right = prop.Value.ValueKind == JsonValueKind.Null ? null : prop.Value.GetString();
+					}
+					else if (prop.Name.Equals("LeftHandAttachment", StringComparison.OrdinalIgnoreCase) ||
+							 prop.Name.Equals("LeftHand", StringComparison.OrdinalIgnoreCase) ||
+							 prop.Name.Equals("AttachmentLeft", StringComparison.OrdinalIgnoreCase))
+					{
+						left = prop.Value.ValueKind == JsonValueKind.Null ? null : prop.Value.GetString();
+					}
+				}
+
+				return new UnitAnimationEntry
+				{
+					Animation = anim,
+					RightHandAttachment = right,
+					LeftHandAttachment = left
+				};
+			}
+
+			return default;
+		}
+
+		public override void Write(Utf8JsonWriter writer, UnitAnimationEntry value, JsonSerializerOptions options)
+		{
+			if (string.IsNullOrEmpty(value.RightHandAttachment) && string.IsNullOrEmpty(value.LeftHandAttachment))
+			{
+				writer.WriteStringValue(value.Animation ?? string.Empty);
+			}
+			else
+			{
+				writer.WriteStartObject();
+				writer.WriteString("Animation", value.Animation ?? string.Empty);
+				if (value.RightHandAttachment != null)
+				{
+					writer.WriteString("RightHandAttachment", value.RightHandAttachment);
+				}
+				else
+				{
+					writer.WriteNull("RightHandAttachment");
+				}
+				if (value.LeftHandAttachment != null)
+				{
+					writer.WriteString("LeftHandAttachment", value.LeftHandAttachment);
+				}
+				else
+				{
+					writer.WriteNull("LeftHandAttachment");
+				}
+				writer.WriteEndObject();
+			}
+		}
 	}
 
 	public struct UnitMetadata
@@ -685,8 +896,38 @@ public partial class GameHost : Node3D, IGameAPI
 		public float? ObstacleRadius { get; set; }
 		public string[]? Targets { get; set; }
 		public string[]? Weapons { get; set; }
-		public Dictionary<string, string[]>? Animations { get; set; }
+		public string? ProjectileModelPath { get; set; }
+		public Dictionary<string, List<UnitAnimationEntry>>? Animations { get; set; }
+		public UnitObjectAttachments? ObjectAttachments { get; set; }
 		public UnitSoundsMetadata? Sounds { get; set; }
+		public string[]? StartingItems { get; set; }
+		public string[]? Upgrades { get; set; }
+		public string[]? StatusEffects { get; set; }
+		public string[]? SoundEvents { get; set; }
+		public string SpawnShader { get; set; }
+		public string DeathShader { get; set; }
+		public string DespawnShader
+		{
+			get => DeathShader;
+			set => DeathShader = value;
+		}
+
+		public bool TryGetObjectAttachment(HumanoidBone hand, string attachmentId, out HandAttachmentOrientation orientation)
+		{
+			if (ObjectAttachments.HasValue)
+			{
+				return ObjectAttachments.Value.TryGetOrientation(hand, attachmentId, out orientation);
+			}
+			orientation = default;
+			return false;
+		}
+
+		public void SetObjectAttachment(HumanoidBone hand, string attachmentId, HandAttachmentOrientation orientation)
+		{
+			var atts = ObjectAttachments ?? new UnitObjectAttachments();
+			atts.SetOrientation(hand, attachmentId, orientation);
+			ObjectAttachments = atts;
+		}
 	}
 
 	public struct UnitSoundsMetadata
@@ -816,6 +1057,13 @@ public partial class GameHost : Node3D, IGameAPI
 		public bool NormalizeLuminance { get; set; } = true;
 		public bool IgnorePlayerColor { get; set; } = true;
 		public int PathingType { get; set; }
+		public string SpawnShader { get; set; }
+		public string DeathShader { get; set; }
+		public string DespawnShader
+		{
+			get => DeathShader;
+			set => DeathShader = value;
+		}
 	}
 
 	public struct ResourceMetadata
@@ -851,6 +1099,13 @@ public partial class GameHost : Node3D, IGameAPI
 		public bool NormalizeLuminance { get; set; } = true;
 		public bool IgnorePlayerColor { get; set; } = true;
 		public int PathingType { get; set; }
+		public string SpawnShader { get; set; }
+		public string DeathShader { get; set; }
+		public string DespawnShader
+		{
+			get => DeathShader;
+			set => DeathShader = value;
+		}
 	}
 
 	public struct AbilityMetadata
@@ -862,6 +1117,179 @@ public partial class GameHost : Node3D, IGameAPI
 		public string IconPath { get; set; }
 		public float ManaCost { get; set; }
 		public float Cooldown { get; set; }
+		public float TargetRange { get; set; }
+		public string? VisualEffect { get; set; }
+		public string? CastSound { get; set; }
+		public string[]? AppliedStatusEffects { get; set; }
+		public float AreaOfEffectRadius { get; set; }
+		public float Damage { get; set; }
+		public float Healing { get; set; }
+		public string? SummonedUnitId { get; set; }
+		public int SummonCount { get; set; }
+		public float SummonDuration { get; set; }
+	}
+
+	public struct UpgradeMetadata
+	{
+		public string UpgradeId { get; set; }
+		public string Name { get; set; }
+		public string Description { get; set; }
+		public float CostGold { get; set; }
+		public float CostWood { get; set; }
+		public float CostStone { get; set; }
+		public float ResearchTime { get; set; }
+		public string Requirement { get; set; }
+		public int MaxLevel { get; set; }
+		public string[]? AffectedUnitIds { get; set; }
+		public float MaxHpBonus { get; set; }
+		public float DamageBonus { get; set; }
+		public float ArmorBonus { get; set; }
+		public float SpeedBonus { get; set; }
+	}
+
+	public struct ItemMetadata
+	{
+		public string ItemId { get; set; }
+		public string Name { get; set; }
+		public string Description { get; set; }
+		public string ItemClass { get; set; }
+		public float CostGold { get; set; }
+		public string UseAbility { get; set; }
+		public int ChargeCount { get; set; }
+		public string CooldownLink { get; set; }
+		public bool CanDrop { get; set; }
+		public int ItemLevel { get; set; }
+		public string IconPath { get; set; }
+		public string[]? PassiveStatusEffects { get; set; }
+		public string[]? GrantedWeapons { get; set; }
+		public bool IsContainer { get; set; }
+		public int ContainerSize { get; set; }
+		public string Requirements { get; set; }
+	}
+
+	public struct TextureMetadata
+	{
+		public string Hash { get; set; }
+		public int SwatchIndex { get; set; }
+		public float ScaleFactor { get; set; }
+		public string AssetType { get; set; }
+		public int TextureSize { get; set; }
+		public string NoiseConfig { get; set; }
+		public float Brightness { get; set; }
+		public string Tint { get; set; }
+		public float RoughnessScale { get; set; }
+		public float NormalScale { get; set; }
+		public float HeightScale { get; set; }
+		public float HeightOffset { get; set; }
+		public float CrevicePower { get; set; }
+		public string TileMode { get; set; }
+		public float UvScale { get; set; }
+		public float StochasticTileSize { get; set; }
+		public float CrossFade { get; set; }
+		public float Contrast { get; set; }
+		public float Saturation { get; set; }
+		public float Specular { get; set; }
+		public float Roughness { get; set; }
+		public float Metallic { get; set; }
+	}
+
+	public struct DecalMetadata
+	{
+		public string Hash { get; set; }
+		public string Tint { get; set; }
+		public float Brightness { get; set; }
+		public float Contrast { get; set; }
+		public float Saturation { get; set; }
+		public float Opacity { get; set; }
+		public float AlbedoMix { get; set; }
+		public float NormalStrength { get; set; }
+		public float Roughness { get; set; }
+		public float Metallic { get; set; }
+		public string BlendMode { get; set; }
+		public string AssetType { get; set; }
+		public string TextureNormal { get; set; }
+		public string TextureOrm { get; set; }
+		public string TextureEmission { get; set; }
+		public float EmissionEnergy { get; set; }
+	}
+
+	public struct VfxMetadata
+	{
+		public string Hash { get; set; }
+		public int Columns { get; set; }
+		public int Rows { get; set; }
+		public float Fps { get; set; }
+		public string AssetType { get; set; }
+	}
+
+	public struct GlbItemMetadata
+	{
+		public string Hash { get; set; }
+		public string DefaultAssetType { get; set; }
+		public float MinY { get; set; }
+		public float YOffset { get; set; }
+		public float Scale { get; set; }
+		public float CollisionCircleRatio { get; set; }
+		public float CollisionRadius { get; set; }
+		public float Brightness { get; set; }
+		public float Contrast { get; set; }
+		public float Saturation { get; set; }
+		public bool NormalizeLuminance { get; set; }
+		public ModelNormalMode NormalMode { get; set; }
+		public bool GenerateNormals { get; set; }
+		public bool RecalculateNormals { get; set; }
+		public float RotX { get; set; }
+		public float RotY { get; set; }
+		public float RotZ { get; set; }
+		public object WeaponLayers { get; set; }
+		public string WeaponPreset { get; set; }
+		public string WeaponRibbon { get; set; }
+		public bool IgnorePlayerColor { get; set; }
+		public string TeamColorMask { get; set; }
+		public string SpawnShader { get; set; }
+		public string DeathShader { get; set; }
+		public string DespawnShader
+		{
+			get => DeathShader;
+			set => DeathShader = value;
+		}
+	}
+
+	public enum AssetCategory
+	{
+		Glb,
+		Animations,
+		Audio,
+		Sfx,
+		Music,
+		Textures,
+		NoiseTextures,
+		Noise,
+		Decals,
+		VfxSpritesheets,
+		Vfx,
+		Skyboxes,
+		Ribbons,
+		RibbonTextures,
+		Icons,
+		Ui,
+		Shaders
+	}
+
+	public enum GlbSubCategory
+	{
+		Units,
+		Buildings,
+		Resources,
+		Props,
+		Projectiles,
+		Character,
+		Characters,
+		Building,
+		Resource,
+		Environment,
+		Prop,
+		Projectile
 	}
 
 	public static int GetUnitPathingFlags(UnitMetadata meta)
@@ -934,9 +1362,11 @@ public partial class GameHost : Node3D, IGameAPI
 
 
 	public static readonly Dictionary<string, UnitMetadata> UnitRegistry = new();
+	public static readonly Dictionary<string, UnitMetadata> BuildingRegistry = new();
 	public static readonly Dictionary<string, PropMetadata> PropRegistry = new();
 	public static readonly Dictionary<string, ResourceMetadata> ResourceRegistry = new();
 	public static readonly Dictionary<string, WeaponMetadata> WeaponRegistry = new(StringComparer.OrdinalIgnoreCase);
+	public static readonly Dictionary<string, AttachmentMetadata> AttachmentRegistry = new(StringComparer.OrdinalIgnoreCase);
 
 	public string GetFallbackModelPath(string unitId, bool isBuilding)
 	{
@@ -1012,9 +1442,9 @@ public partial class GameHost : Node3D, IGameAPI
 		OnPlayerChatMessage?.Invoke(message, selected);
 	}
 
-	public void TriggerKillUnit(Unit3D unit)
+	public void TriggerKillUnit(Unit3D unit, bool executeDespawnShader = true, bool playDeathAnimation = true)
 	{
-		KillUnit(unit);
+		KillUnit(unit, executeDespawnShader, playDeathAnimation);
 	}
 
 	private void InitializePlayerResources(Entity playerEntity)
@@ -1126,13 +1556,17 @@ public partial class GameHost : Node3D, IGameAPI
 
 	float IGameAPI.GameElapsedTime => GameElapsedTime;
 
-	IUnit IGameAPI.SpawnUnit(string unitTypeId, System.Numerics.Vector3 position, bool isEnemy, bool bypassPopulation)
+	IUnit IGameAPI.SpawnUnit(string unitTypeId, System.Numerics.Vector3 position, bool isEnemy, bool bypassPopulation, bool executeSpawnShader)
 	{
 		var pos = new Vector3(position.X, position.Y, position.Z);
 		pos.Y = GetTerrainHeightAt(pos);
+		bool isBuilding = false;
 		if (!UnitRegistry.TryGetValue(unitTypeId, out var meta))
 		{
-			throw new ArgumentException($"Unit ID '{unitTypeId}' not found in registry.");
+			if (BuildingRegistry.TryGetValue(unitTypeId, out meta))
+				isBuilding = true;
+			else
+				throw new ArgumentException($"Unit ID '{unitTypeId}' not found in registry.");
 		}
 		int ownerPeerId = _localPeerId;
 		if (isEnemy)
@@ -1164,8 +1598,12 @@ public partial class GameHost : Node3D, IGameAPI
 		}
 		var playerOwner = playerOwnerEntity.AsPlayerEntity(EcsWorld);
 		
-		string targetModel = !string.IsNullOrEmpty(meta.ModelPath) ? meta.ModelPath : unitTypeId;
-		string modelPath = _unitSpawnService.GetFallbackModelPath(targetModel, meta.Speed == 0f);
+		string targetModel = meta.ModelPath;
+		if (string.IsNullOrEmpty(targetModel))
+		{
+			throw new ArgumentException($"Unit ID '{unitTypeId}' has no assigned 3D model asset in registry.");
+		}
+		string modelPath = _unitSpawnService.GetFallbackModelPath(targetModel, isBuilding);
 
 		string name = actualIsEnemy ? _unitSpawnService.GetEnemyUnitName(unitTypeId, meta.Name) : meta.Name;
 
@@ -1174,7 +1612,7 @@ public partial class GameHost : Node3D, IGameAPI
 		{
 			EcsWorld.Add(entity, new BypassPopulationTag());
 		}
-		SpawnUnit3D(entity, unitTypeId, modelPath, pos, meta.Speed == 0f, actualIsEnemy, bypassPopulation);
+		SpawnUnit3D(entity, unitTypeId, modelPath, pos, isBuilding, actualIsEnemy, bypassPopulation, -1, executeSpawnShader);
 		
 		return GetUnitWrapper(entity);
 	}
@@ -1508,9 +1946,31 @@ public class {mapName} : IMapScript
 		{
 			if (System.IO.File.Exists(dllPath))
 			{
-				System.IO.File.Copy(dllPath, System.IO.Path.Combine(libDir, "Realm.MapAPI.dll"), true);
+				void CopyIfDifferent(string src, string dst)
+				{
+					if (System.IO.File.Exists(dst))
+					{
+						var sInfo = new System.IO.FileInfo(src);
+						var dInfo = new System.IO.FileInfo(dst);
+						if (sInfo.Length == dInfo.Length)
+						{
+							byte[] sBytes = System.IO.File.ReadAllBytes(src);
+							byte[] dBytes = System.IO.File.ReadAllBytes(dst);
+							if (sBytes.AsSpan().SequenceEqual(dBytes))
+							{
+								return;
+							}
+						}
+					}
+					System.IO.File.Copy(src, dst, true);
+				}
+
+				CopyIfDifferent(dllPath, System.IO.Path.Combine(libDir, "Realm.MapAPI.dll"));
 				if (System.IO.File.Exists(xmlPath))
-					System.IO.File.Copy(xmlPath, System.IO.Path.Combine(libDir, "Realm.MapAPI.xml"), true);
+					CopyIfDifferent(xmlPath, System.IO.Path.Combine(libDir, "Realm.MapAPI.xml"));
+				string pdbPath = System.IO.Path.ChangeExtension(dllPath, ".pdb");
+				if (System.IO.File.Exists(pdbPath))
+					CopyIfDifferent(pdbPath, System.IO.Path.Combine(libDir, "Realm.MapAPI.pdb"));
 				return true;
 			}
 			return false;
@@ -1897,7 +2357,34 @@ public class {mapName} : IMapScript
 		DayNightCycleEnabled = enabled;
 	}
 
-	void IGameAPI.KillUnit(IUnit unit)
+	void IGameAPI.SetUnitAnimation(IUnit unit, string animationName)
+	{
+		if (unit is IEcsEntityWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
+		{
+			if (GameHost.TryGetUnit3D(wrapper.Entity, out var unit3D) && GodotObject.IsInstanceValid(unit3D))
+			{
+				unit3D.PlayAnimation(animationName);
+			}
+		}
+	}
+
+	void IGameAPI.SetUnitHandAttachment(IUnit unit, string hand, string? attachmentId)
+	{
+		if (unit is IEcsEntityWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
+		{
+			if (GameHost.TryGetUnit3D(wrapper.Entity, out var unit3D) && GodotObject.IsInstanceValid(unit3D))
+			{
+				var boneHand = Realm.Godot.Animation.HumanoidBone.RightHand;
+				if (!string.IsNullOrEmpty(hand) && (hand.Equals("LeftHand", StringComparison.OrdinalIgnoreCase) || hand.Equals("left", StringComparison.OrdinalIgnoreCase) || hand.Equals("hand_l", StringComparison.OrdinalIgnoreCase)))
+				{
+					boneHand = Realm.Godot.Animation.HumanoidBone.LeftHand;
+				}
+				unit3D.SetHandAttachment(boneHand, attachmentId);
+			}
+		}
+	}
+
+	void IGameAPI.KillUnit(IUnit unit, bool executeDespawnShader, bool playDeathAnimation)
 	{
 		if (unit is IEcsEntityWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
 		{
@@ -1908,14 +2395,14 @@ public class {mapName} : IMapScript
 					if (!EcsWorld.Has<Dead>(wrapper.Entity))
 					{
 						EcsWorld.Add<Dead>(wrapper.Entity);
-						this.CallDeferred(nameof(KillUnit), unit3D);
+						Callable.From(() => KillUnit(unit3D, executeDespawnShader, playDeathAnimation)).CallDeferred();
 					}
 				}
 			}
 		}
 	}
 
-	void IGameAPI.DestroyUnit(IUnit unit)
+	void IGameAPI.DestroyUnit(IUnit unit, bool executeDespawnShader, bool playDeathAnimation)
 	{
 		if (unit is IEcsEntityWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
 		{
@@ -1930,10 +2417,57 @@ public class {mapName} : IMapScript
 					{
 						_castlesList.Remove(unit3D);
 					}
+					if (unit3D.IsBuilding)
+					{
+						float radius = EcsWorld.Has<CollisionRadius>(wrapper.Entity) ? EcsWorld.Get<CollisionRadius>(wrapper.Entity).Value : 2.0f;
+						var unitPos = EcsWorld.Has<Position>(wrapper.Entity) ? EcsWorld.Get<Position>(wrapper.Entity).Value : new System.Numerics.Vector3(unit3D.Position.X, unit3D.Position.Y, unit3D.Position.Z);
+						UncarveObstacle(unitPos, radius);
+					}
+					if (_multiplayerActive)
+					{
+						if (_clientToServerEntityMap.TryGetValue(unit3D.Entity.Id, out int serverId))
+						{
+							_serverToClientEntityMap.Remove(serverId);
+						}
+						_clientToServerEntityMap.Remove(unit3D.Entity.Id);
+					}
 					int id = wrapper.Entity.Id;
 					_unitWrapperCache.Remove(id);
 					EcsWorld.Destroy(wrapper.Entity);
-					unit3D.QueueFree();
+
+					unit3D.CollisionLayer = 0;
+					unit3D.CollisionMask = 0;
+
+					if (playDeathAnimation)
+					{
+						unit3D.PlayAnimation("Death");
+					}
+
+					string deathShader = executeDespawnShader ? GetModelDeathShader(unit3D.UnitId) : "";
+					if (executeDespawnShader && string.IsNullOrEmpty(deathShader))
+					{
+						deathShader = GetModelDeathShader(unit3D);
+					}
+
+					if (!string.IsNullOrEmpty(deathShader))
+					{
+						SpawnDeathShaderManager.AnimateTransition(unit3D, deathShader, false, null, () =>
+						{
+							if (GodotObject.IsInstanceValid(unit3D)) unit3D.QueueFree();
+						});
+					}
+					else if (playDeathAnimation)
+					{
+						var tween = CreateTween();
+						tween.SetParallel(true);
+						tween.TweenProperty(unit3D, "position:y", -3.0f, 1.0f);
+						tween.TweenProperty(unit3D, "scale", Vector3.Zero, 1.0f);
+						tween.Chain().TweenCallback(Callable.From(unit3D.QueueFree));
+					}
+					else
+					{
+						unit3D.QueueFree();
+					}
 				}
 			}
 		}
@@ -2016,10 +2550,10 @@ public class {mapName} : IMapScript
 		}
 	}
 
-	IUnit IGameAPI.SpawnUnitForPlayer(string unitTypeId, System.Numerics.Vector3 position, int playerIndex)
+	IUnit IGameAPI.SpawnUnitForPlayer(string unitTypeId, System.Numerics.Vector3 position, int playerIndex, bool executeSpawnShader)
 	{
 		bool isEnemy = NetworkService.ArePlayerIndicesEnemies(LocalPlayerIndex, playerIndex);
-		var unit = ((IGameAPI)this).SpawnUnit(unitTypeId, position, isEnemy);
+		var unit = ((IGameAPI)this).SpawnUnit(unitTypeId, position, isEnemy, false, executeSpawnShader);
 		unit.Player = playerIndex;
 		return unit;
 	}
@@ -2557,308 +3091,12 @@ public class {mapName} : IMapScript
 		}
 	}
 
-
-
-
-	private static readonly Dictionary<string, UnitMetadata> DefaultRegistryFallback = new()
-	{
-		{
-			"worker", new UnitMetadata {
-				UnitId = "worker",
-				Name = "Worker",
-				Description = "Dedicated worker. Can gather resources from Goldmines, Trees, and Rocks, and construct buildings.",
-				MaxHp = 70f,
-				Damage = 5f,
-				Range = 1.8f,
-				Armor = 0f,
-				Speed = 7.0f,
-				AttackCooldown = 1.5f,
-				ScanRadius = 10.0f,
-				CostGold = 75f,
-				CostWood = 0f,
-				CostStone = 0f,
-				ProductionTime = 4.0f,
-				PopCost = 1,
-				Scale = 1.5f,
-				AttackType = "melee",
-				ArmorType = "light",
-				GoldBounty = 15f,
-				BuildOptions = new[] { "castle", "tower" },
-				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
-			}
-		},
-		{
-			"soldier", new UnitMetadata {
-				UnitId = "soldier",
-				Name = "Soldier",
-				Description = "Heavy armored infantry. Slow but tanky front-line fighter.",
-				MaxHp = 150f,
-				Damage = 15f,
-				Range = 2.0f,
-				Armor = 5f,
-				Speed = 6.0f,
-				AttackCooldown = 1.5f,
-				ScanRadius = 14.0f,
-				CostGold = 100f,
-				CostWood = 0f,
-				CostStone = 0f,
-				ProductionTime = 5.0f,
-				PopCost = 1,
-				Scale = 1.5f,
-				AttackType = "melee",
-				ArmorType = "heavy",
-				GoldBounty = 20f,
-				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
-			}
-		},
-		{
-			"archer", new UnitMetadata {
-				UnitId = "archer",
-				Name = "Elf Archer",
-				Description = "Nimble elven ranged unit. High range and speed but fragile.",
-				MaxHp = 90f,
-				Damage = 12f,
-				Range = 18.0f,
-				Armor = 2f,
-				Speed = 8.0f,
-				AttackCooldown = 1.2f,
-				ScanRadius = 20.0f,
-				CostGold = 120f,
-				CostWood = 40f,
-				CostStone = 0f,
-				ProductionTime = 7.0f,
-				PopCost = 1,
-				Scale = 1.5f,
-				AttackType = "ranged",
-				ArmorType = "light",
-				GoldBounty = 25f,
-				Weapons = new[] { "arrow" },
-				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
-			}
-		},
-		{
-			"priest", new UnitMetadata {
-				UnitId = "priest",
-				Name = "Cleric Priest",
-				Description = "Holy support unit. Automatically heals nearby damaged friendly units.",
-				MaxHp = 80f,
-				Damage = 25f,
-				Range = 12.0f,
-				Armor = 1f,
-				Speed = 7.0f,
-				AttackCooldown = 2.0f,
-				ScanRadius = 15.0f,
-				CostGold = 140f,
-				CostWood = 20f,
-				CostStone = 0f,
-				ProductionTime = 8.0f,
-				PopCost = 1,
-				Scale = 1.5f,
-				AttackType = "ranged",
-				ArmorType = "light",
-				GoldBounty = 30f,
-				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground
-			}
-		},
-		{
-			"castle", new UnitMetadata {
-				UnitId = "castle",
-				Name = "Town Castle",
-				Description = "Your fortress and command center. Produces units and upgrades. Guard it well!",
-				MaxHp = 1000f,
-				Damage = 0f,
-				Range = 0f,
-				Armor = 15f,
-				Speed = 0f,
-				AttackCooldown = 0f,
-				ScanRadius = 0f,
-				CostGold = 400f,
-				CostWood = 300f,
-				CostStone = 200f,
-				ProductionTime = 15.0f,
-				PopCost = 0,
-				Scale = 1.2f,
-				AttackType = "none",
-				ArmorType = "building",
-				GoldBounty = 0f,
-				BuildOptions = new[] { "soldier", "archer", "priest", "worker" },
-				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Buildable,
-				ObstacleRadius = 2.0f
-			}
-		},
-		{
-			"tower", new UnitMetadata {
-				UnitId = "tower",
-				Name = "Spell Tower",
-				Description = "Defensive structure that auto-attacks nearby enemies. Upgradeable for +HP/+DMG.",
-				MaxHp = 500f,
-				Damage = 25f,
-				Range = 25.0f,
-				Armor = 8f,
-				Speed = 0f,
-				AttackCooldown = 2.0f,
-				ScanRadius = 25.0f,
-				CostGold = 200f,
-				CostWood = 150f,
-				CostStone = 100f,
-				ProductionTime = 10.0f,
-				PopCost = 0,
-				Scale = 1.2f,
-				AttackType = "ranged",
-				ArmorType = "building",
-				GoldBounty = 0f,
-				Weapons = new[] { "catapult_rock" },
-				PathingType = (int)Realm.Ecs.Components.Terrain.TerrainPathingFlags.Buildable,
-				ObstacleRadius = 1.5f
-			}
-		},
-		{
-			"turtle", new UnitMetadata {
-				UnitId = "turtle",
-				Name = "Amphibious Turtle",
-				Description = "Slow but sturdy amphibious beast that can travel on both ground and shallow water.",
-				MaxHp = 120f,
-				Damage = 10f,
-				Range = 1.5f,
-				Armor = 4f,
-				Speed = 5.0f,
-				AttackCooldown = 1.8f,
-				ScanRadius = 12.0f,
-				CostGold = 90f,
-				CostWood = 10f,
-				CostStone = 0f,
-				ProductionTime = 5.0f,
-				PopCost = 1,
-				Scale = 1.5f,
-				AttackType = "melee",
-				ArmorType = "heavy",
-				GoldBounty = 18f,
-				PathingType = (int)(Realm.Ecs.Components.Terrain.TerrainPathingFlags.Ground | Realm.Ecs.Components.Terrain.TerrainPathingFlags.ShallowWater)
-			}
-		}
-	};
-
-	private static readonly Dictionary<string, WeaponMetadata> DefaultWeaponFallback = new()
-	{
-		{
-			"arrow", new WeaponMetadata {
-				WeaponId = "arrow",
-				Name = "Arrow",
-				Damage = 12f,
-				Range = 18f,
-				AttackCooldown = 1.2f,
-				AttackType = "ranged",
-				ProjectileSpeed = 35f,
-				OrientToTrajectory = true,
-				RibbonColor = "#ffaa33",
-				RibbonWidth = 0.3f,
-				RibbonLifetime = 0.4f,
-				RibbonTaper = true,
-				RibbonAdditive = true
-			}
-		},
-		{
-			"catapult_rock", new WeaponMetadata {
-				WeaponId = "catapult_rock",
-				Name = "Catapult Rock",
-				Damage = 40f,
-				Range = 22f,
-				AttackCooldown = 3.0f,
-				AttackType = "ranged",
-				ProjectileModelPath = "spiked_orb_projectile.glb",
-				ProjectileSpeed = 20f,
-				ArcHeight = 4.5f,
-				TumbleAngularVelocity = new Vector3(3f, 2f, 1f),
-				OrientToTrajectory = false,
-				ShaderEffectType = "fire",
-				BaseColor = "#261e19",
-				EmissionColor = "#ff5500",
-				EmissionEnergy = 5.0f,
-				FresnelPower = 2.5f,
-				FresnelColor = "#ff9922",
-				FresnelFactor = 2.0f,
-				NoiseScale = 3.5f,
-				UvScrollSpeed1 = new Vector2(0.4f, 0.2f),
-				UvScrollSpeed2 = new Vector2(-0.3f, 0.4f),
-				ThresholdCutoff = 0.45f,
-				ThresholdSmoothness = 0.1f,
-				RibbonColor = "#ff7711",
-				RibbonWidth = 0.45f,
-				RibbonLifetime = 0.6f,
-				RibbonTaper = true,
-				RibbonAdditive = true
-			}
-		},
-		{
-			"frost_bolt", new WeaponMetadata {
-				WeaponId = "frost_bolt",
-				Name = "Frost Bolt",
-				Damage = 18f,
-				Range = 16f,
-				AttackCooldown = 1.5f,
-				AttackType = "ranged",
-				ProjectileSpeed = 28f,
-				OrientToTrajectory = true,
-				SpiralRadius = 0.35f,
-				SpiralFrequency = 2.0f,
-				ShaderEffectType = "frost",
-				BaseColor = "#0a1c2a",
-				EmissionColor = "#33ccff",
-				EmissionEnergy = 4.5f,
-				FresnelPower = 3.0f,
-				FresnelColor = "#88eeff",
-				FresnelFactor = 2.2f,
-				NoiseScale = 4.0f,
-				UvScrollSpeed1 = new Vector2(0.2f, 0.5f),
-				UvScrollSpeed2 = new Vector2(-0.2f, -0.3f),
-				ThresholdCutoff = 0.5f,
-				ThresholdSmoothness = 0.08f,
-				RibbonColor = "#44ddff",
-				RibbonWidth = 0.35f,
-				RibbonLifetime = 0.5f,
-				RibbonTaper = true,
-				RibbonAdditive = true
-			}
-		},
-		{
-			"poison_dart", new WeaponMetadata {
-				WeaponId = "poison_dart",
-				Name = "Poison Dart",
-				Damage = 10f,
-				Range = 15f,
-				AttackCooldown = 1.0f,
-				AttackType = "ranged",
-				ProjectileSpeed = 30f,
-				OrientToTrajectory = true,
-				ZigzagAmplitude = 0.4f,
-				ZigzagFrequency = 3.0f,
-				ShaderEffectType = "poison",
-				BaseColor = "#112010",
-				EmissionColor = "#33ff33",
-				EmissionEnergy = 4.0f,
-				FresnelPower = 3.5f,
-				FresnelColor = "#88ff44",
-				FresnelFactor = 1.8f,
-				NoiseScale = 3.0f,
-				UvScrollSpeed1 = new Vector2(-0.1f, 0.4f),
-				UvScrollSpeed2 = new Vector2(0.3f, 0.2f),
-				ThresholdCutoff = 0.55f,
-				ThresholdSmoothness = 0.12f,
-				RibbonColor = "#44ff22",
-				RibbonWidth = 0.4f,
-				RibbonLifetime = 0.5f,
-				RibbonTaper = true,
-				RibbonAdditive = true
-			}
-		}
-	};
-
 	public void LoadUnitMetadata(string mapName = null)
 	{
 		ResetAbilityCatalog();
 		if (string.IsNullOrEmpty(mapName))
 		{
-			mapName = !string.IsNullOrEmpty(ActiveMapName) ? ActiveMapName : "temp_map_workspace";
+			mapName = !string.IsNullOrEmpty(ActiveMapName) ? ActiveMapName : MapWorkspaceService.DefaultWorkspaceFolder;
 		}
 		ActiveMapName = mapName;
 		LocalizationManager.CurrentMapName = mapName;
@@ -2887,17 +3125,11 @@ public class {mapName} : IMapScript
 				if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object)
 				{
 					var newUnits = new Dictionary<string, UnitMetadata>(StringComparer.OrdinalIgnoreCase);
-					foreach (var kvp in DefaultRegistryFallback)
-					{
-						newUnits[kvp.Key] = kvp.Value;
-					}
+					var newBuildings = new Dictionary<string, UnitMetadata>(StringComparer.OrdinalIgnoreCase);
 					var newProps = new Dictionary<string, PropMetadata>(StringComparer.OrdinalIgnoreCase);
 					var newResources = new Dictionary<string, ResourceMetadata>(StringComparer.OrdinalIgnoreCase);
 					var newWeapons = new Dictionary<string, WeaponMetadata>(StringComparer.OrdinalIgnoreCase);
-					foreach (var kvp in DefaultWeaponFallback)
-					{
-						newWeapons[kvp.Key] = kvp.Value;
-					}
+					var newAttachments = new Dictionary<string, AttachmentMetadata>(StringComparer.OrdinalIgnoreCase);
 
 					bool hasStructuredArrays = false;
 
@@ -2911,6 +3143,65 @@ public class {mapName} : IMapScript
 								if (!string.IsNullOrEmpty(meta.WeaponId))
 									newWeapons[meta.WeaponId] = meta;
 							}
+						}
+					}
+
+					if (doc.RootElement.TryGetProperty("CustomAttachments", out var attachProp) && attachProp.ValueKind == JsonValueKind.Array)
+					{
+						hasStructuredArrays = true;
+						var list = JsonSerializer.Deserialize<List<AttachmentMetadata>>(attachProp.GetRawText(), Options);
+						if (list != null)
+						{
+							foreach (var meta in list)
+							{
+								if (!string.IsNullOrEmpty(meta.AttachmentId))
+								{
+									newAttachments[meta.AttachmentId] = meta;
+								}
+							}
+						}
+					}
+
+					var assetsRoot = doc.RootElement.TryGetProperty("Assets", out var aProp) 
+						? aProp 
+						: (doc.RootElement.TryGetProperty("MapProperties", out var mpProp) && mpProp.TryGetProperty("Assets", out var mpaProp) ? mpaProp : default);
+					if (assetsRoot.ValueKind == JsonValueKind.Object && assetsRoot.TryGetProperty("glb", out var glbProp) && glbProp.TryGetProperty("attachments", out var attGlbProp) && attGlbProp.ValueKind == JsonValueKind.Object)
+					{
+						foreach (var itemProp in attGlbProp.EnumerateObject())
+						{
+							string fileName = itemProp.Name;
+							string id = System.IO.Path.GetFileNameWithoutExtension(fileName);
+							float scale = 1.0f;
+							Vector3 posOffset = Vector3.Zero;
+							Vector3 rotOffset = Vector3.Zero;
+							string hand = "RightHand";
+							if (itemProp.Value.ValueKind == JsonValueKind.Object)
+							{
+								if (itemProp.Value.TryGetProperty("scale", out var sc) && sc.TryGetSingle(out var sVal)) scale = sVal;
+								if (itemProp.Value.TryGetProperty("position_offset", out var po) && po.ValueKind == JsonValueKind.Array)
+								{
+									var arr = po.EnumerateArray().ToArray();
+									if (arr.Length >= 3) posOffset = new Vector3(arr[0].GetSingle(), arr[1].GetSingle(), arr[2].GetSingle());
+								}
+								if (itemProp.Value.TryGetProperty("rotation_offset", out var ro) && ro.ValueKind == JsonValueKind.Array)
+								{
+									var arr = ro.EnumerateArray().ToArray();
+									if (arr.Length >= 3) rotOffset = new Vector3(arr[0].GetSingle(), arr[1].GetSingle(), arr[2].GetSingle());
+								}
+								if (itemProp.Value.TryGetProperty("default_hand", out var dh)) hand = dh.GetString() ?? "RightHand";
+							}
+							var meta = new AttachmentMetadata
+							{
+								AttachmentId = id,
+								Name = id,
+								ModelPath = System.IO.Path.Combine("Assets", "models", "attachments", fileName).Replace('\\', '/'),
+								Scale = scale,
+								PositionOffset = posOffset,
+								RotationOffset = rotOffset,
+								DefaultHand = hand
+							};
+							newAttachments[id] = meta;
+							newAttachments[fileName] = meta;
 						}
 					}
 
@@ -2944,7 +3235,7 @@ public class {mapName} : IMapScript
 								{
 									var copy = meta;
 									if (copy.Scale <= 0f) copy.Scale = 1.5f;
-									newUnits[copy.UnitId] = copy;
+									newBuildings[copy.UnitId] = copy;
 								}
 							}
 						}
@@ -3020,6 +3311,9 @@ public class {mapName} : IMapScript
 					UnitRegistry.Clear();
 					foreach (var kvp in newUnits) UnitRegistry[kvp.Key] = kvp.Value;
 
+					BuildingRegistry.Clear();
+					foreach (var kvp in newBuildings) BuildingRegistry[kvp.Key] = kvp.Value;
+
 					PropRegistry.Clear();
 					foreach (var kvp in newProps) PropRegistry[kvp.Key] = kvp.Value;
 
@@ -3029,6 +3323,9 @@ public class {mapName} : IMapScript
 					WeaponRegistry.Clear();
 					foreach (var kvp in newWeapons) WeaponRegistry[kvp.Key] = kvp.Value;
 
+					AttachmentRegistry.Clear();
+					foreach (var kvp in newAttachments) AttachmentRegistry[kvp.Key] = kvp.Value;
+
 					Prop3D.ClearModelPathCache();
 				}
 			}
@@ -3036,6 +3333,79 @@ public class {mapName} : IMapScript
 			{
 				GD.PrintErr($"Failed to load custom unit registry: {ex.Message}");
 			}
+		}
+	}
+
+	public void SaveAttachmentDefaultsToMetadata(string fileName, AttachmentMetadata meta)
+	{
+		try
+		{
+			string dir = !string.IsNullOrEmpty(CurrentMapDirectory) ? CurrentMapDirectory : Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
+			var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(dir) ?? new System.Text.Json.Nodes.JsonObject();
+			var glbObj = assetsObj["glb"]?.AsObject();
+			if (glbObj == null)
+			{
+				glbObj = new System.Text.Json.Nodes.JsonObject();
+				assetsObj["glb"] = glbObj;
+			}
+			var attObj = glbObj["attachments"]?.AsObject();
+			if (attObj == null)
+			{
+				attObj = new System.Text.Json.Nodes.JsonObject();
+				glbObj["attachments"] = attObj;
+			}
+
+			var itemNode = attObj[fileName]?.AsObject() ?? new System.Text.Json.Nodes.JsonObject();
+			itemNode["scale"] = meta.Scale;
+			var posArr = new System.Text.Json.Nodes.JsonArray { meta.PositionOffset.X, meta.PositionOffset.Y, meta.PositionOffset.Z };
+			itemNode["position_offset"] = posArr;
+			var rotArr = new System.Text.Json.Nodes.JsonArray { meta.RotationOffset.X, meta.RotationOffset.Y, meta.RotationOffset.Z };
+			itemNode["rotation_offset"] = rotArr;
+			itemNode["default_hand"] = meta.DefaultHand ?? "RightHand";
+			attObj[fileName] = itemNode;
+
+			Realm.Godot.Utils.MapAssetHelper.SaveAssetsToManifest(dir, assetsObj, removeFromMetadata: true);
+			LoadUnitMetadata(dir);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[GameHost] SaveAttachmentDefaultsToMetadata error: {ex.Message}");
+		}
+	}
+
+	public void SaveUnitAnimationsToMetadata(string unitId, Dictionary<string, List<UnitAnimationEntry>> animations)
+	{
+		try
+		{
+			string dir = !string.IsNullOrEmpty(CurrentMapDirectory) ? CurrentMapDirectory : Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
+			string metaPath = System.IO.Path.Combine(dir, "metadata.json");
+			if (!System.IO.File.Exists(metaPath)) return;
+
+			string json = System.IO.File.ReadAllText(metaPath);
+			var root = System.Text.Json.Nodes.JsonNode.Parse(json)?.AsObject();
+			if (root == null) return;
+
+			var unitsArr = root["CustomUnits"]?.AsArray();
+			if (unitsArr != null)
+			{
+				for (int i = 0; i < unitsArr.Count; i++)
+				{
+					var uObj = unitsArr[i]?.AsObject();
+					if (uObj != null && uObj["UnitId"]?.ToString() == unitId)
+					{
+						var animsJson = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(animations, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+						uObj["Animations"] = animsJson;
+						break;
+					}
+				}
+			}
+
+			MapJsonFormatter.SaveFormattedJson(metaPath, root);
+			LoadUnitMetadata(dir);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[GameHost] SaveUnitAnimationsToMetadata error: {ex.Message}");
 		}
 	}
 
@@ -3188,38 +3558,7 @@ public class {mapName} : IMapScript
 
 		if (_activeMapScript == null)
 		{
-			bool hasCustomTerrain = false;
-			if (isCustomPath)
-			{
-				string checkDir = normalizedRaw;
-				if (normalizedRaw.StartsWith("user://") || normalizedRaw.StartsWith("res://"))
-				{
-					checkDir = ProjectSettings.GlobalizePath(normalizedRaw);
-				}
-				if (System.IO.Directory.Exists(checkDir) && System.IO.File.Exists(System.IO.Path.Combine(checkDir, "terrain.json")))
-				{
-					hasCustomTerrain = true;
-				}
-			}
-			else
-			{
-				string lowercaseMapName = mapName.ToLower().Trim();
-				string mapDir = $"res://Maps/{lowercaseMapName}";
-				string targetDir = ProjectSettings.GlobalizePath(mapDir);
-				if (System.IO.Directory.Exists(targetDir) && System.IO.File.Exists(System.IO.Path.Combine(targetDir, "terrain.json")))
-				{
-					hasCustomTerrain = true;
-				}
-			}
-
-			if (hasCustomTerrain)
-			{
-				_activeMapScript = new EmptyMapScript();
-			}
-			else
-			{
-				_activeMapScript = new Realm.Maps.MeleeMap();
-			}
+			_activeMapScript = new EmptyMapScript();
 		}
 	}
 
@@ -3827,11 +4166,20 @@ public class {mapName} : IMapScript
 				string fullPath = path;
 				if (!path.StartsWith("res://") && !System.IO.File.Exists(path))
 				{
-					string wsPath = ProjectSettings.GlobalizePath("user://temp_map_workspace");
+					string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
 					fullPath = System.IO.Path.Combine(wsPath, path.Replace('/', System.IO.Path.DirectorySeparatorChar));
 					if (!System.IO.File.Exists(fullPath))
 					{
 						fullPath = System.IO.Path.Combine(wsPath, "Assets", "skyboxes", System.IO.Path.GetFileName(path));
+					}
+					if (!System.IO.File.Exists(fullPath))
+					{
+						string rtexName = System.IO.Path.GetFileNameWithoutExtension(path) + ".rtex";
+						string rtexCandidate = System.IO.Path.Combine(wsPath, "Assets", "skyboxes", rtexName);
+						if (System.IO.File.Exists(rtexCandidate))
+						{
+							fullPath = rtexCandidate;
+						}
 					}
 				}
 
@@ -3845,10 +4193,27 @@ public class {mapName} : IMapScript
 				}
 				else if (System.IO.File.Exists(fullPath))
 				{
-					var img = Image.LoadFromFile(fullPath);
-					if (img != null)
+					if (fullPath.EndsWith(".rtex", StringComparison.OrdinalIgnoreCase))
 					{
-						skyTexture = ImageTexture.CreateFromImage(img);
+						byte[] rtexBytes = System.IO.File.ReadAllBytes(fullPath);
+						byte[]? webpBytes = Realm.Shared.Textures.RtexFile.GetLayer(rtexBytes, 0);
+						if (webpBytes != null && webpBytes.Length > 0)
+						{
+							var img = Image.CreateEmpty(1, 1, false, Image.Format.Rgba8);
+							if (img.LoadWebpFromBuffer(webpBytes) != Error.Ok)
+							{
+								img.LoadPngFromBuffer(webpBytes);
+							}
+							skyTexture = ImageTexture.CreateFromImage(img);
+						}
+					}
+					else
+					{
+						var img = Image.LoadFromFile(fullPath);
+						if (img != null)
+						{
+							skyTexture = ImageTexture.CreateFromImage(img);
+						}
 					}
 				}
 
@@ -4022,7 +4387,7 @@ public class {mapName} : IMapScript
 		return entity;
 	}
 
-	private Unit3D SpawnUnit3D(Entity entity, string id, string modelPath, Vector3 pos, bool isBuilding, bool isEnemy, bool isFromQueue = false, int player = -1)
+	private Unit3D SpawnUnit3D(Entity entity, string id, string modelPath, Vector3 pos, bool isBuilding, bool isEnemy, bool isFromQueue = false, int player = -1, bool executeSpawnShader = false)
 	{
 		int playerIndex = player >= 0 ? player : 0;
 		bool actualIsEnemy = player >= 0 ? NetworkService.ArePlayerIndicesEnemies(LocalPlayerIndex, playerIndex) : isEnemy;
@@ -4076,12 +4441,19 @@ public class {mapName} : IMapScript
 		if (isBuilding)
 		{
 			var spawnOffset = new System.Numerics.Vector3(0f, 0f, 8f);
-			EcsWorld.Add(entity, new BuildingSpawnOffset(spawnOffset));
+			if (EcsWorld.Has<BuildingSpawnOffset>(entity))
+				EcsWorld.Set(entity, new BuildingSpawnOffset(spawnOffset));
+			else
+				EcsWorld.Add(entity, new BuildingSpawnOffset(spawnOffset));
 
 			float autoDetectedRadius = GetOrCalculateObstacleRadius(id, unit3D, isBuilding);
 			string unitAssetKey = GetModelAssetKey(unit3D);
 			float baseRadius = autoDetectedRadius * GetModelCollisionCircleRatio(unitAssetKey);
-			EcsWorld.Add(entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
+			if (EcsWorld.Has<Realm.Ecs.Components.Core.CollisionRadius>(entity))
+				EcsWorld.Set(entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
+			else
+				EcsWorld.Add(entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
+
 			if (!IsMapEditorMode)
 			{
 				CarveObstacle(new System.Numerics.Vector3(pos.X, pos.Y, pos.Z), baseRadius);
@@ -4113,6 +4485,20 @@ public class {mapName} : IMapScript
 		{
 			_castlesList.Add(unit3D);
 		}
+
+		if (executeSpawnShader)
+		{
+			string spawnShader = GetModelSpawnShader(unit3D);
+			if (string.IsNullOrEmpty(spawnShader))
+			{
+				spawnShader = GetModelSpawnShader(id);
+			}
+			if (!string.IsNullOrEmpty(spawnShader))
+			{
+				SpawnDeathShaderManager.AnimateTransition(unit3D, spawnShader, true);
+			}
+		}
+
 		return unit3D;
 	}
 
@@ -4414,6 +4800,10 @@ public class {mapName} : IMapScript
 				alpha *= alpha;
 				img.SetPixel(x, y, new Color(0f, 0f, 0f, alpha));
 			}
+		}
+		if (!img.HasMipmaps())
+		{
+			img.GenerateMipmaps();
 		}
 		_sharedShadowGradient = ImageTexture.CreateFromImage(img);
 		return _sharedShadowGradient;

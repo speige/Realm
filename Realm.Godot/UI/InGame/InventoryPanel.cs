@@ -2,6 +2,7 @@ using Godot;
 using System;
 using System.Collections.Generic;
 using Arch.Core;
+using Realm.Godot.Utils;
 
 public class InventoryPanel
 {
@@ -86,7 +87,7 @@ public class InventoryPanel
 		btn.Flat = false;
 		btn.Text = text;
 		btn.ExpandIcon = true;
-		btn.Icon = !string.IsNullOrEmpty(iconPath) ? GD.Load<Texture2D>(iconPath) : null;
+		btn.Icon = !string.IsNullOrEmpty(iconPath) ? RtexIconLoader.Load(iconPath) : null;
 		
 		string transTooltip = TranslationServer.Translate(tooltip);
 		btn.TooltipText = string.IsNullOrEmpty(transTooltip) ? tooltip : transTooltip;

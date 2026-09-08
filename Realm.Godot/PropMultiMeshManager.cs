@@ -52,6 +52,7 @@ public partial class PropMultiMeshManager : Node3D
 	private static readonly StringName _snNormalMode = new("normal_mode");
 	private static readonly StringName _snUnitAmbientBoost = new("unit_ambient_boost");
 	private static readonly StringName _snUnitRimIntensity = new("unit_rim_intensity");
+	private static readonly StringName _snHideInShroud = new("hide_in_shroud");
 
 	private readonly Dictionary<string, PropModelGroup> _groups = new(StringComparer.OrdinalIgnoreCase);
 	private readonly HashSet<string> _dirtyAssetKeys = new(StringComparer.OrdinalIgnoreCase);
@@ -374,7 +375,7 @@ public partial class PropMultiMeshManager : Node3D
 				{
 					var prop = chunkProps[i];
 					Vector3 pos = prop.Position;
-					pos.Y += yOffset;
+					pos.Y += yOffset * prop.Scale;
 
 					float propScale = Mathf.Max(0.01f, prop.Scale * globalModelScale);
 					Basis basis = Basis.Identity.Rotated(Vector3.Up, Mathf.DegToRad(prop.RotationY)).Scaled(Vector3.One * propScale);
@@ -468,7 +469,7 @@ public partial class PropMultiMeshManager : Node3D
 				{
 					var prop = chunkProps[i];
 					Vector3 pos = prop.Position;
-					pos.Y += yOffset;
+					pos.Y += yOffset * prop.Scale;
 
 					float propScale = Mathf.Max(0.01f, prop.Scale * globalModelScale);
 					Basis basis = Basis.Identity.Rotated(Vector3.Up, Mathf.DegToRad(prop.RotationY)).Scaled(Vector3.One * propScale);
@@ -497,6 +498,7 @@ public partial class PropMultiMeshManager : Node3D
 	private PropModelGroup CreateGroupForAsset(string normAssetKey)
 	{
 		string modelPath = ResolveModelPathForAssetKey(normAssetKey);
+		if (string.IsNullOrEmpty(modelPath)) return null;
 		Node prototype = Realm.Godot.Utils.ModelCache.GetModel(modelPath);
 		if (prototype == null) return null;
 
@@ -603,7 +605,7 @@ public partial class PropMultiMeshManager : Node3D
 
 					if (baseMatToUse != null)
 					{
-						var shaderMat = Realm.Godot.Utils.PlayerColorShaderManager.GetOrCreateShaderMaterial(baseMatToUse, normalizeLuminance);
+						var shaderMat = Realm.Godot.Utils.ModelShaderManager.GetOrCreateShaderMaterial(baseMatToUse, normalizeLuminance);
 						mmNode.MaterialOverride = shaderMat;
 						mmNode.SetInstanceShaderParameter(_snModelBrightness, brightness);
 						mmNode.SetInstanceShaderParameter(_snModelColorTint, tint);
@@ -611,6 +613,7 @@ public partial class PropMultiMeshManager : Node3D
 						mmNode.SetInstanceShaderParameter(_snNormalMode, (float)normalMode);
 						mmNode.SetInstanceShaderParameter(_snUnitAmbientBoost, 0.0f);
 						mmNode.SetInstanceShaderParameter(_snUnitRimIntensity, 0.0f);
+						mmNode.SetInstanceShaderParameter(_snHideInShroud, 1.0f);
 					}
 				}
 			}
@@ -649,41 +652,58 @@ public partial class PropMultiMeshManager : Node3D
 	private static string ResolveModelPathForAssetKey(string normAssetKey)
 	{
 		if (string.IsNullOrEmpty(normAssetKey))
-			return "wooden_box.glb";
+			return string.Empty;
 
 		string targetModel = normAssetKey;
-		if (GameHost.PropRegistry != null && GameHost.PropRegistry.TryGetValue(normAssetKey, out var propMeta) && !string.IsNullOrEmpty(propMeta.ModelPath))
+		string cleanId = System.IO.Path.GetFileNameWithoutExtension(normAssetKey);
+
+		if (GameHost.PropRegistry != null && ((GameHost.PropRegistry.TryGetValue(normAssetKey, out var propMeta) || GameHost.PropRegistry.TryGetValue(cleanId, out propMeta)) && !string.IsNullOrEmpty(propMeta.ModelPath)))
 		{
 			targetModel = propMeta.ModelPath;
 		}
-		else if (GameHost.ResourceRegistry != null && GameHost.ResourceRegistry.TryGetValue(normAssetKey, out var resMeta) && !string.IsNullOrEmpty(resMeta.ModelPath))
+		else if (GameHost.ResourceRegistry != null && ((GameHost.ResourceRegistry.TryGetValue(normAssetKey, out var resMeta) || GameHost.ResourceRegistry.TryGetValue(cleanId, out resMeta)) && !string.IsNullOrEmpty(resMeta.ModelPath)))
 		{
 			targetModel = resMeta.ModelPath;
 		}
-		else if (GameHost.UnitRegistry != null && GameHost.UnitRegistry.TryGetValue(normAssetKey, out var unitMeta) && !string.IsNullOrEmpty(unitMeta.ModelPath))
+		else if (GameHost.UnitRegistry != null && ((GameHost.UnitRegistry.TryGetValue(normAssetKey, out var unitMeta) || GameHost.UnitRegistry.TryGetValue(cleanId, out unitMeta)) && !string.IsNullOrEmpty(unitMeta.ModelPath)))
 		{
 			targetModel = unitMeta.ModelPath;
 		}
+		else if (GameHost.BuildingRegistry != null && ((GameHost.BuildingRegistry.TryGetValue(normAssetKey, out var bldMeta) || GameHost.BuildingRegistry.TryGetValue(cleanId, out bldMeta)) && !string.IsNullOrEmpty(bldMeta.ModelPath)))
+		{
+			targetModel = bldMeta.ModelPath;
+		}
+
+		if (string.IsNullOrEmpty(targetModel))
+			return string.Empty;
 
 		if (targetModel.StartsWith("res://") || System.IO.File.Exists(targetModel))
 			return targetModel;
 
 		string wsPath = GameHost.Instance != null && !string.IsNullOrEmpty(GameHost.Instance.CurrentMapDirectory)
 			? GameHost.Instance.CurrentMapDirectory
-			: Godot.ProjectSettings.GlobalizePath("user://temp_map_workspace");
+			: MapWorkspaceService.GetDefaultWorkspaceGlobalPath();
+		string directCandidate = System.IO.Path.Combine(wsPath, targetModel);
+		if (System.IO.File.Exists(directCandidate))
+			return directCandidate;
+
 		string filename = System.IO.Path.GetFileName(targetModel);
 		if (!filename.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
 		{
 			filename += ".glb";
 		}
 
-		string[] subDirs = new[] { "props", "resources", "buildings", "units" };
+		string[] subDirs = new[] { "props", "resources", "buildings", "units", "attachments", "projectiles", "weapons" };
 		foreach (var sub in subDirs)
 		{
 			string candidate = System.IO.Path.Combine(wsPath, "Assets", "models", sub, filename);
 			if (System.IO.File.Exists(candidate))
 				return candidate;
 		}
+
+		string modelsCandidate = System.IO.Path.Combine(wsPath, "Assets", "models", filename);
+		if (System.IO.File.Exists(modelsCandidate))
+			return modelsCandidate;
 
 		string rootCandidate = System.IO.Path.Combine(wsPath, filename);
 		if (System.IO.File.Exists(rootCandidate))

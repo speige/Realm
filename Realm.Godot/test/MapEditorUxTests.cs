@@ -85,12 +85,12 @@ public class MapEditorUxTests
         var files = Directory.GetFiles(@"C:\temp\Realm\Realm.Godot\Assets\2d\TileSheets", "*.png");
         foreach (var file in files)
         {
-            string ktx2Path = file.Replace(".png", ".ktx2");
-            System.Console.WriteLine($"Converting {file} to {ktx2Path}");
-            terrain.ProcessAndSaveRawTexture(file, ktx2Path);
-            if (!File.Exists(ktx2Path))
+            string rtexPath = file.Replace(".png", ".rtex");
+            System.Console.WriteLine($"Converting {file} to {rtexPath}");
+            terrain.ProcessAndSaveRawTexture(file, rtexPath);
+            if (!File.Exists(rtexPath))
             {
-                throw new System.Exception($"Failed to convert {file} to {ktx2Path}.");
+                throw new System.Exception($"Failed to convert {file} to {rtexPath}.");
             }
         }
     }
@@ -977,7 +977,7 @@ public class MapEditorUxTests
 
         // 2. Prepare Asset folders and copy assets
         string projectilesDir = Path.Combine(tempMapDir, "Assets", "models", "projectiles");
-        string ribbonsDir = Path.Combine(tempMapDir, "Assets", "textures", "ribbons");
+        string ribbonsDir = Path.Combine(tempMapDir, "Assets", "ribbons");
         Directory.CreateDirectory(projectilesDir);
         Directory.CreateDirectory(ribbonsDir);
 
@@ -1023,7 +1023,7 @@ public class MapEditorUxTests
       ""UvScrollSpeed2"": { ""X"": -0.3, ""Y"": 0.4 },
       ""ThresholdCutoff"": 0.45,
       ""ThresholdSmoothness"": 0.1,
-      ""RibbonTexture"": ""Assets/textures/ribbons/void_whisper_shadow_veil.png"",
+      ""RibbonTexture"": ""Assets/ribbons/void_whisper_shadow_veil.png"",
       ""RibbonColor"": ""#ff7711"",
       ""RibbonWidth"": 0.45,
       ""RibbonLifetime"": 0.6,

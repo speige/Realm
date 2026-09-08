@@ -6,4 +6,6 @@ public class SeederInfo
     public required string IP { get; set; }
     public required int Port { get; set; }
     public required List<string> MapIds { get; set; }
+    public int CapacityPercentage { get; set; } = 100;
+    public bool AcceptingUploads { get; set; } = true;
 }

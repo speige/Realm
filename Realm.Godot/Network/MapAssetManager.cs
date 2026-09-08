@@ -1,5 +1,6 @@
 using Blake3;
 using Godot;
+using Realm.Shared.Metadata;
 using SharpCompress.Archives;
 using SharpCompress.Common;
 using SharpCompress.Writers.SevenZip;
@@ -8,6 +9,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 
 public static class MapAssetManager
@@ -48,6 +50,54 @@ public static class MapAssetManager
         set => AsyncLocalArchiveDirectory.Value = value;
     }
 
+    private static string? _configuredStoragePath;
+
+    public static string? ConfiguredStoragePath
+    {
+        get
+        {
+            if (_configuredStoragePath != null)
+            {
+                return _configuredStoragePath;
+            }
+
+            try
+            {
+                string[] args = System.Environment.GetCommandLineArgs();
+                for (int i = 0; i < args.Length; i++)
+                {
+                    if (args[i].StartsWith("--storage-path=", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _configuredStoragePath = args[i].Substring("--storage-path=".Length).Trim('"');
+                        return _configuredStoragePath;
+                    }
+                    if (string.Equals(args[i], "--storage-path", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                    {
+                        _configuredStoragePath = args[i + 1].Trim('"');
+                        return _configuredStoragePath;
+                    }
+                }
+            }
+            catch { }
+
+            return null;
+        }
+        set
+        {
+            _configuredStoragePath = value;
+            _storage = null;
+        }
+    }
+
+    private static Realm.Shared.Distribution.ContentAddressableStorage? _storage;
+    public static Realm.Shared.Distribution.ContentAddressableStorage Storage
+    {
+        get
+        {
+            return _storage ??= new Realm.Shared.Distribution.ContentAddressableStorage(GlobalArchiveDirectory);
+        }
+    }
+
     public static string GlobalArchiveDirectory
     {
         get
@@ -59,6 +109,16 @@ public static class MapAssetManager
                     Directory.CreateDirectory(ThreadLocalArchiveDirectory);
                 }
                 return ThreadLocalArchiveDirectory;
+            }
+
+            string? configured = ConfiguredStoragePath;
+            if (!string.IsNullOrEmpty(configured))
+            {
+                if (!Directory.Exists(configured))
+                {
+                    Directory.CreateDirectory(configured);
+                }
+                return configured;
             }
 
             if (IsGodotEngineRunning)
@@ -79,38 +139,46 @@ public static class MapAssetManager
 
     public static string GlobalArchiveFile => Path.Combine(GlobalArchiveDirectory, "global_assets.7z");
 
-    public static string ComputeBlake3(byte[] bytes)
+    public static string ComputeBlake3(byte[] bytes, string? extensionOrPath = null)
     {
-        var hash = Hasher.Hash(bytes);
-        return hash.ToString();
+        return RealmMetadataHelper.ComputeBlake3(bytes, extensionOrPath);
     }
 
-    public static string ComputeBlake3(Stream stream)
+    public static string ComputeBlake3(Stream stream, string? extensionOrPath = null)
     {
-        using var hasher = Hasher.New();
-        byte[] buffer = new byte[8192];
-        int read;
-        while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
-        {
-            hasher.Update(new ReadOnlySpan<byte>(buffer, 0, read));
-        }
-        return hasher.Finalize().ToString();
+        return RealmMetadataHelper.ComputeBlake3(stream, extensionOrPath);
     }
 
     public static List<string> GetMissingHashes(IEnumerable<string> hashes)
     {
         var missing = new List<string>();
+        var hashesToCheckArchive = new List<string>();
+
+        foreach (var hash in hashes)
+        {
+            string norm = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(hash);
+            if (!Storage.HasAsset(norm))
+            {
+                hashesToCheckArchive.Add(hash);
+            }
+        }
+
+        if (hashesToCheckArchive.Count == 0)
+        {
+            return missing;
+        }
+
         lock (ArchiveLock)
         {
             if (!File.Exists(GlobalArchiveFile))
             {
-                missing.AddRange(hashes);
+                missing.AddRange(hashesToCheckArchive);
                 return missing;
             }
 
             try
             {
-                var existingHashes = new HashSet<string>();
+                var existingHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 using (var archive = ArchiveFactory.OpenArchive(GlobalArchiveFile, null))
                 {
                     foreach (var entry in archive.Entries)
@@ -118,13 +186,16 @@ public static class MapAssetManager
                         if (!entry.IsDirectory)
                         {
                             existingHashes.Add(entry.Key);
+                            string normKey = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(entry.Key);
+                            existingHashes.Add(normKey);
                         }
                     }
                 }
 
-                foreach (var hash in hashes)
+                foreach (var hash in hashesToCheckArchive)
                 {
-                    if (!existingHashes.Contains(hash))
+                    string norm = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(hash);
+                    if (!existingHashes.Contains(hash) && !existingHashes.Contains(norm))
                     {
                         missing.Add(hash);
                     }
@@ -133,7 +204,7 @@ public static class MapAssetManager
             catch (Exception ex)
             {
                 MapAssetManager.LogErr($"[MapAssetManager] Error checking missing hashes: {ex.Message}");
-                missing.AddRange(hashes);
+                missing.AddRange(hashesToCheckArchive);
             }
         }
         return missing;
@@ -186,6 +257,12 @@ public static class MapAssetManager
     {
         if (newFilesByHash == null || newFilesByHash.Count == 0) return;
 
+        foreach (var kvp in newFilesByHash)
+        {
+            string ext = Path.GetExtension(kvp.Key);
+            Storage.StoreAsset(kvp.Value, ext);
+        }
+
         if (!Directory.Exists(GlobalArchiveDirectory))
         {
             Directory.CreateDirectory(GlobalArchiveDirectory);
@@ -212,27 +289,13 @@ public static class MapAssetManager
                                 {
                                     if (entry.IsDirectory) continue;
                                     
-                                    if (newFilesByHash.ContainsKey(entry.Key))
+                                    if (!writtenKeys.Contains(entry.Key))
                                     {
-                                        if (!writtenKeys.Contains(entry.Key))
+                                        using (var oldStream = entry.OpenEntryStream())
                                         {
-                                            using (var ms = new MemoryStream(newFilesByHash[entry.Key]))
-                                            {
-                                                writer.Write(entry.Key, ms, DateTime.UtcNow);
-                                            }
-                                            writtenKeys.Add(entry.Key);
+                                            writer.Write(entry.Key, oldStream, entry.LastModifiedTime ?? DateTime.UtcNow);
                                         }
-                                    }
-                                    else
-                                    {
-                                        if (!writtenKeys.Contains(entry.Key))
-                                        {
-                                            using (var oldStream = entry.OpenEntryStream())
-                                            {
-                                                writer.Write(entry.Key, oldStream, entry.LastModifiedTime ?? DateTime.UtcNow);
-                                            }
-                                            writtenKeys.Add(entry.Key);
-                                        }
+                                        writtenKeys.Add(entry.Key);
                                     }
                                 }
                             }
@@ -284,17 +347,14 @@ public static class MapAssetManager
         {
             try
             {
-                if (!File.Exists(GlobalArchiveFile))
-                {
-                    throw new FileNotFoundException("Global archive does not exist on host.");
-                }
-
                 using (var newFs = File.Create(tempDeltaPath))
                 using (var writer = new SevenZipWriter(newFs, new SevenZipWriterOptions() { CompressionType = CompressionType.LZMA }))
                 {
-                    using (var hostArchive = ArchiveFactory.OpenArchive(GlobalArchiveFile, null))
+                    var entryMap = new Dictionary<string, IArchiveEntry>();
+                    IArchive? hostArchive = null;
+                    if (File.Exists(GlobalArchiveFile))
                     {
-                        var entryMap = new Dictionary<string, IArchiveEntry>();
+                        hostArchive = ArchiveFactory.OpenArchive(GlobalArchiveFile, null);
                         foreach (var entry in hostArchive.Entries)
                         {
                             if (!entry.IsDirectory)
@@ -302,10 +362,20 @@ public static class MapAssetManager
                                 entryMap[entry.Key] = entry;
                             }
                         }
+                    }
 
+                    try
+                    {
                         foreach (var hash in missingHashes)
                         {
-                            if (entryMap.TryGetValue(hash, out var hostEntry))
+                            string norm = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(hash);
+                            byte[]? casBytes = Storage.GetAssetBytes(norm);
+                            if (casBytes != null)
+                            {
+                                using var ms = new MemoryStream(casBytes);
+                                writer.Write(hash, ms, DateTime.UtcNow);
+                            }
+                            else if (entryMap.TryGetValue(hash, out var hostEntry))
                             {
                                 using (var entryStream = hostEntry.OpenEntryStream())
                                 {
@@ -314,9 +384,13 @@ public static class MapAssetManager
                             }
                             else
                             {
-                                MapAssetManager.LogErr($"[MapAssetManager] Requested hash {hash} not found in host global archive.");
+                                MapAssetManager.LogErr($"[MapAssetManager] Requested hash {hash} not found in host storage or archive.");
                             }
                         }
+                    }
+                    finally
+                    {
+                        hostArchive?.Dispose();
                     }
                 }
                 return tempDeltaPath;
@@ -347,12 +421,6 @@ public static class MapAssetManager
             try
             {
                 MapAssetManager.Log("[MapAssetManager] Starting background pruning process...");
-                
-                if (!File.Exists(archiveFile))
-                {
-                    MapAssetManager.Log("[MapAssetManager] Global archive does not exist, skipping pruning.");
-                    return;
-                }
 
                 if (!Directory.Exists(archiveDir))
                 {
@@ -360,7 +428,7 @@ public static class MapAssetManager
                 }
 
                 var manifestFiles = Directory.GetFiles(archiveDir, "*.json");
-                var referencedHashes = new HashSet<string>();
+                var referencedHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var file in manifestFiles)
                 {
@@ -375,6 +443,7 @@ public static class MapAssetManager
                             foreach (var hash in manifest.Files.Values)
                             {
                                 referencedHashes.Add(hash);
+                                referencedHashes.Add(Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(hash));
                             }
                         }
                     }
@@ -385,6 +454,36 @@ public static class MapAssetManager
                 }
 
                 MapAssetManager.Log($"[MapAssetManager] Total referenced BLAKE3 hashes found in manifests: {referencedHashes.Count}");
+
+                if (Directory.Exists(Storage.AssetsDirectory))
+                {
+                    var casFiles = Directory.GetFiles(Storage.AssetsDirectory, "*.*", SearchOption.AllDirectories);
+                    foreach (var casFile in casFiles)
+                    {
+                        string fileHash = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(Path.GetFileName(casFile));
+                        if (!referencedHashes.Contains(fileHash))
+                        {
+                            try
+                            {
+                                File.Delete(casFile);
+                                string sidecarShard = Path.Combine(Storage.SidecarCacheDirectory, fileHash.Substring(0, 2));
+                                string sidecarFile = Path.Combine(sidecarShard, $"{fileHash}.json");
+                                if (File.Exists(sidecarFile))
+                                {
+                                    File.Delete(sidecarFile);
+                                }
+                                MapAssetManager.Log($"[MapAssetManager] Pruned CAS asset: {casFile}");
+                            }
+                            catch { }
+                        }
+                    }
+                }
+
+                if (!File.Exists(archiveFile))
+                {
+                    MapAssetManager.Log("[MapAssetManager] CAS pruning completed. Global 7z archive does not exist, skipping 7z pruning.");
+                    return;
+                }
 
                 bool needsPruning = false;
                 using (var archive = ArchiveFactory.OpenArchive(archiveFile, null))
@@ -459,6 +558,45 @@ public static class MapAssetManager
         
         if (Directory.Exists(mapDir))
         {
+            string manifestJsonPath = Path.Combine(mapDir, "manifest.json");
+            if (File.Exists(manifestJsonPath))
+            {
+                try
+                {
+                    var existing = MapManifest.LoadFromFile(manifestJsonPath);
+                    if (existing != null)
+                    {
+                        if (!string.IsNullOrEmpty(existing.MapName))
+                        {
+                            manifest.MapName = existing.MapName;
+                        }
+                        if (!string.IsNullOrEmpty(existing.Author))
+                        {
+                            manifest.Author = existing.Author;
+                        }
+                        if (!string.IsNullOrEmpty(existing.Version))
+                        {
+                            manifest.Version = existing.Version;
+                        }
+                        if (!string.IsNullOrEmpty(existing.Description))
+                        {
+                            manifest.Description = existing.Description;
+                        }
+                        if (existing.Tags != null && existing.Tags.Count > 0)
+                        {
+                            manifest.Tags = new List<string>(existing.Tags);
+                        }
+                        if (existing.Assets != null)
+                        {
+                            manifest.Assets = existing.Assets.DeepClone() as JsonObject;
+                        }
+                    }
+                }
+                catch
+                {
+                }
+            }
+
             var files = Directory.GetFiles(mapDir, "*.*", SearchOption.AllDirectories);
             foreach (var file in files)
             {
@@ -470,26 +608,30 @@ public static class MapAssetManager
                 }
 
                 byte[] bytes = File.ReadAllBytes(file);
-                string hash = ComputeBlake3(bytes);
-                newFiles[hash] = bytes;
+                string ext = Path.GetExtension(file).ToLowerInvariant();
+                string blake3 = RealmMetadataHelper.ComputeBlake3(bytes, ext);
+                string assetKey = string.IsNullOrEmpty(ext) ? blake3 : $"{blake3}{ext}";
+                newFiles[assetKey] = bytes;
 
                 string virtualPath = "res://" + relativePath;
-                manifest.Files[virtualPath] = hash;
+                manifest.Files[virtualPath] = assetKey;
             }
         }
         else if (File.Exists(mapPath))
         {
             byte[] bytes = File.ReadAllBytes(mapPath);
-            string hash = ComputeBlake3(bytes);
-            newFiles[hash] = bytes;
-            manifest.Files["res://map.json"] = hash;
+            string blake3 = RealmMetadataHelper.ComputeBlake3(bytes, ".json");
+            string assetKey = $"{blake3}.json";
+            newFiles[assetKey] = bytes;
+            manifest.Files["res://map.json"] = assetKey;
         }
         else
         {
             byte[] bytes = Encoding.UTF8.GetBytes("{\"units\": []}");
-            string hash = ComputeBlake3(bytes);
-            newFiles[hash] = bytes;
-            manifest.Files["res://map.json"] = hash;
+            string blake3 = RealmMetadataHelper.ComputeBlake3(bytes, ".json");
+            string assetKey = $"{blake3}.json";
+            newFiles[assetKey] = bytes;
+            manifest.Files["res://map.json"] = assetKey;
         }
 
         AddOrUpdateGlobalArchive(newFiles);
@@ -714,7 +856,10 @@ public static class MapAssetManager
                 string tempFilePath = Path.Combine(tempDir, hash);
                 if (File.Exists(tempFilePath))
                 {
-                    packer.AddFile(virtualPath, tempFilePath);
+                    string pckVirtualPath = virtualPath.StartsWith("res://", StringComparison.OrdinalIgnoreCase)
+                        ? virtualPath
+                        : $"res://{virtualPath.TrimStart('/')}";
+                    packer.AddFile(pckVirtualPath, tempFilePath);
                 }
             }
             packer.Flush();
