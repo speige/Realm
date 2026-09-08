@@ -43,19 +43,31 @@ public partial class FloatingDialogBase : PanelContainer
 
 		TitleLabel = new Label();
 		TitleLabel.Text = titleText;
+		TitleLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		TitleLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		TitleLabel.AddThemeColorOverride("font_color", UIStyle.ColorGold);
-		TitleLabel.AddThemeFontSizeOverride("font_size", 14);
+		TitleLabel.AddThemeFontSizeOverride("font_size", 15);
 		TitleLabel.MouseFilter = MouseFilterEnum.Pass;
-		HeaderHBox.AddChild(TitleLabel);
+
+		var titleMargin = new MarginContainer();
+		titleMargin.AddThemeConstantOverride("margin_top", -14);
+		titleMargin.AddThemeConstantOverride("margin_bottom", 0);
+		titleMargin.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		titleMargin.AddChild(TitleLabel);
+		HeaderHBox.AddChild(titleMargin);
 
 		CloseButton = new Button();
 		CloseButton.Set("icon_max_width", 0);
 		CloseButton.Text = "✕";
-		CloseButton.CustomMinimumSize = new Vector2(24, 24);
+		CloseButton.CustomMinimumSize = new Vector2(26, 26);
 		CloseButton.FocusMode = FocusModeEnum.None;
 		CloseButton.Pressed += () => CancelAndClose();
-		HeaderHBox.AddChild(CloseButton);
+
+		var closeMargin = new MarginContainer();
+		closeMargin.AddThemeConstantOverride("margin_right", -35);
+		closeMargin.AddThemeConstantOverride("margin_left", 10);
+		closeMargin.AddChild(CloseButton);
+		HeaderHBox.AddChild(closeMargin);
 
 		BodyContainer = new VBoxContainer();
 		BodyContainer.AddThemeConstantOverride("separation", 8);
@@ -96,6 +108,47 @@ public partial class FloatingDialogBase : PanelContainer
 		btnClose.FocusMode = FocusModeEnum.None;
 		btnClose.Pressed += () => CloseDialog();
 		FooterHBox.AddChild(btnClose);
+	}
+
+	protected TextureRect BackgroundTextureRect;
+	protected MarginContainer DialogMarginContainer;
+
+	public void SetUncompressedPanelTexture(string texturePath, int marginTop = 30, int marginBottom = 40, int marginLeft = 50, int marginRight = 50)
+	{
+		AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+
+		if (BackgroundTextureRect == null)
+		{
+			BackgroundTextureRect = new TextureRect();
+			BackgroundTextureRect.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+			BackgroundTextureRect.StretchMode = TextureRect.StretchModeEnum.Scale;
+			BackgroundTextureRect.SetAnchorsPreset(LayoutPreset.FullRect);
+			AddChild(BackgroundTextureRect);
+			MoveChild(BackgroundTextureRect, 0);
+		}
+		
+		var tex = GD.Load<Texture2D>(texturePath);
+		if (tex != null)
+		{
+			BackgroundTextureRect.Texture = tex;
+		}
+
+		if (DialogMarginContainer == null && MainVBox != null && MainVBox.GetParent() == this)
+		{
+			RemoveChild(MainVBox);
+			DialogMarginContainer = new MarginContainer();
+			DialogMarginContainer.SetAnchorsPreset(LayoutPreset.FullRect);
+			DialogMarginContainer.AddChild(MainVBox);
+			AddChild(DialogMarginContainer);
+		}
+
+		if (DialogMarginContainer != null)
+		{
+			DialogMarginContainer.AddThemeConstantOverride("margin_top", marginTop);
+			DialogMarginContainer.AddThemeConstantOverride("margin_bottom", marginBottom);
+			DialogMarginContainer.AddThemeConstantOverride("margin_left", marginLeft);
+			DialogMarginContainer.AddThemeConstantOverride("margin_right", marginRight);
+		}
 	}
 
 	public override void _Notification(int what)
@@ -1236,6 +1289,11 @@ public partial class FloatingDialogBase : PanelContainer
 		var btn = new Button();
 		btn.Set("icon_max_width", 0);
 		btn.Text = text;
+		var font = Hud?.GetFontAwesomeFont();
+		if (font != null)
+		{
+			btn.AddThemeFontOverride("font", font);
+		}
 		btn.AddThemeFontSizeOverride("font_size", fontSize);
 		btn.FocusMode = FocusModeEnum.None;
 		if (minSize.HasValue)

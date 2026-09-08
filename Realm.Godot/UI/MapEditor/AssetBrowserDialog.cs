@@ -53,8 +53,10 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 	private Action<string>? _onAssetSelectedCallback;
 
 	public AssetBrowserDialog(MapEditorHUD hud)
-		: base(hud, TranslationServer.Translate("Asset Browser"), new Vector2(880, 620))
+		: base(hud, TranslationServer.Translate("Asset Browser"), new Vector2(780, 640))
 	{
+		SetUncompressedPanelTexture("res://Assets/UI/map_editor_assets_importer.png", 30, 45, 70, 70);
+
 		_audioPlayer = new AudioStreamPlayer();
 		_audioPlayer.Finished += OnAudioFinished;
 		AddChild(_audioPlayer);

@@ -221,6 +221,7 @@ public partial class MapEditorHUD : Control
 	private Button _btnOpenGlobalOverrides;
 	private Button _btnOpenAnimationPreview;
 	private Button _btnAssetsManager;
+	private Button _btnImportAnimation;
 	private bool _isUpdatingInspectorUI;
 
 	private CheckBox _chkApplyGroundTexture;
@@ -498,7 +499,6 @@ public partial class MapEditorHUD : Control
 		_btnBackToHub = GetNode<Button>("TopLeftBox/BtnBack");
 		SetupButton(_btnBackToHub, "\uf2f5 BACK TO HUB", () => BackToHubAction(), 13, "Exit editor and return to game lobby");
 		StyleMapEditorTopButton(_btnBackToHub);
-
 		_mapNameHeaderPanel = new PanelContainer();
 		_mapNameHeaderPanel.Name = "MapNameHeaderPanel";
 		_mapNameHeaderPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateLightInnerPanel());
@@ -661,8 +661,13 @@ public partial class MapEditorHUD : Control
 
 		_btnAssetsManager = new Button();
 		_btnAssetsManager.Name = "BtnAssetsManager";
-		SetupButton(_btnAssetsManager, "📦 " + TranslationServer.Translate("ASSETS"), () => _assetManagerDialog?.OpenDialog(), 13, "Open Map Assets Manager & Importer");
+		SetupOptionButton(_btnAssetsManager, "\uf1b2 ASSETS", () => _assetManagerDialog?.OpenDialog(), 13, "Open Map Assets Manager & Importer");
 		_contentFile.AddChild(_btnAssetsManager);
+
+		_btnImportAnimation = new Button();
+		_btnImportAnimation.Name = "BtnImportAnimation";
+		SetupOptionButton(_btnImportAnimation, "\uf1c8 MIXAMO / GLB", () => ImportMixamoOrAnimationDialog(), 13, "Import Mixamo character/animation GLB or .ranim binary animation files");
+		_contentFile.AddChild(_btnImportAnimation);
 
 		_btnMapSettings = new Button();
 		_btnMapSettings.Name = "BtnMapSettings";
@@ -713,7 +718,6 @@ public partial class MapEditorHUD : Control
 				UpdateCameraBoundsOverlayExternal(GameHost.Instance.EditorCameraBoundsVisible);
 			}
 		}, 12, "Toggle camera bounds overlay (B)");
-
 		_btnToggleWireframe = GetNodeOrNull<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/ContentViewport/BtnToggleWireframe") ?? new Button();
 		SetupButton(_btnToggleWireframe, "\uf5ee", () =>
 		{
@@ -1513,7 +1517,9 @@ public partial class MapEditorHUD : Control
 		StyleRowButton(_btnResetMap);
 		StyleRowButton(_btnGenerateMap);
 		StyleRowButton(_btnImportMinimap);
+		StyleRowButton(_btnImportAnimation);
 		StyleRowButton(_btnMapSettings);
+		StyleRowButton(_btnEditorSettings);
 
 		StyleRowButton(_btnRaise);
 		StyleRowButton(_btnLower);
@@ -3520,25 +3526,49 @@ public partial class MapEditorHUD : Control
 		overlay.ZIndex = 1000;
 		AddChild(overlay);
 
-		var panel = new PanelContainer();
-		panel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
-		panel.CustomMinimumSize = new Vector2(400, 200);
-		panel.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
-		panel.SizeFlagsVertical = SizeFlags.ShrinkCenter;
-
 		var center = new CenterContainer();
 		center.SetAnchorsPreset(LayoutPreset.FullRect);
 		overlay.AddChild(center);
+
+		var panel = new PanelContainer();
+		panel.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+		panel.CustomMinimumSize = new Vector2(520, 266);
 		center.AddChild(panel);
 
+		var bgTex = new TextureRect();
+		bgTex.Texture = GD.Load<Texture2D>("res://Assets/UI/map_editor_test.png");
+		bgTex.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+		bgTex.StretchMode = TextureRect.StretchModeEnum.Scale;
+		bgTex.SetAnchorsPreset(LayoutPreset.FullRect);
+		panel.AddChild(bgTex);
+
+		var margin = new MarginContainer();
+		margin.SetAnchorsPreset(LayoutPreset.FullRect);
+		margin.AddThemeConstantOverride("margin_top", 30);
+		margin.AddThemeConstantOverride("margin_bottom", 25);
+		margin.AddThemeConstantOverride("margin_left", 45);
+		margin.AddThemeConstantOverride("margin_right", 45);
+		panel.AddChild(margin);
+
 		var vbox = new VBoxContainer();
-		vbox.AddThemeConstantOverride("separation", 15);
-		panel.AddChild(vbox);
+		vbox.AddThemeConstantOverride("separation", 14);
+		vbox.Alignment = BoxContainer.AlignmentMode.Center;
+		margin.AddChild(vbox);
+
+		var titleMargin = new MarginContainer();
+		titleMargin.AddThemeConstantOverride("margin_top", -12);
 
 		var lblTitle = new Label();
 		UIStyle.ApplyTitle(lblTitle, TranslationServer.Translate("CONFIRMATION REQUIRED"), 18);
+		lblTitle.HorizontalAlignment = HorizontalAlignment.Center;
 		lblTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
-		vbox.AddChild(lblTitle);
+		titleMargin.AddChild(lblTitle);
+		vbox.AddChild(titleMargin);
+
+		var msgMargin = new MarginContainer();
+		msgMargin.AddThemeConstantOverride("margin_top", 12);
+		msgMargin.AddThemeConstantOverride("margin_bottom", 0);
+		msgMargin.SizeFlagsVertical = SizeFlags.ExpandFill;
 
 		var lblMsg = new Label();
 		lblMsg.Text = TranslationServer.Translate(message);
@@ -3546,15 +3576,18 @@ public partial class MapEditorHUD : Control
 		lblMsg.HorizontalAlignment = HorizontalAlignment.Center;
 		lblMsg.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
 		lblMsg.AddThemeFontSizeOverride("font_size", 13);
-		vbox.AddChild(lblMsg);
+		lblMsg.SizeFlagsVertical = SizeFlags.ExpandFill;
+		msgMargin.AddChild(lblMsg);
+		vbox.AddChild(msgMargin);
 
 		var hbox = new HBoxContainer();
-		hbox.AddThemeConstantOverride("separation", 20);
+		hbox.AddThemeConstantOverride("separation", 24);
 		hbox.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
 		vbox.AddChild(hbox);
 
 		var btnConfirm = new Button();
 		btnConfirm.Set("icon_max_width", 0);
+		btnConfirm.CustomMinimumSize = new Vector2(110, 34);
 		SetupButton(btnConfirm, TranslationServer.Translate(confirmText), () =>
 		{
 			overlay.QueueFree();
@@ -3565,6 +3598,7 @@ public partial class MapEditorHUD : Control
 
 		var btnCancel = new Button();
 		btnCancel.Set("icon_max_width", 0);
+		btnCancel.CustomMinimumSize = new Vector2(110, 34);
 		SetupButton(btnCancel, TranslationServer.Translate(cancelText), () =>
 		{
 			overlay.QueueFree();
@@ -3620,18 +3654,39 @@ public partial class MapEditorHUD : Control
 		_helpOverlayPanel.AddChild(center);
 
 		var panel = new PanelContainer();
-		panel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
-		panel.CustomMinimumSize = new Vector2(950, 680);
+		panel.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+		panel.CustomMinimumSize = new Vector2(1024, 770);
 		center.AddChild(panel);
+
+		var bgTex = new TextureRect();
+		bgTex.Texture = GD.Load<Texture2D>("res://Assets/UI/map_editor_manual.png");
+		bgTex.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+		bgTex.StretchMode = TextureRect.StretchModeEnum.Scale;
+		bgTex.SetAnchorsPreset(LayoutPreset.FullRect);
+		panel.AddChild(bgTex);
+
+		var margin = new MarginContainer();
+		margin.SetAnchorsPreset(LayoutPreset.FullRect);
+		margin.AddThemeConstantOverride("margin_top", 45);
+		margin.AddThemeConstantOverride("margin_bottom", 75);
+		margin.AddThemeConstantOverride("margin_left", 65);
+		margin.AddThemeConstantOverride("margin_right", 65);
+		panel.AddChild(margin);
 
 		var vbox = new VBoxContainer();
 		vbox.AddThemeConstantOverride("separation", 15);
-		panel.AddChild(vbox);
+		margin.AddChild(vbox);
+
+		var titleMargin = new MarginContainer();
+		titleMargin.AddThemeConstantOverride("margin_top", -20);
+		titleMargin.AddThemeConstantOverride("margin_bottom", 0);
 
 		var lblTitle = new Label();
 		UIStyle.ApplyTitle(lblTitle, TranslationServer.Translate("RTS MAP EDITOR REFERENCE MANUAL"), 18);
+		lblTitle.HorizontalAlignment = HorizontalAlignment.Center;
 		lblTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
-		vbox.AddChild(lblTitle);
+		titleMargin.AddChild(lblTitle);
+		vbox.AddChild(titleMargin);
 
 		var scroll = new ScrollContainer();
 		scroll.SizeFlagsVertical = SizeFlags.ExpandFill;
@@ -3691,14 +3746,23 @@ public partial class MapEditorHUD : Control
 		AddHelpShortcutRow(grid, "Ctrl + S / Ctrl + O", TranslationServer.Translate("Save Map File / Load Map File"));
 		AddHelpShortcutRow(grid, "Escape Key", TranslationServer.Translate("Clear selection or cancel active tool"));
 
+		var bottomMargin = new MarginContainer();
+		bottomMargin.SetAnchorsPreset(LayoutPreset.FullRect);
+		bottomMargin.AddThemeConstantOverride("margin_bottom", 20);
+		bottomMargin.AddThemeConstantOverride("margin_right", 16);
+		panel.AddChild(bottomMargin);
+
 		var btnClose = new Button();
 		btnClose.Set("icon_max_width", 0);
+		btnClose.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
+		btnClose.SizeFlagsVertical = Control.SizeFlags.ShrinkEnd;
+		btnClose.CustomMinimumSize = new Vector2(165, 38);
 		SetupButton(btnClose, TranslationServer.Translate("CLOSE MANUAL"), () =>
 		{
 			_helpOverlayPanel.QueueFree();
 			_helpOverlayPanel = null;
 		}, 13);
-		vbox.AddChild(btnClose);
+		bottomMargin.AddChild(btnClose);
 	}
 
 	private void AddHelpSectionHeader(GridContainer grid, string title)
@@ -5122,7 +5186,7 @@ public partial class MapEditorHUD : Control
 	}
 
 	private FontVariation _faFontVariation;
-	private FontVariation GetFontAwesomeFont()
+	public FontVariation GetFontAwesomeFont()
 	{
 		if (_faFontVariation == null)
 		{
@@ -5402,6 +5466,7 @@ public partial class MapEditorHUD : Control
 
 			SafeReparent(_btnGenerateMap, fileGrid2);
 			SafeReparent(_btnImportMinimap, fileGrid2);
+			SafeReparent(_btnImportAnimation, fileGrid2);
 			SafeReparent(_btnMapSettings, fileGrid2);
 			SafeReparent(_btnResetMap, fileGrid2);
 
