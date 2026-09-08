@@ -66,8 +66,10 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	private Vector2 _lastMousePosition;
 
 	public AssetManagerDialog(MapEditorHUD hud)
-		: base(hud, TranslationServer.Translate("Map Assets Manager & Importer"), new Vector2(700, 780))
+		: base(hud, TranslationServer.Translate("Map Assets Manager & Importer"), new Vector2(720, 780))
 	{
+		SetUncompressedPanelTexture("res://Assets/UI/map_editor_assets_importer.png", 34, 40, 60, 60);
+
 		_spritesheetEditDialog = new SpritesheetAssetEditDialog(hud);
 		_textureEditDialog = new TerrainTextureEditDialog(hud);
 		_changeTypeDialog = new ChangeAssetTypeDialog(hud);
@@ -81,14 +83,17 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 	private void BuildControls()
 	{
+		BodyContainer.AddThemeConstantOverride("separation", 6);
+
 		// 1. TOP LIVE PREVIEW SECTION (3D / 2D / Audio)
 		var previewStack = new PanelContainer();
-		previewStack.CustomMinimumSize = new Vector2(0, 220);
+		previewStack.CustomMinimumSize = new Vector2(360, 180);
+		previewStack.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
 		previewStack.AddThemeStyleboxOverride("panel", UIStyle.CreateLightInnerPanel());
 		BodyContainer.AddChild(previewStack);
 
 		// 3D Viewport
-		_viewportContainer = Add3DViewportContainer(previewStack, new Vector2(0, 220), out _subViewport, out _camera, out _light);
+		_viewportContainer = Add3DViewportContainer(previewStack, new Vector2(360, 180), out _subViewport, out _camera, out _light);
 		_viewportContainer.GuiInput += OnViewportGuiInput;
 		_viewportContainer.MouseDefaultCursorShape = CursorShape.Cross;
 
@@ -96,14 +101,14 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 		// 2D Static Preview
 		_preview2DContainer = new PanelContainer();
-		_preview2DContainer.CustomMinimumSize = new Vector2(0, 220);
+		_preview2DContainer.CustomMinimumSize = new Vector2(360, 180);
 		_preview2DContainer.Visible = false;
 		var preview2DVBox = new VBoxContainer();
 		preview2DVBox.Alignment = BoxContainer.AlignmentMode.Center;
 		preview2DVBox.AddThemeConstantOverride("separation", 6);
 
 		_preview2DImage = new TextureRect();
-		_preview2DImage.CustomMinimumSize = new Vector2(180, 180);
+		_preview2DImage.CustomMinimumSize = new Vector2(140, 140);
 		_preview2DImage.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 		_preview2DImage.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
 		_preview2DImage.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
@@ -121,14 +126,16 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 		// Audio Preview
 		_previewAudioContainer = new PanelContainer();
-		_previewAudioContainer.CustomMinimumSize = new Vector2(0, 220);
+		_previewAudioContainer.CustomMinimumSize = new Vector2(360, 180);
 		_previewAudioContainer.Visible = false;
 		var audioVBox = new VBoxContainer();
 		audioVBox.Alignment = BoxContainer.AlignmentMode.Center;
 		audioVBox.AddThemeConstantOverride("separation", 10);
 
 		var lblAudioIcon = new Label();
-		lblAudioIcon.Text = "🔊";
+		lblAudioIcon.Text = "\uf028";
+		var faFont = Hud?.GetFontAwesomeFont();
+		if (faFont != null) lblAudioIcon.AddThemeFontOverride("font", faFont);
 		lblAudioIcon.HorizontalAlignment = HorizontalAlignment.Center;
 		lblAudioIcon.AddThemeFontSizeOverride("font_size", 36);
 		audioVBox.AddChild(lblAudioIcon);
@@ -144,8 +151,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		audioBtnRow.Alignment = BoxContainer.AlignmentMode.Center;
 		audioBtnRow.AddThemeConstantOverride("separation", 8);
 
-		_btnAudioPlay = AddButton(audioBtnRow, "▶ " + TranslationServer.Translate("Play"), () => PlayCurrentAudio(), "Play loaded audio", 11, new Vector2(70, 26));
-		_btnAudioStop = AddButton(audioBtnRow, "⏹ " + TranslationServer.Translate("Stop"), () => StopCurrentAudio(), "Stop audio playback", 11, new Vector2(70, 26));
+		_btnAudioPlay = AddButton(audioBtnRow, "\uf04b " + TranslationServer.Translate("Play"), () => PlayCurrentAudio(), "Play loaded audio", 11, new Vector2(70, 26));
+		_btnAudioStop = AddButton(audioBtnRow, "\uf04d " + TranslationServer.Translate("Stop"), () => StopCurrentAudio(), "Stop audio playback", 11, new Vector2(70, 26));
 
 		audioVBox.AddChild(audioBtnRow);
 		_previewAudioContainer.AddChild(audioVBox);
@@ -166,7 +173,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		AddButton(_cameraPresetRow, TranslationServer.Translate("Back"), () => SetCameraPreset(180f, 15f), "Back view", 10, new Vector2(0, 22));
 		AddButton(_cameraPresetRow, TranslationServer.Translate("Iso"), () => SetCameraPreset(45f, 25f), "Isometric view", 10, new Vector2(0, 22));
 		AddButton(_cameraPresetRow, TranslationServer.Translate("Top"), () => SetCameraPreset(0f, 85f), "Top-down view", 10, new Vector2(0, 22));
-		AddButton(_cameraPresetRow, TranslationServer.Translate("⟲ Reset"), () => ResetCameraDefault(), "Reset camera", 10, new Vector2(0, 22));
+		AddButton(_cameraPresetRow, "\uf0e2 " + TranslationServer.Translate("Reset"), () => ResetCameraDefault(), "Reset camera", 10, new Vector2(0, 22));
 
 		BodyContainer.AddChild(_cameraPresetRow);
 
@@ -244,10 +251,10 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		};
 		catRow.AddChild(_optAssetCategory);
 
-		_btnImportAsset = AddButton(catRow, "📥 " + TranslationServer.Translate("Import Asset..."), () => OpenImportFileDialog(), "Import a new asset for the selected category", 11, new Vector2(120, 26));
-		_btnConvertMixamo = AddButton(catRow, "🔄 " + TranslationServer.Translate("Convert Mixamo FBX/GLB to .ranim..."), () => OpenConvertMixamoDialog(), "Convert Mixamo .fbx or .glb animations to .ranim files", 11, new Vector2(240, 26));
+		_btnImportAsset = AddButton(catRow, "\uf093 " + TranslationServer.Translate("Import Asset..."), () => OpenImportFileDialog(), "Import a new asset for the selected category", 11, new Vector2(120, 26));
+		_btnConvertMixamo = AddButton(catRow, "\uf021 " + TranslationServer.Translate("Convert Mixamo FBX/GLB to .ranim..."), () => OpenConvertMixamoDialog(), "Convert Mixamo .fbx or .glb animations to .ranim files", 11, new Vector2(240, 26));
 		_btnConvertMixamo.Visible = false;
-		_btnPruneUnused = AddButton(catRow, "🧹 " + TranslationServer.Translate("Prune Unused"), () => PruneUnusedAssets(), "Remove assets not referenced anywhere in the map", 11, new Vector2(110, 26));
+		_btnPruneUnused = AddButton(catRow, "\uf12d " + TranslationServer.Translate("Prune Unused"), () => PruneUnusedAssets(), "Remove assets not referenced anywhere in the map", 11, new Vector2(110, 26));
 
 		BodyContainer.AddChild(catRow);
 
@@ -263,7 +270,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		searchRow.AddThemeConstantOverride("separation", 6);
 
 		var lblSearch = new Label();
-		lblSearch.Text = "🔍 " + TranslationServer.Translate("Filter:");
+		lblSearch.Text = "\uf002 " + TranslationServer.Translate("Filter:");
+		if (faFont != null) lblSearch.AddThemeFontOverride("font", faFont);
 		lblSearch.AddThemeFontSizeOverride("font_size", 11);
 		searchRow.AddChild(lblSearch);
 
@@ -599,6 +607,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		var hBox = new HBoxContainer();
 		hBox.AddThemeConstantOverride("separation", 8);
 
+		var faFont = Hud?.GetFontAwesomeFont();
+
 		var lblName = new Label();
 		lblName.Text = key;
 		lblName.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
@@ -608,10 +618,11 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		// Action 1: Preview Button
 		var btnPreview = new Button();
 		btnPreview.Set("icon_max_width", 0);
-		btnPreview.Text = "👁 " + TranslationServer.Translate("Preview");
+		btnPreview.Text = "\uf06e " + TranslationServer.Translate("Preview");
+		if (faFont != null) btnPreview.AddThemeFontOverride("font", faFont);
 		btnPreview.AddThemeFontSizeOverride("font_size", 10);
 		btnPreview.FocusMode = FocusModeEnum.None;
-		btnPreview.CustomMinimumSize = new Vector2(65, 22);
+		btnPreview.CustomMinimumSize = new Vector2(75, 22);
 		btnPreview.Pressed += () => LoadPreviewForAsset(category, key, subCategory);
 		hBox.AddChild(btnPreview);
 
@@ -621,7 +632,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		{
 			var btnPlay = new Button();
 			btnPlay.Set("icon_max_width", 0);
-			btnPlay.Text = "▶";
+			btnPlay.Text = "\uf04b";
+			if (faFont != null) btnPlay.AddThemeFontOverride("font", faFont);
 			btnPlay.AddThemeFontSizeOverride("font_size", 11);
 			btnPlay.FocusMode = FocusModeEnum.None;
 			btnPlay.CustomMinimumSize = new Vector2(26, 22);
@@ -640,7 +652,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		{
 			var btnEdit = new Button();
 			btnEdit.Set("icon_max_width", 0);
-			btnEdit.Text = "✏️";
+			btnEdit.Text = "\uf044";
+			if (faFont != null) btnEdit.AddThemeFontOverride("font", faFont);
 			btnEdit.AddThemeFontSizeOverride("font_size", 11);
 			btnEdit.FocusMode = FocusModeEnum.None;
 			btnEdit.CustomMinimumSize = new Vector2(26, 22);
@@ -654,7 +667,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		{
 			var btnChangeType = new Button();
 			btnChangeType.Set("icon_max_width", 0);
-			btnChangeType.Text = "🔄";
+			btnChangeType.Text = "\uf021";
+			if (faFont != null) btnChangeType.AddThemeFontOverride("font", faFont);
 			btnChangeType.AddThemeFontSizeOverride("font_size", 11);
 			btnChangeType.FocusMode = FocusModeEnum.None;
 			btnChangeType.CustomMinimumSize = new Vector2(26, 22);
@@ -667,8 +681,10 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		// Action 5: Delete Button
 		var btnDelete = new Button();
 		btnDelete.Set("icon_max_width", 0);
-		btnDelete.Text = "❌";
+		btnDelete.Text = "\uf00d";
+		if (faFont != null) btnDelete.AddThemeFontOverride("font", faFont);
 		btnDelete.AddThemeFontSizeOverride("font_size", 11);
+		btnDelete.AddThemeColorOverride("font_color", new Color(0.95f, 0.35f, 0.35f));
 		btnDelete.FocusMode = FocusModeEnum.None;
 		btnDelete.CustomMinimumSize = new Vector2(26, 22);
 		btnDelete.TooltipText = TranslationServer.Translate("Delete asset");

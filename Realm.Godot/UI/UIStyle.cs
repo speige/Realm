@@ -164,6 +164,72 @@ public static class UIStyle
 		return CreateStonePanel(true);
 	}
 
+	public static StyleBox CreateAssetsImporterPanel()
+	{
+		var tex = GD.Load<Texture2D>("res://Assets/UI/map_editor_assets_importer.png");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+			style.TextureMarginLeft = 140;
+			style.TextureMarginRight = 140;
+			style.TextureMarginTop = 140;
+			style.TextureMarginBottom = 140;
+			style.ContentMarginLeft = 40;
+			style.ContentMarginRight = 40;
+			style.ContentMarginTop = 40;
+			style.ContentMarginBottom = 40;
+			style.AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Stretch;
+			style.AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Stretch;
+			return style;
+		}
+		return CreateStonePanel(true);
+	}
+
+	public static StyleBox CreateMapEditorManualPanel()
+	{
+		var tex = GD.Load<Texture2D>("res://Assets/UI/map_editor_manual.png");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+			style.TextureMarginLeft = 140;
+			style.TextureMarginRight = 140;
+			style.TextureMarginTop = 140;
+			style.TextureMarginBottom = 140;
+			style.ContentMarginLeft = 45;
+			style.ContentMarginRight = 45;
+			style.ContentMarginTop = 45;
+			style.ContentMarginBottom = 45;
+			style.AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Stretch;
+			style.AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Stretch;
+			return style;
+		}
+		return CreateStonePanel(true);
+	}
+
+	public static StyleBox CreateConfirmationPanel()
+	{
+		var tex = GD.Load<Texture2D>("res://Assets/UI/map_editor_test.png");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+			style.TextureMarginLeft = 80;
+			style.TextureMarginRight = 80;
+			style.TextureMarginTop = 80;
+			style.TextureMarginBottom = 80;
+			style.ContentMarginLeft = 30;
+			style.ContentMarginRight = 30;
+			style.ContentMarginTop = 30;
+			style.ContentMarginBottom = 30;
+			style.AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Stretch;
+			style.AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Stretch;
+			return style;
+		}
+		return CreateStonePanel(true);
+	}
+
 	public static StyleBox CreateBackdropPanel()
 	{
 		var style = new StyleBoxFlat();
