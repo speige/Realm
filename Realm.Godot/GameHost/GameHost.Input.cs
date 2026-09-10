@@ -3590,43 +3590,27 @@ public partial class GameHost
 		var meta = UnitRegistry[unitId];
 		if (InGameHUD.Instance == null) return;
 
-		Unit3D targetCastle = null;
-		bool foundCastle = false;
-
+		var candidateBuildingEntities = new List<Entity>();
 		foreach (var unit in SelectedUnits)
 		{
-			if (!unit.IsEnemy && unit.IsBuilding && EcsWorld.IsAlive(unit.Entity))
+			if (!unit.IsEnemy && unit.IsBuilding && EcsWorld.IsAlive(unit.Entity) && CanProduceUnits(unit))
 			{
-				if (EcsWorld.Has<Realm.Ecs.Components.Core.ProductionQueue>(unit.Entity))
-				{
-					var prod = EcsWorld.Get<Realm.Ecs.Components.Core.ProductionQueue>(unit.Entity);
-					if (prod.UnitIds.Count < 5)
-					{
-						targetCastle = unit;
-						foundCastle = true;
-						break;
-					}
-				}
-				else
-				{
-					targetCastle = unit;
-					foundCastle = true;
-					break;
-				}
+				candidateBuildingEntities.Add(unit.Entity);
 			}
 		}
 
-		if (!foundCastle)
+		if (candidateBuildingEntities.Count == 0)
 		{
-			bool hasBuildingSelected = SelectedUnits.Exists(u => !u.IsEnemy && u.IsBuilding);
-			if (hasBuildingSelected)
-			{
-				InGameHUD.Instance.ShowFeedbackText(TranslationServer.Translate("Training queue is full! (Max 5)"), new Color(1f, 0.3f, 0.3f));
-			}
-			else
-			{
-				InGameHUD.Instance.ShowFeedbackText(TranslationServer.Translate("Cannot train unit: No producing building selected!"), new Color(1f, 0.3f, 0.3f));
-			}
+			InGameHUD.Instance.ShowFeedbackText(TranslationServer.Translate("Cannot train unit: No producing building selected!"), new Color(1f, 0.3f, 0.3f));
+			UIManager.Instance?.PlayWarningSound();
+			return;
+		}
+
+		Entity targetBuildingEntity = _inputService.GetNextProductionStructure(candidateBuildingEntities);
+
+		if (targetBuildingEntity == Entity.Null)
+		{
+			InGameHUD.Instance.ShowFeedbackText(TranslationServer.Translate("Training queue is full! (Max 5)"), new Color(1f, 0.3f, 0.3f));
 			UIManager.Instance?.PlayWarningSound();
 			return;
 		}
@@ -3644,7 +3628,7 @@ public partial class GameHost
 		{
 			if (_multiplayerActive && !IsServerActive())
 			{
-				QueueClientCommand("train", new List<int> { GetServerEntityId(targetCastle.Entity) }, Vector3.Zero, 0, unitId);
+				QueueClientCommand("train", new List<int> { GetServerEntityId(targetBuildingEntity) }, Vector3.Zero, 0, unitId);
 				InGameHUD.Instance.Gold -= meta.CostGold;
 				InGameHUD.Instance.Wood -= meta.CostWood;
 				InGameHUD.Instance.Stone -= meta.CostStone;
@@ -3655,7 +3639,7 @@ public partial class GameHost
 			}
 			else
 			{
-				if (_inputService.TryQueueUnitAtCastle(_playerEntity, targetCastle.Entity, unitId, meta.PopCost, meta.ProductionTime))
+				if (_inputService.TryQueueUnitAtCastle(_playerEntity, targetBuildingEntity, unitId, meta.PopCost, meta.ProductionTime))
 				{
 					InGameHUD.Instance.Gold -= meta.CostGold;
 					InGameHUD.Instance.Wood -= meta.CostWood;

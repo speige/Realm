@@ -16,6 +16,7 @@ internal class InputService
 	private World EcsWorld => EcsWorldAccessor.Current;
 	private readonly TechTreeService _techTreeService;
 	private int _buildingCycleIndex;
+	private int _productionRoundRobinIndex;
 
 	public InputService(WorldAccessor ecsWorldAccessor, TechTreeService techTreeService)
 	{
@@ -823,6 +824,35 @@ internal class InputService
 		healedAmount = hp.Current - oldCurrent;
 
 		return true;
+	}
+
+	public Entity GetNextProductionStructure(List<Entity> candidateBuildings)
+	{
+		if (candidateBuildings == null || candidateBuildings.Count == 0) return Entity.Null;
+
+		int count = candidateBuildings.Count;
+		int startIndex = Math.Abs(_productionRoundRobinIndex) % count;
+
+		for (int i = 0; i < count; i++)
+		{
+			int currIdx = (startIndex + i) % count;
+			var bldEntity = candidateBuildings[currIdx];
+			if (!EcsWorld.IsAlive(bldEntity)) continue;
+
+			int queueCount = 0;
+			if (EcsWorld.Has<ProductionQueue>(bldEntity))
+			{
+				queueCount = EcsWorld.Get<ProductionQueue>(bldEntity).UnitIds.Count;
+			}
+
+			if (queueCount < 5)
+			{
+				_productionRoundRobinIndex = (currIdx + 1) % count;
+				return bldEntity;
+			}
+		}
+
+		return Entity.Null;
 	}
 
 	public bool TryQueueUnitAtCastle(Entity playerEntity, Entity castleEntity, string unitId, int popCost, float productionTime)
