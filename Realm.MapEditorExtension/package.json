@@ -1,7 +1,7 @@
 {
     "name":  "realm-map-editor",
     "displayName":  "Realm Map Editor",
-    "description":  "Custom editor for Realm map unit configuration files",
+    "description":  "Custom editor for Realm map unit configuration files and asset previews",
     "version":  "0.0.1",
     "publisher":  "speige",
     "engines":  {
@@ -22,6 +22,26 @@
                                                   "selector":  [
                                                                    {
                                                                        "filenamePattern":  "**/metadata.json"
+                                                                   }
+                                                               ],
+                                                  "priority":  "default"
+                                              },
+                                              {
+                                                  "viewType":  "realm.rtexViewer",
+                                                  "displayName":  "Realm RTEX Texture Viewer",
+                                                  "selector":  [
+                                                                   {
+                                                                       "filenamePattern":  "*.rtex"
+                                                                   }
+                                                               ],
+                                                  "priority":  "default"
+                                              },
+                                              {
+                                                  "viewType":  "realm.ranimViewer",
+                                                  "displayName":  "Realm Animation Viewer",
+                                                  "selector":  [
+                                                                   {
+                                                                       "filenamePattern":  "*.ranim"
                                                                    }
                                                                ],
                                                   "priority":  "default"

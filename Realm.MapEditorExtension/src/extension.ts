@@ -3,9 +3,13 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as http from 'http';
 import { RealmMapEditorProvider } from './editorProvider';
+import { RealmRtexViewerProvider } from './rtexEditorProvider';
+import { RealmRanimViewerProvider } from './ranimEditorProvider';
 
 export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(RealmMapEditorProvider.register(context));
+    context.subscriptions.push(RealmRtexViewerProvider.register(context));
+    context.subscriptions.push(RealmRanimViewerProvider.register(context));
 
     context.subscriptions.push(
         vscode.workspace.onWillSaveTextDocument(event => {
@@ -161,18 +165,14 @@ async function openStartupFiles(context: vscode.ExtensionContext): Promise<void>
     if (!fs.existsSync(scriptPath) || !fs.existsSync(metadataPath)) { return; }
 
     try {
-        // Open metadata.json in background — custom editor handles it via priority: "default"
         const metadataUri = vscode.Uri.file(metadataPath);
         await vscode.commands.executeCommand('vscode.open', metadataUri, { preview: false, preserveFocus: true });
 
-        // Open MapScript.cs as the active text editor
         const scriptUri = vscode.Uri.file(scriptPath);
         const scriptDoc = await vscode.workspace.openTextDocument(scriptUri);
         await vscode.window.showTextDocument(scriptDoc, { preview: false, preserveFocus: false });
-        // Force revert to discard any stale in-memory content and read fresh from disk
         await vscode.commands.executeCommand('workbench.action.revertFile');
     } catch (err) {
-        // Ignore errors — VS Code may not be fully ready, but we only try once
     }
 }
 

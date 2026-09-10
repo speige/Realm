@@ -1035,6 +1035,81 @@ public class VSCodeManager
 				responseObj["type"] = "reloadMetadataResult";
 				responseObj["success"] = true;
 			}
+			else if (action == "convertRtex")
+			{
+				string inputPath = node["inputPath"]?.ToString() ?? node["filePath"]?.ToString() ?? "";
+				string outputPath = node["outputPath"]?.ToString() ?? "";
+				int layer = node["layer"] != null ? (int)node["layer"] : 0;
+				try
+				{
+					var res = Realm.Shared.Textures.TextureConverter.ExtractPngFromRtex(inputPath, outputPath, layer);
+					responseObj["action"] = "convertRtexResult";
+					responseObj["type"] = "convertRtexResult";
+					responseObj["success"] = res.Success;
+					if (!res.Success)
+					{
+						responseObj["error"] = res.ErrorMessage;
+					}
+					else
+					{
+						responseObj["outputPath"] = res.OutputPath;
+						try
+						{
+							if (File.Exists(inputPath))
+							{
+								byte[] rtexBytes = File.ReadAllBytes(inputPath);
+								string? metaJson = Realm.Shared.Textures.RtexFile.ExtractMetadata(rtexBytes);
+								if (!string.IsNullOrEmpty(metaJson))
+								{
+									responseObj["metadata"] = JsonNode.Parse(metaJson);
+								}
+							}
+						}
+						catch { }
+					}
+				}
+				catch (Exception ex)
+				{
+					responseObj["action"] = "convertRtexResult";
+					responseObj["type"] = "convertRtexResult";
+					responseObj["success"] = false;
+					responseObj["error"] = ex.Message;
+				}
+			}
+			else if (action == "renderRanim")
+			{
+				string inputPath = node["inputPath"]?.ToString() ?? node["filePath"]?.ToString() ?? "";
+				string outputPath = node["outputPath"]?.ToString() ?? "";
+				try
+				{
+					var options = new Realm.Shared.Animation.RanimRenderOptions
+					{
+						Format = Realm.Shared.Animation.RanimOutputFormat.Gif,
+						Width = 128,
+						Height = 128,
+						Fps = 12.0f
+					};
+					var res = Realm.Shared.Animation.RanimRenderer.ExportFile(inputPath, outputPath, options);
+					responseObj["action"] = "renderRanimResult";
+					responseObj["type"] = "renderRanimResult";
+					responseObj["success"] = res.Success;
+					if (!res.Success)
+					{
+						responseObj["error"] = res.ErrorMessage;
+					}
+					else
+					{
+						responseObj["outputPath"] = res.OutputPath;
+					}
+				}
+				catch (Exception ex)
+				{
+					responseObj["action"] = "renderRanimResult";
+					responseObj["type"] = "renderRanimResult";
+					responseObj["success"] = false;
+					responseObj["error"] = ex.Message;
+				}
+			}
 
 			string resJson = responseObj.ToJsonString();
 			byte[] resBytes = System.Text.Encoding.UTF8.GetBytes(resJson);
