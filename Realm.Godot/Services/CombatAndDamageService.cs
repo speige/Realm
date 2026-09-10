@@ -165,6 +165,7 @@ internal class CombatAndDamageService
 	public Action<System.Numerics.Vector3, System.Numerics.Vector3>? OnHealEffectRequested;
 	public Action<Entity>? OnHealFlashRequested;
 	public Action<Entity, Entity, float>? OnUnitDamagedCallback;
+	public Action<Entity, Entity, float>? OnUnitHealedCallback;
 	public Action<Entity, Entity>? OnUnitAttackedCallback;
 	public Action<string>? OnUnderAttackAlertRequested;
 	public Action<Entity>? OnKillUnitRequested;
@@ -1055,6 +1056,7 @@ internal class CombatAndDamageService
 
 				OnHealEffectRequested?.Invoke(currentPos, targetPos);
 				OnHealFlashRequested?.Invoke(target.Target);
+				OnUnitHealedCallback?.Invoke(target.Target, entity, healAmount);
 			}
 		}
 		else
@@ -1144,6 +1146,7 @@ internal class CombatAndDamageService
 				float newHp = Math.Min(hp.Max, hp.Current + healAmount);
 				hp.Current = newHp;
 				OnHealFlashRequested?.Invoke(entity);
+				OnUnitHealedCallback?.Invoke(entity, Entity.Null, healAmount);
 			}
 		});
 	}

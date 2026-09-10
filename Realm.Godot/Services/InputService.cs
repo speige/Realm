@@ -16,6 +16,7 @@ internal class InputService
 	private World EcsWorld => EcsWorldAccessor.Current;
 	private readonly TechTreeService _techTreeService;
 	private int _buildingCycleIndex;
+	private int _productionRoundRobinIndex;
 
 	public InputService(WorldAccessor ecsWorldAccessor, TechTreeService techTreeService)
 	{
@@ -438,6 +439,47 @@ internal class InputService
 		}
 	}
 
+	public int CycleSelectionFocus(Entity worldEntity, List<string> unitIds, bool reverse)
+	{
+		if (unitIds == null || unitIds.Count <= 1 || worldEntity == Entity.Null) return 0;
+
+		ref var state = ref EcsWorld.Get<InputState>(worldEntity);
+		int currentIndex = Math.Clamp(state.CycleSelectionIndex, 0, unitIds.Count - 1);
+
+		var subGroups = new List<string>();
+		foreach (var id in unitIds)
+		{
+			if (!subGroups.Contains(id))
+			{
+				subGroups.Add(id);
+			}
+		}
+
+		int newIndex;
+		if (subGroups.Count > 1)
+		{
+			string currentUnitId = unitIds[currentIndex];
+			int subGroupIdx = subGroups.IndexOf(currentUnitId);
+			if (subGroupIdx < 0) subGroupIdx = 0;
+
+			int nextSubGroupIdx = reverse
+				? (subGroupIdx - 1 + subGroups.Count) % subGroups.Count
+				: (subGroupIdx + 1) % subGroups.Count;
+
+			string targetUnitId = subGroups[nextSubGroupIdx];
+			newIndex = unitIds.IndexOf(targetUnitId);
+		}
+		else
+		{
+			newIndex = reverse
+				? (currentIndex - 1 + unitIds.Count) % unitIds.Count
+				: (currentIndex + 1) % unitIds.Count;
+		}
+
+		state.CycleSelectionIndex = newIndex;
+		return newIndex;
+	}
+
 	public int CycleSelectionFocus(Entity worldEntity, int selectedCount, bool reverse)
 	{
 		if (selectedCount <= 1 || worldEntity == Entity.Null) return 0;
@@ -685,37 +727,29 @@ internal class InputService
 
 			if (EcsWorld.Has<Realm.Ecs.Components.Core.SpellCooldowns>(casterEntity))
 			{
-				ref var scd = ref EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(casterEntity);
-				if (spellId == "fireball") { if (scd.FireballCooldown > 0f) return false; scd.FireballCooldown = cooldownMax; }
-				else if (spellId == "lightning") { if (scd.LightningCooldown > 0f) return false; scd.LightningCooldown = cooldownMax; }
-				else if (spellId == "holylight") { if (scd.HolyLightCooldown > 0f) return false; scd.HolyLightCooldown = cooldownMax; }
+				var scd = EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(casterEntity).Value;
+				if (scd != null)
+				{
+					if (scd.TryGetValue(spellId, out float currentCd) && currentCd > 0f) return false;
+					scd[spellId] = cooldownMax;
+				}
 			}
 		}
 
 		if (EcsWorld.IsAlive(playerEntity) && EcsWorld.Has<Realm.Ecs.Components.Core.SpellCooldowns>(playerEntity))
 		{
-			ref var cd = ref EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(playerEntity);
-			if (spellId == "fireball")
+			var cd = EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(playerEntity).Value;
+			if (cd != null)
 			{
-				if (cd.FireballCooldown > 0f) return false;
-				cd.FireballCooldown = cooldownMax;
-			}
-			else if (spellId == "lightning")
-			{
-				if (cd.LightningCooldown > 0f) return false;
-				cd.LightningCooldown = cooldownMax;
-			}
-			else if (spellId == "holylight")
-			{
-				if (cd.HolyLightCooldown > 0f) return false;
-				cd.HolyLightCooldown = cooldownMax;
+				if (cd.TryGetValue(spellId, out float currentCd) && currentCd > 0f) return false;
+				cd[spellId] = cooldownMax;
 			}
 		}
 
 		return true;
 	}
 
-	public bool BuyHealingPotion(Entity playerEntity, System.Numerics.Vector3 castlePos, Entity selectedUnitEntity, out Entity targetUnitEntity)
+	public bool BuyItem(string itemId, Entity playerEntity, System.Numerics.Vector3 castlePos, Entity selectedUnitEntity, out Entity targetUnitEntity)
 	{
 		targetUnitEntity = Entity.Null;
 
@@ -735,7 +769,8 @@ internal class InputService
 		{
 			targetUnitEntity = target;
 			ref var inv = ref EcsWorld.Get<Inventory>(target);
-			inv.Potions += 1;
+			int currentCount = inv.GetItemCount(itemId);
+			inv.SetItemCount(itemId, currentCount + 1);
 			return true;
 		}
 
@@ -764,24 +799,54 @@ internal class InputService
 		return closestUnit;
 	}
 
-	public bool UseHealingPotion(Entity unitEntity, out float healedAmount)
+	public bool UseItem(Entity unitEntity, string itemId, out float healedAmount)
 	{
 		healedAmount = 0f;
 		if (!EcsWorld.IsAlive(unitEntity) || !EcsWorld.Has<Inventory>(unitEntity) || !EcsWorld.Has<Health>(unitEntity))
 			return false;
 
 		ref var inv = ref EcsWorld.Get<Inventory>(unitEntity);
-		if (inv.Potions <= 0) return false;
+		int currentCount = inv.GetItemCount(itemId);
+		if (currentCount <= 0) return false;
 
 		ref var hp = ref EcsWorld.Get<Health>(unitEntity);
 		if (hp.Current >= hp.Max) return false;
 
-		inv.Potions--;
+		inv.SetItemCount(itemId, currentCount - 1);
 		float oldCurrent = hp.Current;
 		hp.Current = Math.Min(hp.Max, hp.Current + 50f);
 		healedAmount = hp.Current - oldCurrent;
 
 		return true;
+	}
+
+	public Entity GetNextProductionStructure(List<Entity> candidateBuildings)
+	{
+		if (candidateBuildings == null || candidateBuildings.Count == 0) return Entity.Null;
+
+		int count = candidateBuildings.Count;
+		int startIndex = Math.Abs(_productionRoundRobinIndex) % count;
+
+		for (int i = 0; i < count; i++)
+		{
+			int currIdx = (startIndex + i) % count;
+			var bldEntity = candidateBuildings[currIdx];
+			if (!EcsWorld.IsAlive(bldEntity)) continue;
+
+			int queueCount = 0;
+			if (EcsWorld.Has<ProductionQueue>(bldEntity))
+			{
+				queueCount = EcsWorld.Get<ProductionQueue>(bldEntity).UnitIds.Count;
+			}
+
+			if (queueCount < 5)
+			{
+				_productionRoundRobinIndex = (currIdx + 1) % count;
+				return bldEntity;
+			}
+		}
+
+		return Entity.Null;
 	}
 
 	public bool TryQueueUnitAtCastle(Entity playerEntity, Entity castleEntity, string unitId, int popCost, float productionTime)
@@ -820,7 +885,7 @@ internal class InputService
 		return ref EcsWorld.Get<ProductionQueue>(castleEntity);
 	}
 
-	public bool CancelQueuedUnitAt(Entity castleEntity, int index, out string? cancelledUnitId, out string? nextUnitId)
+	public bool CancelQueuedUnitAt(Entity castleEntity, int index, out string? cancelledUnitId, out string? nextUnitId, int popCost = 0)
 	{
 		cancelledUnitId = null;
 		nextUnitId = null;
@@ -841,6 +906,16 @@ internal class InputService
 			if (prod.UnitIds.Count > 0)
 			{
 				nextUnitId = prod.UnitIds[0];
+			}
+		}
+
+		if (popCost > 0 && EcsWorld.Has<Owner>(castleEntity))
+		{
+			var ownerPlayerEntity = EcsWorld.Get<Owner>(castleEntity).PlayerEntity.Value;
+			if (EcsWorld.IsAlive(ownerPlayerEntity) && EcsWorld.Has<PlayerPopulation>(ownerPlayerEntity))
+			{
+				ref var pop = ref EcsWorld.Get<PlayerPopulation>(ownerPlayerEntity);
+				pop.Current = Math.Max(0, pop.Current - popCost);
 			}
 		}
 

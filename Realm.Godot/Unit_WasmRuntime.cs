@@ -414,32 +414,6 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 		}
 	}
 
-	public int Potions
-	{
-		get
-		{
-			if (!_world.IsAlive(_entity)) return 0;
-			if (_world.Has<Inventory>(_entity))
-			{
-				return _world.Get<Inventory>(_entity).Potions;
-			}
-			return 0;
-		}
-		set
-		{
-			if (!_world.IsAlive(_entity)) return;
-			var invComp = new Inventory(value);
-			if (_world.Has<Inventory>(_entity))
-			{
-				_world.Set(_entity, invComp);
-			}
-			else
-			{
-				_world.Add(_entity, invComp);
-			}
-		}
-	}
-
 	public float XpBounty
 	{
 		get

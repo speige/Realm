@@ -192,12 +192,9 @@ public class CheatService
 				GameHost.Instance.UnlimitedPowerEnabled = !GameHost.Instance.UnlimitedPowerEnabled;
 				if (GameHost.Instance.UnlimitedPowerEnabled)
 				{
-					GameHost.Instance.FireballCooldown = 0f;
-					GameHost.Instance.LightningCooldown = 0f;
-					GameHost.Instance.HolyLightCooldown = 0f;
 					if (playerEntity != Entity.Null && EcsWorld.IsAlive(playerEntity) && EcsWorld.Has<SpellCooldowns>(playerEntity))
 					{
-						EcsWorld.Set(playerEntity, new SpellCooldowns(0f, 0f, 0f));
+						EcsWorld.Get<SpellCooldowns>(playerEntity).Value?.Clear();
 					}
 				}
 			}

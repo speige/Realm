@@ -1677,29 +1677,19 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	{
 		var candidateModels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-		// 1. Scan metadata.json from temp workspace and fallback template
 		string wsPath = GetWorkspacePath();
-		string metaPath = Path.Combine(wsPath, "metadata.json");
-
-		if (File.Exists(metaPath))
+		if (MetadataService.Instance.TryLoadMetadata(wsPath, out var metadata))
 		{
-			try
+			if (metadata.CustomUnits != null)
 			{
-				var root = JsonNode.Parse(File.ReadAllText(metaPath))?.AsObject();
-				var customUnits = root?["CustomUnits"]?.AsArray();
-				if (customUnits != null)
+				foreach (var u in metadata.CustomUnits)
 				{
-					foreach (var u in customUnits)
+					if (!string.IsNullOrEmpty(u.ModelPath) && u.ModelPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
 					{
-						string mPath = u?["ModelPath"]?.ToString();
-						if (!string.IsNullOrEmpty(mPath) && mPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
-						{
-							candidateModels.Add(Path.GetFileName(mPath));
-						}
+						candidateModels.Add(Path.GetFileName(u.ModelPath));
 					}
 				}
 			}
-			catch { }
 		}
 
 		try
@@ -2371,12 +2361,6 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				File.WriteAllBytes(destPath, optResult.OptimizedGlbBytes);
 			}
 
-			string metaPath = Path.Combine(wsPath, "metadata.json");
-			JsonObject root = File.Exists(metaPath)
-				? (JsonNode.Parse(File.ReadAllText(metaPath))?.AsObject() ?? new JsonObject())
-				: new JsonObject();
-			root.Remove("Assets");
-
 			var assetsObj = MapAssetHelper.LoadUnionedAssets(wsPath);
 			if (!assetsObj.ContainsKey("glb") || assetsObj["glb"] == null) assetsObj["glb"] = new JsonObject();
 			var glbObj = assetsObj["glb"]!.AsObject();
@@ -2410,77 +2394,112 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			};
 			glbObj[subCat].AsObject()[$"{cleanBase}.glb"] = glbMetaObj;
 
-			if (!root.ContainsKey("ModelOffsets") || root["ModelOffsets"] == null) root["ModelOffsets"] = new JsonObject();
-			root["ModelOffsets"].AsObject()[$"{cleanBase}.glb"] = autoYOffset;
+			string unitId = cleanBase;
 
-			if (!root.ContainsKey("ModelScales") || root["ModelScales"] == null) root["ModelScales"] = new JsonObject();
-			root["ModelScales"].AsObject()[$"{cleanBase}.glb"] = defaultScale;
+			MetadataService.Instance.UpdateMetadata(wsPath, meta =>
+			{
+				meta.SetModelYOffset($"{cleanBase}.glb", autoYOffset);
+				meta.SetModelScale($"{cleanBase}.glb", defaultScale);
+
+				switch (subCat)
+				{
+					case "units":
+						bool updatedU = meta.UpdateUnit(unitId, u =>
+						{
+							if (autoYOffset != 0f) u.YOffset = autoYOffset;
+							return u;
+						});
+						if (!updatedU)
+						{
+							meta.AddOrUpdateUnit(new GameHost.UnitMetadata
+							{
+								UnitId = unitId,
+								Name = unitId,
+								Description = "",
+								ModelPath = $"{cleanBase}.glb",
+								Scale = defaultScale,
+								YOffset = autoYOffset,
+								PathingType = 9,
+								NormalMode = GameHost.ModelNormalMode.Flat,
+								NormalizeLuminance = true
+							});
+						}
+						break;
+					case "buildings":
+						bool updatedB = meta.UpdateBuilding(unitId, b =>
+						{
+							if (autoYOffset != 0f) b.YOffset = autoYOffset;
+							return b;
+						});
+						if (!updatedB)
+						{
+							meta.AddOrUpdateBuilding(new GameHost.UnitMetadata
+							{
+								UnitId = unitId,
+								Name = unitId,
+								Description = "",
+								ModelPath = $"{cleanBase}.glb",
+								Scale = defaultScale,
+								YOffset = autoYOffset,
+								PathingType = 32,
+								NormalMode = GameHost.ModelNormalMode.Flat,
+								NormalizeLuminance = true
+							});
+						}
+						break;
+					case "resources":
+						bool updatedR = meta.UpdateResource(unitId, r =>
+						{
+							if (autoYOffset != 0f) r.YOffset = autoYOffset;
+							return r;
+						});
+						if (!updatedR)
+						{
+							meta.AddOrUpdateResource(new GameHost.ResourceMetadata
+							{
+								UnitId = unitId,
+								Name = unitId,
+								Description = "",
+								ModelPath = $"{cleanBase}.glb",
+								Scale = defaultScale,
+								YOffset = autoYOffset,
+								PathingType = 255,
+								NormalMode = GameHost.ModelNormalMode.Flat,
+								NormalizeLuminance = true,
+								IgnorePlayerColor = true
+							});
+						}
+						break;
+					case "props":
+						bool updatedP = meta.UpdateProp(unitId, p =>
+						{
+							if (autoYOffset != 0f) p.YOffset = autoYOffset;
+							return p;
+						});
+						if (!updatedP)
+						{
+							meta.AddOrUpdateProp(new GameHost.PropMetadata
+							{
+								UnitId = unitId,
+								Name = unitId,
+								Description = "",
+								ModelPath = $"{cleanBase}.glb",
+								Scale = defaultScale,
+								YOffset = autoYOffset,
+								PathingType = 255,
+								NormalMode = GameHost.ModelNormalMode.Flat,
+								NormalizeLuminance = true,
+								IgnorePlayerColor = true
+							});
+						}
+						break;
+				}
+			});
 
 			GameHost.Instance?.SetModelYOffset($"{cleanBase}.glb", autoYOffset);
 			GameHost.Instance?.SetModelScale($"{cleanBase}.glb", defaultScale);
 
-			string unitId = cleanBase;
-			string? targetArrayKey = subCat switch
-			{
-				"units" => "CustomUnits",
-				"buildings" => "CustomBuildings",
-				"resources" => "CustomResources",
-				"props" => "CustomProps",
-				_ => null
-			};
-
-			if (targetArrayKey != null)
-			{
-				if (!root.ContainsKey(targetArrayKey) || root[targetArrayKey] == null) root[targetArrayKey] = new JsonArray();
-				var targetArray = root[targetArrayKey].AsArray();
-				bool exists = false;
-				foreach (var item in targetArray)
-				{
-					if (item is JsonObject uObj && (uObj["UnitId"]?.ToString() == unitId || uObj["ModelPath"]?.ToString() == $"{cleanBase}.glb"))
-					{
-						exists = true;
-						if (autoYOffset != 0f) uObj["YOffset"] = autoYOffset;
-						break;
-					}
-				}
-
-				if (!exists)
-				{
-					int defaultPathing = subCat switch
-					{
-						"units" => 9,
-						"buildings" => 32,
-						"resources" => 255,
-						"props" => 255,
-						_ => 9
-					};
-
-					var defaultEntity = new JsonObject
-					{
-						["UnitId"] = unitId,
-						["Name"] = unitId,
-						["Description"] = "",
-						["ModelPath"] = $"{cleanBase}.glb",
-						["Scale"] = defaultScale,
-						["YOffset"] = autoYOffset,
-						["PathingType"] = defaultPathing,
-						["NormalMode"] = "Flat",
-						["NormalizeLuminance"] = true,
-						["Animations"] = new JsonObject()
-					};
-
-					if (subCat == "resources" || subCat == "props")
-					{
-						defaultEntity["IgnorePlayerColor"] = true;
-					}
-
-					targetArray.Add(defaultEntity);
-				}
-			}
-
 			MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj);
-			SaveLoadService.CleanMetadataJsonSchema(root);
-			MapJsonFormatter.SaveFormattedJson(metaPath, root);
 			Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Converted and imported 3D model {0}.glb"), cleanBase));
 
 			RefreshAssetList();
@@ -2532,12 +2551,6 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 		try
 		{
-			string metaPath = Path.Combine(wsPath, "metadata.json");
-			JsonObject root = File.Exists(metaPath)
-				? (JsonNode.Parse(File.ReadAllText(metaPath))?.AsObject() ?? new JsonObject())
-				: new JsonObject();
-			root.Remove("Assets");
-
 			var assetsObj = MapAssetHelper.LoadUnionedAssets(wsPath);
 
 			byte[] fileBytes = File.ReadAllBytes(sourceFilePath);
@@ -2587,205 +2600,155 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				};
 				glbObj[subCategory].AsObject()[fileName] = glbMetaObj;
 
-				if (!root.ContainsKey("ModelOffsets") || root["ModelOffsets"] == null) root["ModelOffsets"] = new JsonObject();
-				root["ModelOffsets"].AsObject()[fileName] = autoYOffset;
+				string unitId = Path.GetFileNameWithoutExtension(fileName);
 
-				if (!root.ContainsKey("ModelScales") || root["ModelScales"] == null) root["ModelScales"] = new JsonObject();
-				root["ModelScales"].AsObject()[fileName] = defaultScale;
+				MetadataService.Instance.UpdateMetadata(wsPath, meta =>
+				{
+					meta.SetModelYOffset(fileName, autoYOffset);
+					meta.SetModelScale(fileName, defaultScale);
+
+					switch (subCategory)
+					{
+						case "units":
+							bool updatedU = meta.UpdateUnit(unitId, u =>
+							{
+								if (autoYOffset != 0f) u.YOffset = autoYOffset;
+								return u;
+							});
+							if (!updatedU)
+							{
+								meta.AddOrUpdateUnit(new GameHost.UnitMetadata
+								{
+									UnitId = unitId,
+									Name = unitId,
+									Description = "",
+									ModelPath = fileName,
+									Scale = defaultScale,
+									YOffset = autoYOffset,
+									PathingType = 9,
+									NormalMode = GameHost.ModelNormalMode.Flat,
+									NormalizeLuminance = true
+								});
+							}
+							break;
+						case "buildings":
+							bool updatedB = meta.UpdateBuilding(unitId, b =>
+							{
+								if (autoYOffset != 0f) b.YOffset = autoYOffset;
+								return b;
+							});
+							if (!updatedB)
+							{
+								meta.AddOrUpdateBuilding(new GameHost.UnitMetadata
+								{
+									UnitId = unitId,
+									Name = unitId,
+									Description = "",
+									ModelPath = fileName,
+									Scale = defaultScale,
+									YOffset = autoYOffset,
+									PathingType = 32,
+									NormalMode = GameHost.ModelNormalMode.Flat,
+									NormalizeLuminance = true
+								});
+							}
+							break;
+						case "resources":
+							bool updatedR = meta.UpdateResource(unitId, r =>
+							{
+								if (autoYOffset != 0f) r.YOffset = autoYOffset;
+								return r;
+							});
+							if (!updatedR)
+							{
+								meta.AddOrUpdateResource(new GameHost.ResourceMetadata
+								{
+									UnitId = unitId,
+									Name = unitId,
+									Description = "",
+									ModelPath = fileName,
+									Scale = defaultScale,
+									YOffset = autoYOffset,
+									PathingType = 255,
+									NormalMode = GameHost.ModelNormalMode.Flat,
+									NormalizeLuminance = true,
+									IgnorePlayerColor = true
+								});
+							}
+							break;
+						case "props":
+							bool updatedP = meta.UpdateProp(unitId, p =>
+							{
+								if (autoYOffset != 0f) p.YOffset = autoYOffset;
+								return p;
+							});
+							if (!updatedP)
+							{
+								meta.AddOrUpdateProp(new GameHost.PropMetadata
+								{
+									UnitId = unitId,
+									Name = unitId,
+									Description = "",
+									ModelPath = fileName,
+									Scale = defaultScale,
+									YOffset = autoYOffset,
+									PathingType = 255,
+									NormalMode = GameHost.ModelNormalMode.Flat,
+									NormalizeLuminance = true,
+									IgnorePlayerColor = true
+								});
+							}
+							break;
+					}
+				});
 
 				GameHost.Instance?.SetModelYOffset(fileName, autoYOffset);
 				GameHost.Instance?.SetModelScale(fileName, defaultScale);
-
-				string unitId = Path.GetFileNameWithoutExtension(fileName);
-				string targetArrayKey = subCategory switch
-				{
-					"units" => "CustomUnits",
-					"buildings" => "CustomBuildings",
-					"resources" => "CustomResources",
-					"props" => "CustomProps",
-					_ => null
-				};
-
-				if (targetArrayKey != null)
-				{
-					if (!root.ContainsKey(targetArrayKey) || root[targetArrayKey] == null) root[targetArrayKey] = new JsonArray();
-					var targetArray = root[targetArrayKey].AsArray();
-					bool exists = false;
-					foreach (var item in targetArray)
-					{
-						if (item is JsonObject uObj && (uObj["UnitId"]?.ToString() == unitId || uObj["ModelPath"]?.ToString() == fileName))
-						{
-							exists = true;
-							if (autoYOffset != 0f) uObj["YOffset"] = autoYOffset;
-							break;
-						}
-					}
-
-					if (!exists)
-					{
-						int defaultPathing = subCategory switch
-						{
-							"units" => 9,
-							"buildings" => 32,
-							"resources" => 255,
-							"props" => 255,
-							_ => 9
-						};
-
-						var defaultEntity = new JsonObject
-						{
-							["UnitId"] = unitId,
-							["Name"] = unitId,
-							["Description"] = "",
-							["ModelPath"] = fileName,
-							["Scale"] = defaultScale,
-							["YOffset"] = autoYOffset,
-							["PathingType"] = defaultPathing,
-							["NormalMode"] = "Flat",
-							["NormalizeLuminance"] = true,
-							["Animations"] = new JsonObject()
-						};
-
-						if (subCategory == "resources" || subCategory == "props")
-						{
-							defaultEntity["IgnorePlayerColor"] = true;
-						}
-
-						targetArray.Add(defaultEntity);
-					}
-				}
 			}
 			else if (_currentCategory == "textures")
 			{
-				string cleanBase = Path.GetFileNameWithoutExtension(fileName).ToLowerInvariant().Replace(' ', '_');
 				string destDir = Path.Combine(wsPath, "Assets", "textures");
 				Directory.CreateDirectory(destDir);
-				string ext = Path.GetExtension(fileName).ToLowerInvariant();
+				string destPath = Path.Combine(destDir, fileName);
 
-				string destFileName = ext == ".rtex" ? fileName : $"{cleanBase}.rtex";
-				string destPath = Path.Combine(destDir, destFileName);
-
-				float calculatedScaleFactor = 1.0f;
-				if (ext == ".rtex")
+				if (sourceExtension == ".rtex")
 				{
 					File.Copy(sourceFilePath, destPath, true);
-					Realm.Shared.Metadata.RealmMetadataHelper.EnsureMetadata(destPath);
-					calculatedScaleFactor = TextureConverter.CalculateLuminanceScaleFactor(destPath);
 				}
 				else
 				{
-					var convResult = TextureConverter.ProcessAndSaveTerrainTexture(sourceFilePath, destPath);
-					if (!convResult.Success)
+					string rtexFileName = $"{Path.GetFileNameWithoutExtension(fileName).ToLowerInvariant().Replace(' ', '_')}.rtex";
+					destPath = Path.Combine(destDir, rtexFileName);
+					var convRes = Realm.Shared.Textures.TextureConverter.ConvertTextureFile(sourceFilePath, destPath, "terrain_texture", 4, 4);
+					if (!convRes.Success)
 					{
-						throw new InvalidOperationException($"Failed to convert terrain texture: {convResult.ErrorMessage}");
+						Hud?.ShowFeedback($"Texture conversion failed: {convRes.ErrorMessage}");
+						return;
 					}
-					calculatedScaleFactor = convResult.ScaleFactor;
+					fileName = rtexFileName;
 				}
 
+				Realm.Shared.Metadata.RealmMetadataHelper.EnsureMetadata(destPath);
 				byte[] rtexBytes = File.ReadAllBytes(destPath);
 				hash = Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(rtexBytes, ".rtex");
 
 				if (!assetsObj.ContainsKey("textures") || assetsObj["textures"] == null) assetsObj["textures"] = new JsonObject();
-				var texDict = assetsObj["textures"].AsObject();
+				var texturesObj = assetsObj["textures"].AsObject();
 
-				var parsedItems = new List<(string Key, int SwatchIndex, JsonNode? Node)>();
-				foreach (var kvp in texDict)
+				int nextSwatchIndex = 0;
+				foreach (var kvp in texturesObj)
 				{
-					int sIdx = -1;
-					if (kvp.Value is JsonObject sObj)
+					if (kvp.Value is JsonObject sObj && sObj.TryGetPropertyValue("swatchIndex", out var idxNode) && idxNode != null && int.TryParse(idxNode.ToString(), out int parsed))
 					{
-						if (sObj.TryGetPropertyValue("swatchIndex", out var idxNode) && idxNode != null && int.TryParse(idxNode.ToString(), out int parsed))
-						{
-							sIdx = parsed;
-						}
-						else if (sObj.TryGetPropertyValue("swatch_index", out var idxNode2) && idxNode2 != null && int.TryParse(idxNode2.ToString(), out int parsed2))
-						{
-							sIdx = parsed2;
-						}
-						else if (sObj.TryGetPropertyValue("SwatchIndex", out var idxNode3) && idxNode3 != null && int.TryParse(idxNode3.ToString(), out int parsed3))
-						{
-							sIdx = parsed3;
-						}
-					}
-					parsedItems.Add((kvp.Key, sIdx, kvp.Value));
-				}
-
-				var usedIndices = new HashSet<int>();
-				foreach (var item in parsedItems)
-				{
-					if (item.SwatchIndex >= 0)
-					{
-						usedIndices.Add(item.SwatchIndex);
+						if (parsed >= nextSwatchIndex) nextSwatchIndex = parsed + 1;
 					}
 				}
 
-				int nextFree = 0;
-				for (int i = 0; i < parsedItems.Count; i++)
+				texturesObj[fileName] = new JsonObject
 				{
-					var item = parsedItems[i];
-					if (item.SwatchIndex < 0)
-					{
-						while (usedIndices.Contains(nextFree))
-						{
-							nextFree++;
-						}
-						item.SwatchIndex = nextFree;
-						usedIndices.Add(nextFree);
-						parsedItems[i] = item;
-					}
-				}
-
-				foreach (var item in parsedItems)
-				{
-					if (item.Key.Equals(destFileName, StringComparison.OrdinalIgnoreCase)) continue;
-
-					if (item.Node is JsonObject sObj)
-					{
-						sObj["swatchIndex"] = item.SwatchIndex;
-						if (sObj.ContainsKey("swatch_index")) sObj.Remove("swatch_index");
-						if (sObj.ContainsKey("SwatchIndex")) sObj.Remove("SwatchIndex");
-					}
-					else
-					{
-						string existingHash = item.Node?.ToString() ?? "";
-						texDict[item.Key] = new JsonObject
-						{
-							["hash"] = existingHash,
-							["swatchIndex"] = item.SwatchIndex
-						};
-					}
-				}
-
-				int maxSwatchIndex = usedIndices.Count > 0 ? usedIndices.Max() : -1;
-				int existingItemIndex = -1;
-				for (int i = 0; i < parsedItems.Count; i++)
-				{
-					if (parsedItems[i].Key.Equals(destFileName, StringComparison.OrdinalIgnoreCase))
-					{
-						existingItemIndex = parsedItems[i].SwatchIndex;
-						break;
-					}
-				}
-
-				int nextSwatchIdx = existingItemIndex >= 0 ? existingItemIndex : maxSwatchIndex + 1;
-
-				if (texDict.ContainsKey(destFileName) && texDict[destFileName] is JsonObject destObj)
-				{
-					destObj["hash"] = hash;
-					destObj["swatchIndex"] = nextSwatchIdx;
-					destObj["Scale_Factor"] = calculatedScaleFactor;
-					if (destObj.ContainsKey("swatch_index")) destObj.Remove("swatch_index");
-					if (destObj.ContainsKey("SwatchIndex")) destObj.Remove("SwatchIndex");
-				}
-				else
-				{
-					texDict[destFileName] = new JsonObject
-					{
-						["hash"] = hash,
-						["swatchIndex"] = nextSwatchIdx,
-						["Scale_Factor"] = calculatedScaleFactor
-					};
-				}
+					["hash"] = hash,
+					["swatchIndex"] = nextSwatchIndex
+				};
 			}
 			else if (_currentCategory == "vfx_spritesheets")
 			{
@@ -2868,8 +2831,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			}
 
 			MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj);
-			SaveLoadService.CleanMetadataJsonSchema(root);
-			MapJsonFormatter.SaveFormattedJson(metaPath, root);
+			MetadataService.Instance.CleanMetadata(wsPath);
 			RefreshAssetList();
 			string importedKey = _currentCategory == "textures" ? (Path.GetExtension(fileName).ToLowerInvariant() == ".rtex" ? fileName : $"{Path.GetFileNameWithoutExtension(fileName).ToLowerInvariant().Replace(' ', '_')}.rtex") : fileName;
 			LoadPreviewForAsset(_currentCategory, importedKey);
@@ -3172,12 +3134,6 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				try
 				{
 					var assetsObj = MapAssetHelper.LoadUnionedAssets(wsPath);
-					string metaPath = Path.Combine(wsPath, "metadata.json");
-					JsonObject? root = File.Exists(metaPath)
-						? (JsonNode.Parse(File.ReadAllText(metaPath))?.AsObject() ?? new JsonObject())
-						: null;
-					bool rootModified = false;
-
 					if (IsGlbCategory(category, out string glbSub) || category == "glb")
 					{
 						string targetSub = !string.IsNullOrEmpty(subCategory) ? subCategory : glbSub;
@@ -3192,32 +3148,29 @@ public partial class AssetManagerDialog : FloatingDialogBase
 							if (File.Exists(cand + ".import")) File.Delete(cand + ".import");
 						}
 
-						string oldArrayKey = targetSub switch
+						string unitId = Path.GetFileNameWithoutExtension(key);
+						MetadataService.Instance.UpdateMetadata(wsPath, meta =>
 						{
-							"units" => "CustomUnits",
-							"buildings" => "CustomBuildings",
-							"resources" => "CustomResources",
-							"props" => "CustomProps",
-							_ => null
-						};
-
-						if (root != null && oldArrayKey != null && root.ContainsKey(oldArrayKey) && root[oldArrayKey] is JsonArray oldArr)
-						{
-							string unitId = Path.GetFileNameWithoutExtension(key);
-							for (int i = oldArr.Count - 1; i >= 0; i--)
+							switch (targetSub)
 							{
-								if (oldArr[i] is JsonObject uObj)
-								{
-									string uId = uObj["UnitId"]?.ToString() ?? "";
-									string mPath = uObj["ModelPath"]?.ToString() ?? "";
-									if (uId.Equals(unitId, StringComparison.OrdinalIgnoreCase) || mPath.Equals(key, StringComparison.OrdinalIgnoreCase))
-									{
-										oldArr.RemoveAt(i);
-										rootModified = true;
-									}
-								}
+								case "units":
+									meta.RemoveUnit(unitId);
+									meta.CustomUnits?.RemoveAll(u => key.Equals(u.ModelPath, StringComparison.OrdinalIgnoreCase));
+									break;
+								case "buildings":
+									meta.RemoveBuilding(unitId);
+									meta.CustomBuildings?.RemoveAll(b => key.Equals(b.ModelPath, StringComparison.OrdinalIgnoreCase));
+									break;
+								case "resources":
+									meta.RemoveResource(unitId);
+									meta.CustomResources?.RemoveAll(r => key.Equals(r.ModelPath, StringComparison.OrdinalIgnoreCase));
+									break;
+								case "props":
+									meta.RemoveProp(unitId);
+									meta.CustomProps?.RemoveAll(p => key.Equals(p.ModelPath, StringComparison.OrdinalIgnoreCase));
+									break;
 							}
-						}
+						});
 					}
 					else if (category == "textures")
 					{
@@ -3296,15 +3249,6 @@ public partial class AssetManagerDialog : FloatingDialogBase
 					}
 
 					MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj);
-					if (root != null)
-					{
-						root.Remove("Assets");
-						if (rootModified)
-						{
-							SaveLoadService.CleanMetadataJsonSchema(root);
-							MapJsonFormatter.SaveFormattedJson(metaPath, root);
-						}
-					}
 					SaveLoadService.SyncMetadataAssetsAndPrune(wsPath);
 					if (category == "textures")
 					{

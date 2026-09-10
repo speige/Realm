@@ -76,7 +76,7 @@ public class ReplayService
 			EcsWorld.Add(playerEntity, new Name(p.Name));
 			
 			EcsWorld.Add(playerEntity, new PlayerPopulation(0, 0));
-			EcsWorld.Add(playerEntity, new SpellCooldowns(0f, 0f, 0f));
+			EcsWorld.Add(playerEntity, new SpellCooldowns(new Dictionary<string, float>(System.StringComparer.OrdinalIgnoreCase)));
 			EcsWorld.Add(playerEntity, new PlayerUpgrades(false, false, false));
 
 			var resourcesDict = new Dictionary<ResourceId, int>
@@ -139,7 +139,7 @@ public class ReplayService
 		{
 			EcsWorld.Add(entity, new MovementStats(meta.Speed, 20f, 10f));
 			EcsWorld.Add(entity, new Realm.Ecs.Components.Tags.Movable());
-			EcsWorld.Add(entity, new Inventory(1));
+			EcsWorld.Add(entity, new Inventory());
 		}
 		else
 		{

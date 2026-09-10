@@ -64,7 +64,6 @@ public partial class InGameHUD : Control
 	private Button _btnTrainArcher;
 	private Button _btnTrainPriest;
 	private Button _btnTrainWorker;
-	private Button _btnBuyPotion;
 	private Button _btnUpgradeWeapons;
 	private Button _btnUpgradeShields;
 	private Button _btnUpgradeHarvesting;
@@ -496,7 +495,7 @@ public partial class InGameHUD : Control
 		_minimapControls.AddChild(_btnSelectArmy);
 
 		var btnHotkeys = new Button();
-		SetupMinimapButton(btnHotkeys, "res://Assets/UI/game_menu.png", "Hotkey Reference [F5]", () => ToggleHotkeyPanel());
+		SetupMinimapButton(btnHotkeys, "res://Assets/UI/game_menu.png", "Hotkey Reference", () => ToggleHotkeyPanel());
 		_minimapControls.AddChild(btnHotkeys);
 
 		string currentWeather = "clear";
@@ -1015,14 +1014,6 @@ public partial class InGameHUD : Control
 		_btnUsePotion.AddChild(potHotkeyLabel);
 
 		itemsHBox.AddChild(_btnUsePotion);
-		_btnUsePotion.Pressed += () =>
-		{
-			var selected = GameHost.Instance?.SelectedUnits;
-			if (selected != null && selected.Count == 1 && !selected[0].IsEnemy)
-			{
-				GameHost.Instance.UseHealingPotion(selected[0]);
-			}
-		};
 
 		_productionBox = new VBoxContainer();
 		_productionBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
@@ -1512,7 +1503,8 @@ public partial class InGameHUD : Control
 		{
 			if (GameHost.Instance != null && GameHost.Instance.SelectedUnits.Count > 1)
 			{
-				GameHost.Instance.CycleSelectionIndex = (GameHost.Instance.CycleSelectionIndex + 1) % GameHost.Instance.SelectedUnits.Count;
+				bool reverse = Input.IsKeyPressed(Key.Shift);
+				GameHost.Instance.CycleSelectionFocus(reverse);
 				RefreshUI(GameHost.Instance.SelectedUnits);
 				GetViewport().SetInputAsHandled();
 			}
@@ -1592,8 +1584,8 @@ public partial class InGameHUD : Control
 		scroll.AddChild(vbox);
 
 		var titleLbl = new Label();
-		titleLbl.Text = TranslationServer.Translate("HOTKEY REFERENCE — [F5] to close");
-		UIStyle.ApplyTitle(titleLbl, TranslationServer.Translate("HOTKEY REFERENCE — [F5] to close"), 13);
+		titleLbl.Text = TranslationServer.Translate("HOTKEY REFERENCE");
+		UIStyle.ApplyTitle(titleLbl, TranslationServer.Translate("HOTKEY REFERENCE"), 13);
 		titleLbl.AddThemeColorOverride("font_color", UIStyle.ColorGold);
 		vbox.AddChild(titleLbl);
 
@@ -1641,6 +1633,8 @@ public partial class InGameHUD : Control
 			("Shift+WASD", "Fast pan"),
 			("Space",      "Center on your Castle"),
 			("Z",          "Cycle camera zoom"),
+			("Ctrl+F5..F8","Save Camera Location 1..4"),
+			("F5..F8",     "Jump to Saved Camera Location 1..4"),
 			("", ""),
 			("Selection:", ""),
 			("F1",         "Select all Idle units"),
@@ -1658,7 +1652,6 @@ public partial class InGameHUD : Control
 			("Chat / Cheats:", ""),
 			("Enter",      "Open chat"),
 			("", ""),
-			("[F5]",       "Toggle this hotkey panel"),
 			("[Esc]",      "Cancel / clear selection / open settings"),
 			("[Del]",      "Remove selected units (dev)"),
 		};
@@ -1983,15 +1976,6 @@ public partial class InGameHUD : Control
 		_btnSetRally = new Button();
 		SetupHUDButton(_btnSetRally, "res://Assets/UI/alliance_flag.png", TranslationServer.Translate("[Y] Set Rally Point — Set location where new units will walk"), () => GameHost.Instance?.EnterCommandTargeting("rally"));
 		
-		_btnBuyPotion = new Button();
-		SetupHUDButton(_btnBuyPotion, "res://Assets/UI/alliance_flag.png", TranslationServer.Translate("[I] Buy Potion (Cost: 50 Gold) — Buy a Healing Potion for a nearby combat unit"), () => {
-			var selected = GameHost.Instance?.SelectedUnits;
-			if (selected != null && selected.Count == 1)
-			{
-				GameHost.Instance.BuyHealingPotion(selected[0].Entity);
-			}
-		});
-
 		_btnUpgradeWeapons = new Button();
 		SetupHUDButton(_btnUpgradeWeapons, "res://Assets/UI/battle_axe.png", TranslationServer.Translate("[W] Upgrade Weapons (Cost: 150 Gold, 100 Wood)\nPermanently increases unit damage by +3"), () => GameHost.Instance?.BuyWeaponsUpgrade());
 		_btnUpgradeShields = new Button();

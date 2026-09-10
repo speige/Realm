@@ -206,18 +206,17 @@ public partial class CommandPanel
 
 				if (world.Has<Realm.Ecs.Components.Core.SpellCooldowns>(caster))
 				{
-					var scd = world.Get<Realm.Ecs.Components.Core.SpellCooldowns>(caster);
-					if (item.AbilityId == "fireball") cdRemaining = Math.Max(cdRemaining, scd.FireballCooldown);
-					else if (item.AbilityId == "lightning") cdRemaining = Math.Max(cdRemaining, scd.LightningCooldown);
-					else if (item.AbilityId == "holylight") cdRemaining = Math.Max(cdRemaining, scd.HolyLightCooldown);
+					var scd = world.Get<Realm.Ecs.Components.Core.SpellCooldowns>(caster).Value;
+					if (scd != null && scd.TryGetValue(item.AbilityId, out float val))
+					{
+						cdRemaining = Math.Max(cdRemaining, val);
+					}
 				}
 			}
 
 			if (cdRemaining <= 0f && GameHost.Instance != null)
 			{
-				if (item.AbilityId == "fireball") cdRemaining = GameHost.Instance.FireballCooldown;
-				else if (item.AbilityId == "lightning") cdRemaining = GameHost.Instance.LightningCooldown;
-				else if (item.AbilityId == "holylight") cdRemaining = GameHost.Instance.HolyLightCooldown;
+				cdRemaining = GameHost.Instance.GetPlayerSpellCooldown(item.AbilityId);
 			}
 		}
 
@@ -868,20 +867,33 @@ public partial class CommandPanel
 					Callback = () => GameHost.Instance?.EnterCommandTargeting("rally")
 				});
 
-				items.Add(new CommandCardItem
+				if (GameHost.ItemRegistry.Count > 0)
 				{
-					Id = "buy_potion",
-					IconPath = "res://Assets/UI/alliance_flag.png",
-					Tooltip = "[I] Buy Potion (Cost: 50 Gold) — Buy a Healing Potion for a nearby combat unit",
-					Hotkey = Key.I,
-					Callback = () => {
-						var selected = GameHost.Instance?.SelectedUnits;
-						if (selected != null && selected.Count == 1)
+					foreach (var itemMeta in GameHost.ItemRegistry.Values)
+					{
+						string itemId = itemMeta.ItemId;
+						string itemName = !string.IsNullOrEmpty(itemMeta.Name) ? itemMeta.Name : itemId;
+						float itemCost = itemMeta.CostGold;
+						string itemIcon = !string.IsNullOrEmpty(itemMeta.IconPath) ? itemMeta.IconPath : "res://Assets/UI/alliance_flag.png";
+						string itemDesc = !string.IsNullOrEmpty(itemMeta.Description) ? itemMeta.Description : $"Buy {itemName} for a nearby combat unit";
+
+						string capturedItemId = itemId;
+						items.Add(new CommandCardItem
 						{
-							GameHost.Instance.BuyHealingPotion(selected[0].Entity);
-						}
+							Id = "buy_" + itemId,
+							IconPath = itemIcon,
+							Tooltip = $"[I] Buy {itemName} (Cost: {itemCost:F0} Gold) — {itemDesc}",
+							Hotkey = Key.None,
+							Callback = () => {
+								var selected = GameHost.Instance?.SelectedUnits;
+								if (selected != null && selected.Count == 1)
+								{
+									GameHost.Instance.BuyItem(capturedItemId, selected[0].Entity);
+								}
+							}
+						});
 					}
-				});
+				}
 
 				items.Add(new CommandCardItem
 				{
@@ -1120,17 +1132,13 @@ public partial class CommandPanel
 					}
 					if (world.Has<Realm.Ecs.Components.Core.SpellCooldowns>(casterEntity))
 					{
-						var scd = world.Get<Realm.Ecs.Components.Core.SpellCooldowns>(casterEntity);
-						if (abilityId == "fireball" && scd.FireballCooldown > 0f) return true;
-						if (abilityId == "lightning" && scd.LightningCooldown > 0f) return true;
-						if (abilityId == "holylight" && scd.HolyLightCooldown > 0f) return true;
+						var scd = world.Get<Realm.Ecs.Components.Core.SpellCooldowns>(casterEntity).Value;
+						if (scd != null && scd.TryGetValue(abilityId, out float cd) && cd > 0f) return true;
 					}
 				}
-				if (GameHost.Instance != null)
+				if (GameHost.Instance != null && GameHost.Instance.GetPlayerSpellCooldown(abilityId) > 0f)
 				{
-					if (abilityId == "fireball" && GameHost.Instance.FireballCooldown > 0f) return true;
-					if (abilityId == "lightning" && GameHost.Instance.LightningCooldown > 0f) return true;
-					if (abilityId == "holylight" && GameHost.Instance.HolyLightCooldown > 0f) return true;
+					return true;
 				}
 				return false;
 			}

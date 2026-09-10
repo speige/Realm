@@ -13,6 +13,7 @@ using Realm.Godot.Utils;
 using Realm.Godot.Animation;
 using Realm.Shared.Metadata;
 using Realm.Ecs.Services;
+using Realm.Godot.Services;
 
 public static partial class MapWorkspaceService
 {
@@ -373,23 +374,24 @@ public static partial class MapWorkspaceService
 
 	public static void EnsureMetadataJson(string directory)
 	{
-		string templateMeta = GetTemplatePath("metadata.json");
-		string metadataPath = Path.Combine(directory, "metadata.json");
+		string metadataPath = MetadataService.ResolveMetadataPath(directory);
 		if (!File.Exists(metadataPath) || new FileInfo(metadataPath).Length == 0)
 		{
+			string templateMeta = GetTemplatePath("metadata.json");
 			if (File.Exists(templateMeta))
 			{
 				File.Copy(templateMeta, metadataPath, true);
 			}
 			else
 			{
-				MapJsonFormatter.SaveFormattedJson(metadataPath, "{}");
+				MetadataService.Instance.SaveMetadata(metadataPath, new MapMetadata());
 			}
 		}
 
-		if (File.Exists(templateMeta))
+		string templateMetaPath = GetTemplatePath("metadata.json");
+		if (File.Exists(templateMetaPath))
 		{
-			string templateAssetsDir = Path.Combine(Path.GetDirectoryName(templateMeta), "Assets");
+			string templateAssetsDir = Path.Combine(Path.GetDirectoryName(templateMetaPath), "Assets");
 			if (Directory.Exists(templateAssetsDir))
 			{
 				Realm.Godot.Animation.RealmDefaultAnimations.EnsureDefaultTemplateAnimations(templateAssetsDir);
@@ -778,7 +780,7 @@ public static partial class MapWorkspaceService
 		}
 	}
 
-	private static (string AssetType, int Columns, int Rows) DetectPngAssetInfo(string workspacePath, string pngPath, JsonObject? metadataRoot)
+	private static (string AssetType, int Columns, int Rows) DetectPngAssetInfo(string workspacePath, string pngPath, MapMetadata? metadata = null)
 	{
 		string fileName = Path.GetFileName(pngPath);
 		string cleanName = Path.GetFileNameWithoutExtension(pngPath);
@@ -803,16 +805,7 @@ public static partial class MapWorkspaceService
 			catch { }
 		}
 
-		JsonObject? assetsObj = null;
-		if (metadataRoot != null)
-		{
-			if (metadataRoot["Assets"] is JsonObject a1) assetsObj = a1;
-			else if (metadataRoot["MapProperties"] is JsonObject mp && mp["Assets"] is JsonObject a2) assetsObj = a2;
-		}
-		if (assetsObj == null)
-		{
-			assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(workspacePath);
-		}
+		JsonObject? assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(workspacePath);
 
 		if (assetsObj != null)
 		{
@@ -996,16 +989,7 @@ public static partial class MapWorkspaceService
 			string[] pngFiles = Directory.GetFiles(assetsDir, "*.png", SearchOption.AllDirectories);
 			if (pngFiles.Length == 0) return;
 
-			JsonObject? metadataRoot = null;
-			string metadataPath = Path.Combine(workspacePath, "metadata.json");
-			if (File.Exists(metadataPath))
-			{
-				try
-				{
-					metadataRoot = JsonNode.Parse(File.ReadAllText(metadataPath)) as JsonObject;
-				}
-				catch { }
-			}
+			MetadataService.Instance.TryLoadMetadata(workspacePath, out var metadataRoot);
 
 			foreach (string pngPath in pngFiles)
 			{
@@ -1085,16 +1069,7 @@ public static partial class MapWorkspaceService
 
 			if (validPngs.Count == 0) return;
 
-			JsonObject? metadataRoot = null;
-			string metadataPath = Path.Combine(workspacePath, "metadata.json");
-			if (File.Exists(metadataPath))
-			{
-				try
-				{
-					metadataRoot = JsonNode.Parse(File.ReadAllText(metadataPath)) as JsonObject;
-				}
-				catch { }
-			}
+			MetadataService.Instance.TryLoadMetadata(workspacePath, out var metadataRoot);
 
 			for (int i = 0; i < validPngs.Count; i++)
 			{

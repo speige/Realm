@@ -101,14 +101,14 @@ public class NetworkService
 	private bool IsUnitActive(Entity entity)
 	{
 		return EcsWorld.Has<MoveTo>(entity) ||
-		       EcsWorld.Has<Realm.Ecs.Components.Resources.BuildTask>(entity) ||
-		       EcsWorld.Has<AttackTarget>(entity) ||
-		       EcsWorld.Has<Realm.Ecs.Components.Movement.AttackMove>(entity) ||
-		       EcsWorld.Has<Realm.Ecs.Components.Movement.Follow>(entity) ||
-		       EcsWorld.Has<Realm.Ecs.Components.Movement.Patrol>(entity) ||
-		       EcsWorld.Has<Gatherer>(entity) ||
-		       EcsWorld.Has<WaypointQueue>(entity) ||
-		       (EcsWorld.Has<BuildQueue>(entity) && EcsWorld.Get<BuildQueue>(entity).Count > 0);
+			   EcsWorld.Has<Realm.Ecs.Components.Resources.BuildTask>(entity) ||
+			   EcsWorld.Has<AttackTarget>(entity) ||
+			   EcsWorld.Has<Realm.Ecs.Components.Movement.AttackMove>(entity) ||
+			   EcsWorld.Has<Realm.Ecs.Components.Movement.Follow>(entity) ||
+			   EcsWorld.Has<Realm.Ecs.Components.Movement.Patrol>(entity) ||
+			   EcsWorld.Has<Gatherer>(entity) ||
+			   EcsWorld.Has<WaypointQueue>(entity) ||
+			   (EcsWorld.Has<BuildQueue>(entity) && EcsWorld.Get<BuildQueue>(entity).Count > 0);
 	}
 
 	private void EnqueueCommand(Entity entity, string type, System.Numerics.Vector3 position, Entity target = default)
@@ -401,7 +401,7 @@ public class NetworkService
 		{
 			EcsWorld.Add(entity, new MovementStats(meta.Speed, 20f, 10f));
 			EcsWorld.Add(entity, new Movable());
-			EcsWorld.Add(entity, new Inventory(1));
+			EcsWorld.Add(entity, new Inventory());
 		}
 		else
 		{
@@ -796,11 +796,11 @@ public class NetworkService
 				var scattered = targetPos + right * offsetX + moveDir * offsetZ;
 
 				bool hasNonMoveTasks = EcsWorld.Has<Realm.Ecs.Components.Resources.BuildTask>(entity) ||
-				                       EcsWorld.Has<AttackTarget>(entity) ||
-				                       EcsWorld.Has<Realm.Ecs.Components.Movement.AttackMove>(entity) ||
-				                       EcsWorld.Has<Realm.Ecs.Components.Movement.Follow>(entity) ||
-				                       EcsWorld.Has<Realm.Ecs.Components.Movement.Patrol>(entity) ||
-				                       EcsWorld.Has<Gatherer>(entity);
+									   EcsWorld.Has<AttackTarget>(entity) ||
+									   EcsWorld.Has<Realm.Ecs.Components.Movement.AttackMove>(entity) ||
+									   EcsWorld.Has<Realm.Ecs.Components.Movement.Follow>(entity) ||
+									   EcsWorld.Has<Realm.Ecs.Components.Movement.Patrol>(entity) ||
+									   EcsWorld.Has<Gatherer>(entity);
 
 				if (hasNonMoveTasks)
 				{
@@ -918,6 +918,12 @@ public class NetworkService
 							res.Value[woodResourceId] += (int)regMeta.CostWood;
 							res.Value[stoneResourceId] += (int)regMeta.CostStone;
 							EcsWorld.Set(ownerEntity, res);
+						}
+
+						if (regMeta.PopCost > 0 && EcsWorld.IsAlive(ownerEntity) && EcsWorld.Has<PlayerPopulation>(ownerEntity))
+						{
+							ref var pop = ref EcsWorld.Get<PlayerPopulation>(ownerEntity);
+							pop.Current = System.Math.Max(0, pop.Current - regMeta.PopCost);
 						}
 					}
 				}

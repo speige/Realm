@@ -52,12 +52,14 @@ public partial class GameHost : Node3D, IGameAPI
 	private SpectatorService _spectatorService;
 	private Realm.Godot.Services.ModelOptimization.ModelOptimizerService _modelOptimizerService;
 	private TerrainNavMeshService _terrainNavMeshService;
+	private Realm.Godot.Services.MetadataService _metadataService;
 
 	public CheatService CheatService => _cheatService;
 	public EnvironmentService EnvironmentService => _environmentService;
 	public SpectatorService SpectatorService => _spectatorService;
 	public ShroudService ShroudService => _shroudService;
 	public Realm.Godot.Services.ModelOptimization.ModelOptimizerService ModelOptimizerService => _modelOptimizerService;
+	public Realm.Godot.Services.MetadataService MetadataService => _metadataService;
 
 	public bool UnlimitedPowerEnabled { get; set; } = false;
 	public bool GigachadEnabled { get; set; } = false;
@@ -1668,30 +1670,27 @@ public partial class GameHost : Node3D, IGameAPI
 
 	public const float TimeOfDayCycleDuration = 90f;
 
-	public const float FireballCooldownMax = 12f;
-	public const float LightningCooldownMax = 18f;
-	public const float HolyLightCooldownMax = 15f;
-
-	public float FireballCooldown
+	public float GetPlayerSpellCooldown(string abilityId)
 	{
-		get => EcsWorld?.GetFieldOrDefault<SpellCooldowns, float>(_playerEntity, c => c.FireballCooldown) ?? 0f;
-		set => EcsWorld?.Mutate<SpellCooldowns>(_playerEntity, (ref SpellCooldowns c) =>
-			EcsWorld.Set(_playerEntity, new SpellCooldowns(value, c.LightningCooldown, c.HolyLightCooldown)));
+		if (EcsWorld == null || _playerEntity == Entity.Null || !EcsWorld.IsAlive(_playerEntity)) return 0f;
+		if (EcsWorld.Has<SpellCooldowns>(_playerEntity))
+		{
+			var scd = EcsWorld.Get<SpellCooldowns>(_playerEntity).Value;
+			if (scd != null && scd.TryGetValue(abilityId, out float val)) return val;
+		}
+		return 0f;
 	}
 
-	public float LightningCooldown
+	public void SetPlayerSpellCooldown(string abilityId, float cooldown)
 	{
-		get => EcsWorld?.GetFieldOrDefault<SpellCooldowns, float>(_playerEntity, c => c.LightningCooldown) ?? 0f;
-		set => EcsWorld?.Mutate<SpellCooldowns>(_playerEntity, (ref SpellCooldowns c) =>
-			EcsWorld.Set(_playerEntity, new SpellCooldowns(c.FireballCooldown, value, c.HolyLightCooldown)));
+		if (EcsWorld == null || _playerEntity == Entity.Null || !EcsWorld.IsAlive(_playerEntity)) return;
+		if (EcsWorld.Has<SpellCooldowns>(_playerEntity))
+		{
+			var scd = EcsWorld.Get<SpellCooldowns>(_playerEntity).Value;
+			if (scd != null) scd[abilityId] = cooldown;
+		}
 	}
 
-	public float HolyLightCooldown
-	{
-		get => EcsWorld?.GetFieldOrDefault<SpellCooldowns, float>(_playerEntity, c => c.HolyLightCooldown) ?? 0f;
-		set => EcsWorld?.Mutate<SpellCooldowns>(_playerEntity, (ref SpellCooldowns c) =>
-			EcsWorld.Set(_playerEntity, new SpellCooldowns(c.FireballCooldown, c.LightningCooldown, value)));
-	}
 
 
 	public const float ResourceCap = ResourceConstants.ResourceCap;
@@ -1704,6 +1703,7 @@ public partial class GameHost : Node3D, IGameAPI
 	public static readonly Dictionary<string, ResourceMetadata> ResourceRegistry = new(StringComparer.OrdinalIgnoreCase);
 	public static readonly Dictionary<string, WeaponMetadata> WeaponRegistry = new(StringComparer.OrdinalIgnoreCase);
 	public static readonly Dictionary<string, AttachmentMetadata> AttachmentRegistry = new(StringComparer.OrdinalIgnoreCase);
+	public static readonly Dictionary<string, ItemMetadata> ItemRegistry = new(StringComparer.OrdinalIgnoreCase);
 
 	public static bool TryGetUnitOrBuildingMetadata(string? unitId, out UnitMetadata meta)
 	{
@@ -1838,7 +1838,7 @@ public partial class GameHost : Node3D, IGameAPI
 	private void SetupPlayerEntityComponents(Entity playerEntity)
 	{
 		EcsWorld.Add(playerEntity, new PlayerPopulation(0, 0));
-		EcsWorld.Add(playerEntity, new SpellCooldowns(0f, 0f, 0f));
+		EcsWorld.Add(playerEntity, new SpellCooldowns(new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase)));
 		EcsWorld.Add(playerEntity, new PlayerUpgrades(false, false, false));
 	}
 
@@ -2485,39 +2485,14 @@ public class {mapName} : IMapScript
 		Callable.From(() =>
 		{
 			var pos = new Vector3(position.X, position.Y, position.Z);
-			if (effectTypeId == "fireblast")
+			var def = GetAbilityDefinition(effectTypeId);
+			if (def != null)
 			{
-				SpawnSpritesheetEffect("Assets/vfx/solar_flare_sheet.png", pos + new Vector3(0, 0.5f, 0), 4, 4, 0.05f, scale * 6f);
+				_fxService.SpawnAbilityEffect(this, def, pos, scale);
 			}
-			else if (effectTypeId == "lightning")
+			else
 			{
-				SpawnSpritesheetEffect("Assets/vfx/arcane_surge_sheet.png", pos + new Vector3(0, 0.5f, 0), 4, 4, 0.035f, scale * 6f);
-			}
-			else if (effectTypeId == "holylight")
-			{
-				var cylinder = new MeshInstance3D();
-				var cylinderMesh = new CylinderMesh();
-				cylinderMesh.TopRadius = 1.5f * scale;
-				cylinderMesh.BottomRadius = 1.5f * scale;
-				cylinderMesh.Height = 8.0f;
-				cylinder.Mesh = cylinderMesh;
-				cylinder.Position = pos + new Vector3(0, 4.0f, 0);
-
-				var material = new StandardMaterial3D();
-				material.AlbedoColor = new Color(0.2f, 0.9f, 0.3f, 0.6f);
-				material.EmissionEnabled = true;
-				material.Emission = new Color(0.1f, 0.8f, 0.2f);
-				material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-				cylinder.MaterialOverride = material;
-
-				AddChild(cylinder);
-
-				var tween = CreateTween();
-				tween.SetParallel(true);
-				tween.TweenProperty(cylinder, "scale", new Vector3(1.2f, 1.0f, 1.2f), 0.5f);
-				tween.TweenProperty(material, "albedo_color:a", 0.0f, 0.5f);
-				tween.TweenProperty(material, "emission:a", 0.0f, 0.5f);
-				tween.Chain().TweenCallback(Callable.From(cylinder.QueueFree));
+				_fxService.SpawnSpritesheetEffect(this, effectTypeId, pos + new Vector3(0, 0.5f, 0), 4, 4, 0.05f, scale * 6f);
 			}
 		}).CallDeferred();
 	}
@@ -2543,23 +2518,26 @@ public class {mapName} : IMapScript
 	void IGameAPI.CastAbility(IUnit unit, string abilityId, System.Numerics.Vector3 targetPosition)
 	{
 		var godotPos = new Godot.Vector3(targetPosition.X, targetPosition.Y, targetPosition.Z);
-		if (abilityId == "fireball")
+		var def = GetAbilityDefinition(abilityId);
+		var casterEnt = unit is IEcsEntityWrapper w ? w.Entity : Entity.Null;
+
+		if (def != null)
 		{
-			SpawnFireblastEffect(godotPos);
-			SpawnTargetIndicator(godotPos, new Color(0.9f, 0.3f, 0.1f));
-			_simulationService.DealSpellDamageAOE(targetPosition, 4.0f, 50f, unit is IEcsEntityWrapper w ? w.Entity : Entity.Null);
-		}
-		else if (abilityId == "lightning")
-		{
-			SpawnLightningEffect(godotPos);
-			SpawnTargetIndicator(godotPos, new Color(0.2f, 0.5f, 1f));
-			_simulationService.DealSpellDamageAOE(targetPosition, 2.0f, 80f, unit is IEcsEntityWrapper w ? w.Entity : Entity.Null);
-		}
-		else if (abilityId == "holylight")
-		{
-			SpawnHolyLightEffect(godotPos);
-			SpawnTargetIndicator(godotPos, new Color(0.2f, 0.9f, 0.3f));
-			_simulationService.HealAOE(targetPosition, 4.0f, 60f);
+			_fxService.SpawnAbilityEffect(this, def, godotPos);
+			if (def.Damage > 0f)
+			{
+				float aoe = def.AreaOfEffectRadius > 0f ? def.AreaOfEffectRadius : 4.0f;
+				_simulationService.DealSpellDamageAOE(targetPosition, aoe, def.Damage, casterEnt);
+			}
+			else if (def.Healing > 0f)
+			{
+				float aoe = def.AreaOfEffectRadius > 0f ? def.AreaOfEffectRadius : 4.0f;
+				_simulationService.HealAOE(targetPosition, aoe, def.Healing);
+			}
+			else
+			{
+				OnSpellCast?.Invoke(unit, abilityId, targetPosition);
+			}
 		}
 		else
 		{
@@ -2581,10 +2559,11 @@ public class {mapName} : IMapScript
 			}
 			if (EcsWorld.Has<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity))
 			{
-				var cds = EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity);
-				if (abilityId == "fireball") return cds.FireballCooldown;
-				if (abilityId == "lightning") return cds.LightningCooldown;
-				if (abilityId == "holylight") return cds.HolyLightCooldown;
+				var scds = EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity).Value;
+				if (scds != null && scds.TryGetValue(abilityId, out var val))
+				{
+					return val;
+				}
 			}
 		}
 		return 0f;
@@ -2601,24 +2580,20 @@ public class {mapName} : IMapScript
 			}
 			else
 			{
-				dict = new System.Collections.Generic.Dictionary<string, float>();
+				dict = new System.Collections.Generic.Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
 				EcsWorld.Add(wrapper.Entity, new Realm.Ecs.Components.Core.Cooldowns(dict));
 			}
 			dict[abilityId] = cooldown;
 
-			if (abilityId == "fireball" || abilityId == "lightning" || abilityId == "holylight")
+			if (EcsWorld.Has<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity))
 			{
-				float fb = abilityId == "fireball" ? cooldown : (EcsWorld.Has<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity) ? EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity).FireballCooldown : 0f);
-				float lt = abilityId == "lightning" ? cooldown : (EcsWorld.Has<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity) ? EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity).LightningCooldown : 0f);
-				float hl = abilityId == "holylight" ? cooldown : (EcsWorld.Has<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity) ? EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity).HolyLightCooldown : 0f);
-				if (EcsWorld.Has<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity))
-				{
-					EcsWorld.Set(wrapper.Entity, new Realm.Ecs.Components.Core.SpellCooldowns(fb, lt, hl));
-				}
-				else
-				{
-					EcsWorld.Add(wrapper.Entity, new Realm.Ecs.Components.Core.SpellCooldowns(fb, lt, hl));
-				}
+				var scd = EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity).Value;
+				if (scd != null) scd[abilityId] = cooldown;
+			}
+			else
+			{
+				var scdDict = new System.Collections.Generic.Dictionary<string, float>(StringComparer.OrdinalIgnoreCase) { [abilityId] = cooldown };
+				EcsWorld.Add(wrapper.Entity, new Realm.Ecs.Components.Core.SpellCooldowns(scdDict));
 			}
 		}
 	}
@@ -3478,284 +3453,125 @@ public class {mapName} : IMapScript
 		ActiveMapName = mapName;
 		LocalizationManager.CurrentMapName = mapName;
 		LocalizationManager.SetupTranslations();
+
 		string path = (mapName.StartsWith("user://") || mapName.StartsWith("res://") || System.IO.Path.IsPathRooted(mapName))
 			? System.IO.Path.Combine(mapName, "metadata.json")
 			: $"res://Maps/{mapName}/metadata.json";
-		string globalPath = ProjectSettings.GlobalizePath(path);
-		string jsonText = "";
 
-		if (FileAccess.FileExists(path))
+		var metaService = _metadataService ?? Realm.Godot.Services.MetadataService.Instance;
+		var metadata = metaService.LoadMetadata(path, fallbackToTemplate: true);
+
+		var newUnits = new Dictionary<string, UnitMetadata>(StringComparer.OrdinalIgnoreCase);
+		var newBuildings = new Dictionary<string, UnitMetadata>(StringComparer.OrdinalIgnoreCase);
+		var newProps = new Dictionary<string, PropMetadata>(StringComparer.OrdinalIgnoreCase);
+		var newResources = new Dictionary<string, ResourceMetadata>(StringComparer.OrdinalIgnoreCase);
+		var newWeapons = new Dictionary<string, WeaponMetadata>(StringComparer.OrdinalIgnoreCase);
+		var newAttachments = new Dictionary<string, AttachmentMetadata>(StringComparer.OrdinalIgnoreCase);
+		var newItems = new Dictionary<string, ItemMetadata>(StringComparer.OrdinalIgnoreCase);
+		var newVfx = new Dictionary<string, VfxAttachmentConfig>(StringComparer.OrdinalIgnoreCase);
+
+		foreach (var meta in metadata.CustomWeapons)
 		{
-			using var file = FileAccess.Open(path, FileAccess.ModeFlags.Read);
-			jsonText = file.GetAsText();
+			if (!string.IsNullOrEmpty(meta.WeaponId))
+				newWeapons[meta.WeaponId] = meta;
 		}
-		else if (System.IO.File.Exists(globalPath))
+
+		foreach (var meta in metadata.CustomAttachments)
 		{
-			jsonText = System.IO.File.ReadAllText(globalPath);
-		}
-
-		if (!string.IsNullOrEmpty(jsonText))
-		{
-			try
+			if (!string.IsNullOrEmpty(meta.AttachmentId))
 			{
-				using var doc = System.Text.Json.JsonDocument.Parse(jsonText);
-				if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object)
-				{
-					var newUnits = new Dictionary<string, UnitMetadata>(StringComparer.OrdinalIgnoreCase);
-					var newBuildings = new Dictionary<string, UnitMetadata>(StringComparer.OrdinalIgnoreCase);
-					var newProps = new Dictionary<string, PropMetadata>(StringComparer.OrdinalIgnoreCase);
-					var newResources = new Dictionary<string, ResourceMetadata>(StringComparer.OrdinalIgnoreCase);
-					var newWeapons = new Dictionary<string, WeaponMetadata>(StringComparer.OrdinalIgnoreCase);
-					var newAttachments = new Dictionary<string, AttachmentMetadata>(StringComparer.OrdinalIgnoreCase);
-					var newVfx = new Dictionary<string, VfxAttachmentConfig>(StringComparer.OrdinalIgnoreCase);
-
-					bool hasStructuredArrays = false;
-
-					if (doc.RootElement.TryGetProperty("CustomWeapons", out var weapProp) && weapProp.ValueKind == JsonValueKind.Array)
-					{
-						var list = JsonSerializer.Deserialize<List<WeaponMetadata>>(weapProp.GetRawText(), Options);
-						if (list != null)
-						{
-							foreach (var meta in list)
-							{
-								if (!string.IsNullOrEmpty(meta.WeaponId))
-									newWeapons[meta.WeaponId] = meta;
-							}
-						}
-					}
-
-					if (doc.RootElement.TryGetProperty("CustomAttachments", out var attachProp) && attachProp.ValueKind == JsonValueKind.Array)
-					{
-						hasStructuredArrays = true;
-						var list = JsonSerializer.Deserialize<List<AttachmentMetadata>>(attachProp.GetRawText(), Options);
-						if (list != null)
-						{
-							foreach (var meta in list)
-							{
-								if (!string.IsNullOrEmpty(meta.AttachmentId))
-								{
-									newAttachments[meta.AttachmentId] = meta;
-								}
-							}
-						}
-					}
-
-					var assetsRoot = doc.RootElement.TryGetProperty("Assets", out var aProp) 
-						? aProp 
-						: (doc.RootElement.TryGetProperty("MapProperties", out var mpProp) && mpProp.TryGetProperty("Assets", out var mpaProp) ? mpaProp : default);
-					if (assetsRoot.ValueKind == JsonValueKind.Object && assetsRoot.TryGetProperty("glb", out var glbProp) && glbProp.TryGetProperty("attachments", out var attGlbProp) && attGlbProp.ValueKind == JsonValueKind.Object)
-					{
-						foreach (var itemProp in attGlbProp.EnumerateObject())
-						{
-							string fileName = itemProp.Name;
-							string id = System.IO.Path.GetFileNameWithoutExtension(fileName);
-							float scale = 1.0f;
-							Vector3 posOffset = Vector3.Zero;
-							Vector3 rotOffset = Vector3.Zero;
-							string hand = "RightHand";
-							string? childVfxId = null;
-							Vector3 childVfxPos = Vector3.Zero;
-							Vector3 childVfxRot = Vector3.Zero;
-							Vector3 childVfxScale = Vector3.One;
-							if (itemProp.Value.ValueKind == JsonValueKind.Object)
-							{
-								if (itemProp.Value.TryGetProperty("scale", out var sc) && sc.TryGetSingle(out var sVal)) scale = sVal;
-								if (itemProp.Value.TryGetProperty("position_offset", out var po) && po.ValueKind == JsonValueKind.Array)
-								{
-									var arr = po.EnumerateArray().ToArray();
-									if (arr.Length >= 3) posOffset = new Vector3(arr[0].GetSingle(), arr[1].GetSingle(), arr[2].GetSingle());
-								}
-								if (itemProp.Value.TryGetProperty("rotation_offset", out var ro) && ro.ValueKind == JsonValueKind.Array)
-								{
-									var arr = ro.EnumerateArray().ToArray();
-									if (arr.Length >= 3) rotOffset = new Vector3(arr[0].GetSingle(), arr[1].GetSingle(), arr[2].GetSingle());
-								}
-								if (itemProp.Value.TryGetProperty("default_hand", out var dh)) hand = dh.GetString() ?? "RightHand";
-								if (itemProp.Value.TryGetProperty("child_vfx_id", out var cvid)) childVfxId = cvid.GetString();
-								else if (itemProp.Value.TryGetProperty("ChildVfxId", out var cvid2)) childVfxId = cvid2.GetString();
-								if (itemProp.Value.TryGetProperty("child_vfx_position", out var cvp) && cvp.ValueKind == JsonValueKind.Array)
-								{
-									var arr = cvp.EnumerateArray().ToArray();
-									if (arr.Length >= 3) childVfxPos = new Vector3(arr[0].GetSingle(), arr[1].GetSingle(), arr[2].GetSingle());
-								}
-								if (itemProp.Value.TryGetProperty("child_vfx_rotation", out var cvr) && cvr.ValueKind == JsonValueKind.Array)
-								{
-									var arr = cvr.EnumerateArray().ToArray();
-									if (arr.Length >= 3) childVfxRot = new Vector3(arr[0].GetSingle(), arr[1].GetSingle(), arr[2].GetSingle());
-								}
-								if (itemProp.Value.TryGetProperty("child_vfx_scale", out var cvs) && cvs.ValueKind == JsonValueKind.Array)
-								{
-									var arr = cvs.EnumerateArray().ToArray();
-									if (arr.Length >= 3) childVfxScale = new Vector3(arr[0].GetSingle(), arr[1].GetSingle(), arr[2].GetSingle());
-								}
-							}
-							var meta = new AttachmentMetadata
-							{
-								AttachmentId = id,
-								Name = id,
-								ModelPath = System.IO.Path.Combine("Assets", "models", "attachments", fileName).Replace('\\', '/'),
-								Scale = scale,
-								PositionOffset = posOffset,
-								RotationOffset = rotOffset,
-								DefaultHand = hand,
-								ChildVfxId = childVfxId,
-								ChildVfxPosition = childVfxPos,
-								ChildVfxRotation = childVfxRot,
-								ChildVfxScale = childVfxScale
-							};
-							newAttachments[id] = meta;
-							newAttachments[fileName] = meta;
-						}
-					}
-
-					if (doc.RootElement.TryGetProperty("CustomUnits", out var unitsProp) && unitsProp.ValueKind == JsonValueKind.Array)
-					{
-						hasStructuredArrays = true;
-						var list = JsonSerializer.Deserialize<List<UnitMetadata>>(unitsProp.GetRawText(), Options);
-						if (list != null)
-						{
-							foreach (var meta in list)
-							{
-								if (!string.IsNullOrEmpty(meta.UnitId))
-								{
-									var copy = meta;
-									if (copy.Scale <= 0f) copy.Scale = 1.0f;
-									newUnits[copy.UnitId] = copy;
-								}
-							}
-						}
-					}
-
-					if (doc.RootElement.TryGetProperty("CustomBuildings", out var bldProp) && bldProp.ValueKind == JsonValueKind.Array)
-					{
-						hasStructuredArrays = true;
-						var list = JsonSerializer.Deserialize<List<UnitMetadata>>(bldProp.GetRawText(), Options);
-						if (list != null)
-						{
-							foreach (var meta in list)
-							{
-								if (!string.IsNullOrEmpty(meta.UnitId))
-								{
-									var copy = meta;
-									if (copy.Scale <= 0f) copy.Scale = 1.5f;
-									newBuildings[copy.UnitId] = copy;
-								}
-							}
-						}
-					}
-
-					if (doc.RootElement.TryGetProperty("CustomResources", out var resProp) && resProp.ValueKind == JsonValueKind.Array)
-					{
-						hasStructuredArrays = true;
-						var list = JsonSerializer.Deserialize<List<ResourceMetadata>>(resProp.GetRawText(), Options);
-						if (list != null)
-						{
-							foreach (var meta in list)
-							{
-								if (!string.IsNullOrEmpty(meta.UnitId))
-								{
-									var copy = meta;
-									if (copy.Scale <= 0f) copy.Scale = 2.75f;
-									if (copy.PathingType == 0) copy.PathingType = 255;
-									newResources[copy.UnitId] = copy;
-								}
-							}
-						}
-					}
-
-					if (doc.RootElement.TryGetProperty("CustomProps", out var propProp) && propProp.ValueKind == JsonValueKind.Array)
-					{
-						hasStructuredArrays = true;
-						var list = JsonSerializer.Deserialize<List<PropMetadata>>(propProp.GetRawText(), Options);
-						if (list != null)
-						{
-							foreach (var meta in list)
-							{
-								if (!string.IsNullOrEmpty(meta.UnitId))
-								{
-									var copy = meta;
-									if (copy.Scale <= 0f) copy.Scale = 1.25f;
-									if (copy.PathingType == 0) copy.PathingType = 255;
-									newProps[copy.UnitId] = copy;
-								}
-							}
-						}
-					}
-
-					if (doc.RootElement.TryGetProperty("CustomAbilities", out var abProp) && abProp.ValueKind == JsonValueKind.Array)
-					{
-						hasStructuredArrays = true;
-						var list = JsonSerializer.Deserialize<List<AbilityMetadata>>(abProp.GetRawText(), Options);
-						if (list != null)
-						{
-							RegisterCustomAbilities(list);
-						}
-					}
-
-					if (doc.RootElement.TryGetProperty("CustomVfx", out var vfxProp) && vfxProp.ValueKind == JsonValueKind.Array)
-					{
-						hasStructuredArrays = true;
-						var list = JsonSerializer.Deserialize<List<VfxAttachmentConfig>>(vfxProp.GetRawText(), Options);
-						if (list != null)
-						{
-							foreach (var cfg in list)
-							{
-								if (!string.IsNullOrEmpty(cfg.VfxId))
-								{
-									newVfx[cfg.VfxId] = cfg;
-								}
-							}
-						}
-					}
-
-					if (!hasStructuredArrays)
-					{
-						var loadedRegistry = JsonSerializer.Deserialize<Dictionary<string, UnitMetadata>>(jsonText, Options);
-						if (loadedRegistry != null)
-						{
-							var skipKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-							{
-								"MapProperties", "CustomWeapons", "CustomAbilities", "CustomUpgrades", "CustomItems", "CustomUnits", "CustomBuildings", "CustomResources", "CustomProps", "CustomVfx", "Assets"
-							};
-							foreach (var kvp in loadedRegistry)
-							{
-								if (!skipKeys.Contains(kvp.Key))
-								{
-									newUnits[kvp.Key] = kvp.Value;
-								}
-							}
-						}
-					}
-
-					UnitRegistry.Clear();
-					foreach (var kvp in newUnits) UnitRegistry[kvp.Key] = kvp.Value;
-
-					BuildingRegistry.Clear();
-					foreach (var kvp in newBuildings) BuildingRegistry[kvp.Key] = kvp.Value;
-
-					PropRegistry.Clear();
-					foreach (var kvp in newProps) PropRegistry[kvp.Key] = kvp.Value;
-
-					ResourceRegistry.Clear();
-					foreach (var kvp in newResources) ResourceRegistry[kvp.Key] = kvp.Value;
-
-					WeaponRegistry.Clear();
-					foreach (var kvp in newWeapons) WeaponRegistry[kvp.Key] = kvp.Value;
-
-					AttachmentRegistry.Clear();
-					foreach (var kvp in newAttachments) AttachmentRegistry[kvp.Key] = kvp.Value;
-
-					VfxRegistry.Clear();
-					foreach (var kvp in newVfx) VfxRegistry[kvp.Key] = kvp.Value;
-
-					Prop3D.ClearModelPathCache();
-				}
-			}
-			catch (Exception ex)
-			{
-				GD.PrintErr($"Failed to load custom unit registry: {ex.Message}");
+				newAttachments[meta.AttachmentId] = meta;
 			}
 		}
+
+		foreach (var meta in metadata.CustomItems)
+		{
+			if (!string.IsNullOrEmpty(meta.ItemId))
+			{
+				newItems[meta.ItemId] = meta;
+			}
+		}
+
+		foreach (var meta in metadata.CustomUnits)
+		{
+			if (!string.IsNullOrEmpty(meta.UnitId))
+			{
+				var copy = meta;
+				if (copy.Scale <= 0f) copy.Scale = 1.0f;
+				newUnits[copy.UnitId] = copy;
+			}
+		}
+
+		foreach (var meta in metadata.CustomBuildings)
+		{
+			if (!string.IsNullOrEmpty(meta.UnitId))
+			{
+				var copy = meta;
+				if (copy.Scale <= 0f) copy.Scale = 1.5f;
+				newBuildings[copy.UnitId] = copy;
+			}
+		}
+
+		foreach (var meta in metadata.CustomResources)
+		{
+			if (!string.IsNullOrEmpty(meta.UnitId))
+			{
+				var copy = meta;
+				if (copy.Scale <= 0f) copy.Scale = 2.75f;
+				if (copy.PathingType == 0) copy.PathingType = 255;
+				newResources[copy.UnitId] = copy;
+			}
+		}
+
+		foreach (var meta in metadata.CustomProps)
+		{
+			if (!string.IsNullOrEmpty(meta.UnitId))
+			{
+				var copy = meta;
+				if (copy.Scale <= 0f) copy.Scale = 1.25f;
+				if (copy.PathingType == 0) copy.PathingType = 255;
+				newProps[copy.UnitId] = copy;
+			}
+		}
+
+		if (metadata.CustomAbilities.Count > 0)
+		{
+			RegisterCustomAbilities(metadata.CustomAbilities);
+		}
+
+		foreach (var cfg in metadata.CustomVfx)
+		{
+			if (!string.IsNullOrEmpty(cfg.VfxId))
+			{
+				newVfx[cfg.VfxId] = cfg;
+			}
+		}
+
+		UnitRegistry.Clear();
+		foreach (var kvp in newUnits) UnitRegistry[kvp.Key] = kvp.Value;
+
+		BuildingRegistry.Clear();
+		foreach (var kvp in newBuildings) BuildingRegistry[kvp.Key] = kvp.Value;
+
+		PropRegistry.Clear();
+		foreach (var kvp in newProps) PropRegistry[kvp.Key] = kvp.Value;
+
+		ResourceRegistry.Clear();
+		foreach (var kvp in newResources) ResourceRegistry[kvp.Key] = kvp.Value;
+
+		WeaponRegistry.Clear();
+		foreach (var kvp in newWeapons) WeaponRegistry[kvp.Key] = kvp.Value;
+
+		AttachmentRegistry.Clear();
+		foreach (var kvp in newAttachments) AttachmentRegistry[kvp.Key] = kvp.Value;
+
+		ItemRegistry.Clear();
+		foreach (var kvp in newItems) ItemRegistry[kvp.Key] = kvp.Value;
+
+		VfxRegistry.Clear();
+		foreach (var kvp in newVfx) VfxRegistry[kvp.Key] = kvp.Value;
+
+		Prop3D.ClearModelPathCache();
 	}
 
 	public void SaveAttachmentDefaultsToMetadata(string fileName, AttachmentMetadata meta)
@@ -4093,6 +3909,16 @@ public class {mapName} : IMapScript
 				{
 					_fxService.SpawnDamageNumber(this, targetUnit3D.GlobalPosition, damage);
 					_audioService?.PlayUnitSound(targetUnit3D.UnitId, UnitSoundEvent.Wounded, targetUnit3D.GlobalPosition);
+				}
+			}
+		};
+		_simulationService.OnUnitHealedCallback = (targetEntity, healerEntity, healAmount) =>
+		{
+			if (EcsWorld.IsAlive(targetEntity))
+			{
+				if (GameHost.TryGetUnit3D(targetEntity, out var targetUnit3D))
+				{
+					_fxService.SpawnHealNumber(this, targetUnit3D.GlobalPosition, healAmount);
 				}
 			}
 		};
@@ -5346,17 +5172,10 @@ public class {mapName} : IMapScript
 			var godotPos = new Vector3(req.Position.X, req.Position.Y, req.Position.Z);
 			var godotTarget = new Vector3(req.TargetPosition.X, req.TargetPosition.Y, req.TargetPosition.Z);
 
-			if (req.EffectTypeId == "fireball" || req.EffectTypeId == "fireblast")
+			var def = GetAbilityDefinition(req.EffectTypeId);
+			if (def != null)
 			{
-				SpawnFireblastEffect(godotPos);
-			}
-			else if (req.EffectTypeId == "lightning")
-			{
-				SpawnLightningEffect(godotPos);
-			}
-			else if (req.EffectTypeId == "holylight")
-			{
-				SpawnHolyLightEffect(godotPos);
+				_fxService.SpawnAbilityEffect(this, def, godotPos);
 			}
 			else if (req.EffectTypeId == "arrow" || WeaponRegistry.ContainsKey(req.EffectTypeId) || req.EffectTypeId.StartsWith("proj:"))
 			{
@@ -5439,16 +5258,6 @@ public class {mapName} : IMapScript
 		return _environmentService?.GetTimeOfDayName(TimeOfDayIndex) ?? "Unknown";
 	}
 
-	private void SpawnFireblastEffect(Vector3 position)
-	{
-		_fxService.SpawnFireblastEffect(this, position);
-	}
-
-	private void SpawnLightningEffect(Vector3 position)
-	{
-		_fxService.SpawnLightningEffect(this, position);
-	}
-
 	private void SpawnSpritesheetEffect(string texturePath, Vector3 worldPosition, int columns, int rows, float secondsPerFrame, float sizeInWorldUnits)
 	{
 		_fxService.SpawnSpritesheetEffect(this, texturePath, worldPosition, columns, rows, secondsPerFrame, sizeInWorldUnits);
@@ -5467,11 +5276,6 @@ public class {mapName} : IMapScript
 	private void FlashHealUnit(Unit3D unit)
 	{
 		_fxService.FlashHealUnit(unit);
-	}
-
-	private void SpawnHolyLightEffect(Vector3 position)
-	{
-		_fxService.SpawnHolyLightEffect(this, position);
 	}
 
 	private void SpawnPing3DEffect(Vector3 position)

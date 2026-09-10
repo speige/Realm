@@ -14,6 +14,12 @@ public class AbilityDefinition
 	public int GridY { get; set; } = -1;
 	public float ManaCost { get; set; } = 0f;
 	public float Cooldown { get; set; } = 0f;
+	public float TargetRange { get; set; } = 0f;
+	public float AreaOfEffectRadius { get; set; } = 0f;
+	public float Damage { get; set; } = 0f;
+	public float Healing { get; set; } = 0f;
+	public string? VisualEffect { get; set; }
+	public string? CastSound { get; set; }
 }
 
 public partial class GameHost
@@ -44,7 +50,13 @@ public partial class GameHost
 				IconPath = meta.IconPath ?? "",
 				IsInstant = string.Equals(meta.AbilityType, "instant_spell", StringComparison.OrdinalIgnoreCase),
 				ManaCost = meta.ManaCost,
-				Cooldown = meta.Cooldown
+				Cooldown = meta.Cooldown,
+				TargetRange = meta.TargetRange,
+				AreaOfEffectRadius = meta.AreaOfEffectRadius,
+				Damage = meta.Damage,
+				Healing = meta.Healing,
+				VisualEffect = meta.VisualEffect,
+				CastSound = meta.CastSound
 			};
 		}
 	}

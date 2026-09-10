@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Realm.Godot.Services;
 
 public partial class MapSettingsDialog : FloatingDialogBase
 {
@@ -367,27 +368,17 @@ public partial class MapSettingsDialog : FloatingDialogBase
 
 	public void LoadMapProperties()
 		{
-			string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
-			string metaPath = Path.Combine(wsPath, "metadata.json");
-			if (File.Exists(metaPath))
+		string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
+		if (MetadataService.Instance.TryLoadMetadata(wsPath, out var metadata))
+		{
+			string? name = !string.IsNullOrEmpty(metadata.MapProperties?.MapName)
+				? metadata.MapProperties.MapName
+				: metadata.MapProperties?.Name;
+			if (!string.IsNullOrEmpty(name) && _txtMapName != null)
 			{
-				try
-				{
-					var metaDoc = JsonNode.Parse(File.ReadAllText(metaPath)) as JsonObject;
-					if (metaDoc != null)
-					{
-					if (metaDoc.TryGetPropertyValue("Name", out var n) && n != null && _txtMapName != null)
-						{
-						_txtMapName.Text = n.ToString().Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
-						}
-					else if (metaDoc.TryGetPropertyValue("map_name", out var mn) && mn != null && _txtMapName != null)
-								{
-						_txtMapName.Text = mn.ToString().Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
-								}
-							}
-						}
-			catch { }
+				_txtMapName.Text = name.Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
 			}
+		}
 
 			string mapJsonPath = Path.Combine(wsPath, "map.json");
 			if (File.Exists(mapJsonPath))
@@ -442,15 +433,16 @@ public partial class MapSettingsDialog : FloatingDialogBase
 		string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
 		string cleanMapName = (_txtMapName?.Text ?? string.Empty).Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
 
-		// Save to metadata.json
-		string metaPath = Path.Combine(wsPath, "metadata.json");
+		string metaPath = MetadataService.ResolveMetadataPath(wsPath);
 		if (File.Exists(metaPath) && _txtMapName != null)
 		{
 			try
 			{
-				var metaDoc = JsonNode.Parse(File.ReadAllText(metaPath)) as JsonObject ?? new JsonObject();
-				metaDoc["Name"] = cleanMapName;
-				MapJsonFormatter.SaveFormattedJson(metaPath, metaDoc);
+				MetadataService.Instance.UpdateMetadata(wsPath, meta =>
+				{
+					meta.MapProperties.MapName = cleanMapName;
+					meta.MapProperties.Name = cleanMapName;
+				});
 			}
 			catch (Exception ex)
 			{

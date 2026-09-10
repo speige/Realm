@@ -1140,47 +1140,42 @@ public partial class VfxStudioDialog : FloatingDialogBase
 		var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 
-		string metaPath = Path.Combine(wsPath, "metadata.json");
-		if (File.Exists(metaPath))
+		try
 		{
-			try
+			var assetsObj = MapAssetHelper.LoadUnionedAssets(wsPath);
+			if (assetsObj != null)
 			{
-				string json = File.ReadAllText(metaPath);
-				var root = JsonNode.Parse(json) as JsonObject;
-				if (root?["assets"] is JsonObject assetsObj)
+				foreach (var cat in assetsObj)
 				{
-					foreach (var cat in assetsObj)
+					if (cat.Value is JsonObject subCats)
 					{
-						if (cat.Value is JsonObject subCats)
+						foreach (var subCat in subCats)
 						{
-							foreach (var subCat in subCats)
+							if (subCat.Value is JsonObject modelsObj)
 							{
-								if (subCat.Value is JsonObject modelsObj)
+								foreach (var modelProp in modelsObj)
 								{
-									foreach (var modelProp in modelsObj)
+									string fileName = modelProp.Key;
+									bool isProjectile = subCat.Key.Equals("projectiles", StringComparison.OrdinalIgnoreCase);
+
+									if (!isProjectile && modelProp.Value is JsonObject mObj)
 									{
-										string fileName = modelProp.Key;
-										bool isProjectile = subCat.Key.Equals("projectiles", StringComparison.OrdinalIgnoreCase);
-
-										if (!isProjectile && modelProp.Value is JsonObject mObj)
+										string? at = mObj["asset_type"]?.ToString()
+											?? mObj["AssetType"]?.ToString()
+											?? mObj["default_asset_type"]?.ToString()
+											?? mObj["type"]?.ToString();
+										if (!string.IsNullOrEmpty(at) && (
+											at.Equals("Projectile", StringComparison.OrdinalIgnoreCase) ||
+											at.Equals("projectiles", StringComparison.OrdinalIgnoreCase) ||
+											at.Equals("projectile", StringComparison.OrdinalIgnoreCase)))
 										{
-											string? at = mObj["asset_type"]?.ToString()
-												?? mObj["AssetType"]?.ToString()
-												?? mObj["default_asset_type"]?.ToString()
-												?? mObj["type"]?.ToString();
-											if (!string.IsNullOrEmpty(at) && (
-												at.Equals("Projectile", StringComparison.OrdinalIgnoreCase) ||
-												at.Equals("projectiles", StringComparison.OrdinalIgnoreCase) ||
-												at.Equals("projectile", StringComparison.OrdinalIgnoreCase)))
-											{
-												isProjectile = true;
-											}
+											isProjectile = true;
 										}
+									}
 
-										if (isProjectile)
-										{
-											results.Add(fileName);
-										}
+									if (isProjectile)
+									{
+										results.Add(fileName);
 									}
 								}
 							}
@@ -1188,8 +1183,8 @@ public partial class VfxStudioDialog : FloatingDialogBase
 					}
 				}
 			}
-			catch { }
 		}
+		catch { }
 
 		void ScanFolder(string folderPath)
 		{

@@ -14,6 +14,7 @@ using Realm.Shared;
 using Realm.Shared.Metadata;
 using Realm.Godot.Utils;
 using Realm.Godot.VFX;
+using Realm.Godot.Services;
 
 public partial class MapEditorHUD : Control
 {
@@ -4448,71 +4449,59 @@ public partial class MapEditorHUD : Control
 		string wsPath = !string.IsNullOrEmpty(_tempWorkspacePath) 
 			? _tempWorkspacePath 
 			: ProjectSettings.GlobalizePath(TempWorkspaceGodotPath);
-		string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
 
-		if (System.IO.File.Exists(metadataPath))
+		if (MetadataService.Instance.TryLoadMetadata(wsPath, out var metadata))
 		{
 			try
 			{
-				string json = System.IO.File.ReadAllText(metadataPath);
-				var root = System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject;
-				if (root != null)
+				if (metadata.CustomResources != null && metadata.CustomResources.Count > 0)
 				{
-					if (root["CustomResources"] is System.Text.Json.Nodes.JsonArray resArray)
+					foreach (var rObj in metadata.CustomResources)
 					{
-						foreach (var node in resArray)
+						string uId = rObj.UnitId ?? "";
+						string name = rObj.Name ?? "";
+						string mPath = rObj.ModelPath ?? "";
+						if (!string.IsNullOrEmpty(uId))
 						{
-							if (node is System.Text.Json.Nodes.JsonObject rObj)
+							if (uId.Contains("tree", StringComparison.OrdinalIgnoreCase) ||
+							    name.Contains("tree", StringComparison.OrdinalIgnoreCase) ||
+							    mPath.Contains("tree", StringComparison.OrdinalIgnoreCase))
 							{
-								string uId = rObj["UnitId"]?.ToString() ?? "";
-								string name = rObj["Name"]?.ToString() ?? "";
-								string mPath = rObj["ModelPath"]?.ToString() ?? "";
-								if (!string.IsNullOrEmpty(uId))
-								{
-									if (uId.Contains("tree", StringComparison.OrdinalIgnoreCase) ||
-									    name.Contains("tree", StringComparison.OrdinalIgnoreCase) ||
-									    mPath.Contains("tree", StringComparison.OrdinalIgnoreCase))
-									{
-										treeModels.Add(uId);
-									}
-								}
-							}
-						}
-
-						if (treeModels.Count == 0)
-						{
-							foreach (var node in resArray)
-							{
-								if (node is System.Text.Json.Nodes.JsonObject rObj)
-								{
-									string uId = rObj["UnitId"]?.ToString() ?? "";
-									if (!string.IsNullOrEmpty(uId))
-									{
-										treeModels.Add(uId);
-									}
-								}
+								treeModels.Add(uId);
 							}
 						}
 					}
 
-					var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
-					if (treeModels.Count == 0 && assetsObj?["glb"]?["resources"] is System.Text.Json.Nodes.JsonObject glbRes)
+					if (treeModels.Count == 0)
+					{
+						foreach (var rObj in metadata.CustomResources)
+						{
+							string uId = rObj.UnitId ?? "";
+							if (!string.IsNullOrEmpty(uId))
+							{
+								treeModels.Add(uId);
+							}
+						}
+					}
+				}
+
+				var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
+				if (treeModels.Count == 0 && assetsObj?["glb"]?["resources"] is System.Text.Json.Nodes.JsonObject glbRes)
+				{
+					foreach (var kvp in glbRes)
+					{
+						string key = kvp.Key;
+						if (key.Contains("tree", StringComparison.OrdinalIgnoreCase))
+						{
+							treeModels.Add(System.IO.Path.GetFileNameWithoutExtension(key));
+						}
+					}
+
+					if (treeModels.Count == 0)
 					{
 						foreach (var kvp in glbRes)
 						{
-							string key = kvp.Key;
-							if (key.Contains("tree", StringComparison.OrdinalIgnoreCase))
-							{
-								treeModels.Add(System.IO.Path.GetFileNameWithoutExtension(key));
-							}
-						}
-
-						if (treeModels.Count == 0)
-						{
-							foreach (var kvp in glbRes)
-							{
-								treeModels.Add(System.IO.Path.GetFileNameWithoutExtension(kvp.Key));
-							}
+							treeModels.Add(System.IO.Path.GetFileNameWithoutExtension(kvp.Key));
 						}
 					}
 				}
@@ -6664,23 +6653,15 @@ public partial class MapEditorHUD : Control
 		_swatchDisplayNames.Clear();
 		_swatchColors.Clear();
 
-		// Read textures from metadata.json
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
 				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
-			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
-			if (System.IO.File.Exists(metadataPath))
-			{
-				string content = System.IO.File.ReadAllText(metadataPath);
-				var root = System.Text.Json.Nodes.JsonNode.Parse(content) as JsonObject;
-				if (root != null)
-				{
-					var unionedAssets = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
-					JsonObject? texturesObj = unionedAssets?["textures"] as JsonObject;
+			var unionedAssets = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
+			JsonObject? texturesObj = unionedAssets?["textures"] as JsonObject;
 
-					if (texturesObj != null)
+			if (texturesObj != null)
 					{
 						var parsedItems = new List<(string BaseName, string Filename, int SwatchIndex, int OrderIndex)>();
 						int order = 0;
@@ -6755,8 +6736,6 @@ public partial class MapEditorHUD : Control
 							}
 						}
 					}
-				}
-			}
 		}
 		catch { }
 
@@ -7677,133 +7656,16 @@ public partial class MapEditorHUD : Control
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
 				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
-			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			string metadataPath = MetadataService.ResolveMetadataPath(wsPath);
 			if (!System.IO.File.Exists(metadataPath)) return;
 
-			string jsonStr = System.IO.File.ReadAllText(metadataPath);
-			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
-			if (root == null) return;
-
-			var unitsArray = root["CustomUnits"]?.AsArray() ?? root["Units"]?.AsArray();
-			var buildingsArray = root["CustomBuildings"]?.AsArray() ?? root["Buildings"]?.AsArray();
-
-			System.Text.Json.Nodes.JsonObject targetObj = null;
-			if (unitsArray != null)
+			MetadataService.Instance.UpdateMetadata(wsPath, meta =>
 			{
-				for (int i = 0; i < unitsArray.Count; i++)
-				{
-					var uObj = unitsArray[i]?.AsObject();
-					if (uObj != null && (uObj["UnitId"]?.ToString() == unitId || uObj["unitId"]?.ToString() == unitId || uObj["Id"]?.ToString() == unitId))
-					{
-						targetObj = uObj;
-						break;
-					}
-				}
-			}
-
-			if (targetObj == null && buildingsArray != null)
-			{
-				for (int i = 0; i < buildingsArray.Count; i++)
-				{
-					var bObj = buildingsArray[i]?.AsObject();
-					if (bObj != null && (bObj["UnitId"]?.ToString() == unitId || bObj["unitId"]?.ToString() == unitId || bObj["Id"]?.ToString() == unitId))
-					{
-						targetObj = bObj;
-						break;
-					}
-				}
-			}
-
-			if (targetObj != null)
-			{
-				var objAttsNode = targetObj["ObjectAttachments"]?.AsObject();
-				if (objAttsNode == null)
-				{
-					objAttsNode = new System.Text.Json.Nodes.JsonObject();
-					targetObj["ObjectAttachments"] = objAttsNode;
-				}
-
-				string norm = (socket ?? "right_hand").ToLowerInvariant().Replace("_", "").Replace(" ", "");
-				string socketKey = norm switch
-				{
-					"ground" or "footprint" or "base" => "ground",
-					"center" or "centerofmass" => "center",
-					"overhead" or "top" or "crown" or "roof" => "overhead",
-					"pivot" or "origin" => "pivot",
-					"root" or "hips" => "root",
-					"chest" or "spine" => "chest",
-					"head" => "head",
-					"lefthand" => "left_hand",
-					"righthand" => "right_hand",
-					"leftfoot" => "left_foot",
-					"rightfoot" => "right_foot",
-					_ => socket.ToLowerInvariant()
-				};
-
-				var socketArr = objAttsNode[socketKey]?.AsArray();
-				if (socketArr == null)
-				{
-					socketArr = new System.Text.Json.Nodes.JsonArray();
-					objAttsNode[socketKey] = socketArr;
-				}
-
-				string cleanId = attachmentId.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase)
-					? attachmentId
-					: System.IO.Path.GetFileNameWithoutExtension(attachmentId);
-				var orientNode = new System.Text.Json.Nodes.JsonObject
-				{
-					["PositionX"] = orientation.PositionX,
-					["PositionY"] = orientation.PositionY,
-					["PositionZ"] = orientation.PositionZ,
-					["PitchX"] = orientation.PitchX,
-					["YawY"] = orientation.YawY,
-					["RollZ"] = orientation.RollZ,
-					["Scale"] = orientation.Scale <= 0f ? 1.0f : orientation.Scale,
-					["ScaleX"] = orientation.ScaleX <= 0f ? 1.0f : orientation.ScaleX,
-					["ScaleY"] = orientation.ScaleY <= 0f ? 1.0f : orientation.ScaleY,
-					["ScaleZ"] = orientation.ScaleZ <= 0f ? 1.0f : orientation.ScaleZ,
-					["NormalOffset"] = orientation.NormalOffset
-				};
-				if (!string.IsNullOrEmpty(orientation.ParentAttachmentId))
-				{
-					orientNode["ParentAttachmentId"] = orientation.ParentAttachmentId;
-				}
-
-				bool updated = false;
-				for (int j = 0; j < socketArr.Count; j++)
-				{
-					if (socketArr[j] is System.Text.Json.Nodes.JsonObject itemObj)
-					{
-						foreach (var prop in itemObj)
-						{
-							if (prop.Key.Equals(attachmentId, StringComparison.OrdinalIgnoreCase) ||
-								prop.Key.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
-								System.IO.Path.GetFileNameWithoutExtension(prop.Key).Equals(cleanId, StringComparison.OrdinalIgnoreCase))
-							{
-								string existingParent = itemObj[prop.Key]?["ParentAttachmentId"]?.ToString();
-								if (string.Equals(existingParent, orientation.ParentAttachmentId, StringComparison.OrdinalIgnoreCase))
-								{
-									itemObj[prop.Key] = orientNode;
-									updated = true;
-									break;
-								}
-							}
-						}
-						if (updated) break;
-					}
-				}
-
-				if (!updated)
-				{
-					var newEntry = new System.Text.Json.Nodes.JsonObject
-					{
-						[cleanId] = orientNode
-					};
-					socketArr.Add(newEntry);
-				}
-			}
-
-			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+				bool updated = meta.UpdateUnit(unitId, u => { u.SetObjectAttachment(socket, attachmentId, orientation); return u; });
+				if (!updated) updated = meta.UpdateBuilding(unitId, b => { b.SetObjectAttachment(socket, attachmentId, orientation); return b; });
+				if (!updated) updated = meta.UpdateUnit(regKey, u => { u.SetObjectAttachment(socket, attachmentId, orientation); return u; });
+				if (!updated) meta.UpdateBuilding(regKey, b => { b.SetObjectAttachment(socket, attachmentId, orientation); return b; });
+			});
 			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 
 			if (GameHost.Instance != null)
@@ -7906,128 +7768,16 @@ public partial class MapEditorHUD : Control
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
 				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
-			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			string metadataPath = MetadataService.ResolveMetadataPath(wsPath);
 			if (!System.IO.File.Exists(metadataPath)) return;
 
-			string jsonStr = System.IO.File.ReadAllText(metadataPath);
-			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
-			if (root == null) return;
-
-			var unitsArray = root["CustomUnits"]?.AsArray() ?? root["Units"]?.AsArray();
-			var buildingsArray = root["CustomBuildings"]?.AsArray() ?? root["Buildings"]?.AsArray();
-
-			System.Text.Json.Nodes.JsonObject targetObj = null;
-			if (unitsArray != null)
+			MetadataService.Instance.UpdateMetadata(wsPath, meta =>
 			{
-				for (int i = 0; i < unitsArray.Count; i++)
-				{
-					var uObj = unitsArray[i]?.AsObject();
-					if (uObj != null && (uObj["UnitId"]?.ToString() == unitId || uObj["unitId"]?.ToString() == unitId || uObj["Id"]?.ToString() == unitId))
-					{
-						targetObj = uObj;
-						break;
-					}
-				}
-			}
-
-			if (targetObj == null && buildingsArray != null)
-			{
-				for (int i = 0; i < buildingsArray.Count; i++)
-				{
-					var bObj = buildingsArray[i]?.AsObject();
-					if (bObj != null && (bObj["UnitId"]?.ToString() == unitId || bObj["unitId"]?.ToString() == unitId || bObj["Id"]?.ToString() == unitId))
-					{
-						targetObj = bObj;
-						break;
-					}
-				}
-			}
-
-			if (targetObj != null)
-			{
-				var objAttsNode = targetObj["ObjectAttachments"]?.AsObject();
-				if (objAttsNode != null)
-				{
-					string norm = (socket ?? "right_hand").ToLowerInvariant().Replace("_", "").Replace(" ", "");
-					string socketKey = norm switch
-					{
-						"ground" or "footprint" or "base" => "ground",
-						"center" or "centerofmass" => "center",
-						"overhead" or "top" or "crown" or "roof" => "overhead",
-						"pivot" or "origin" => "pivot",
-						"root" or "hips" => "root",
-						"chest" or "spine" => "chest",
-						"head" => "head",
-						"lefthand" => "left_hand",
-						"righthand" => "right_hand",
-						"leftfoot" => "left_foot",
-						"rightfoot" => "right_foot",
-						_ => socket.ToLowerInvariant()
-					};
-
-					var socketArr = objAttsNode[socketKey]?.AsArray();
-					if (socketArr != null)
-					{
-						string cleanId = attachmentId.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase)
-							? attachmentId
-							: System.IO.Path.GetFileNameWithoutExtension(attachmentId);
-
-						for (int j = socketArr.Count - 1; j >= 0; j--)
-						{
-							if (socketArr[j] is System.Text.Json.Nodes.JsonObject itemObj)
-							{
-								bool match = false;
-								foreach (var prop in itemObj)
-								{
-									bool keyMatch = prop.Key.Equals(attachmentId, StringComparison.OrdinalIgnoreCase) ||
-										prop.Key.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
-										System.IO.Path.GetFileNameWithoutExtension(prop.Key).Equals(cleanId, StringComparison.OrdinalIgnoreCase);
-
-									string? pId = (prop.Value is System.Text.Json.Nodes.JsonObject valObj && valObj["ParentAttachmentId"] != null)
-										? valObj["ParentAttachmentId"].ToString()
-										: null;
-
-									if (!string.IsNullOrEmpty(parentAttachmentId))
-									{
-										if (keyMatch && string.Equals(pId, parentAttachmentId, StringComparison.OrdinalIgnoreCase))
-										{
-											match = true;
-											break;
-										}
-									}
-									else
-									{
-										if (keyMatch && string.IsNullOrEmpty(pId))
-										{
-											match = true;
-											break;
-										}
-										if (!string.IsNullOrEmpty(pId) &&
-											(pId.Equals(attachmentId, StringComparison.OrdinalIgnoreCase) ||
-											 pId.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
-											 System.IO.Path.GetFileNameWithoutExtension(pId).Equals(cleanId, StringComparison.OrdinalIgnoreCase)))
-										{
-											match = true;
-											break;
-										}
-									}
-								}
-								if (match)
-								{
-									socketArr.RemoveAt(j);
-								}
-							}
-						}
-
-						if (socketArr.Count == 0)
-						{
-							objAttsNode.Remove(socketKey);
-						}
-					}
-				}
-			}
-
-			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+				bool updated = meta.UpdateUnit(unitId, u => { u.RemoveObjectAttachment(socket, attachmentId, parentAttachmentId); return u; });
+				if (!updated) updated = meta.UpdateBuilding(unitId, b => { b.RemoveObjectAttachment(socket, attachmentId, parentAttachmentId); return b; });
+				if (!updated) updated = meta.UpdateUnit(regKey, u => { u.RemoveObjectAttachment(socket, attachmentId, parentAttachmentId); return u; });
+				if (!updated) meta.UpdateBuilding(regKey, b => { b.RemoveObjectAttachment(socket, attachmentId, parentAttachmentId); return b; });
+			});
 			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 
 			if (GameHost.Instance != null)
@@ -8130,64 +7880,18 @@ public partial class MapEditorHUD : Control
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
 				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
-			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			string metadataPath = MetadataService.ResolveMetadataPath(wsPath);
 			if (System.IO.File.Exists(metadataPath))
 			{
-				string jsonStr = System.IO.File.ReadAllText(metadataPath);
-				var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
-				if (root != null)
+				MetadataService.Instance.UpdateMetadata(wsPath, meta =>
 				{
-					var unitsArray = root["CustomUnits"]?.AsArray() ?? root["Units"]?.AsArray();
-					var buildingsArray = root["CustomBuildings"]?.AsArray() ?? root["Buildings"]?.AsArray();
-
-					System.Text.Json.Nodes.JsonObject targetObj = null;
-					if (unitsArray != null)
-					{
-						for (int i = 0; i < unitsArray.Count; i++)
-						{
-							var uObj = unitsArray[i]?.AsObject();
-							if (uObj != null && (uObj["UnitId"]?.ToString() == targetId || uObj["unitId"]?.ToString() == targetId || uObj["Id"]?.ToString() == targetId || uObj["UnitId"]?.ToString() == regKey))
-							{
-								targetObj = uObj;
-								break;
-							}
-						}
-					}
-
-					if (targetObj == null && buildingsArray != null)
-					{
-						for (int i = 0; i < buildingsArray.Count; i++)
-						{
-							var bObj = buildingsArray[i]?.AsObject();
-							if (bObj != null && (bObj["UnitId"]?.ToString() == targetId || bObj["unitId"]?.ToString() == targetId || bObj["Id"]?.ToString() == targetId || bObj["UnitId"]?.ToString() == regKey))
-							{
-								targetObj = bObj;
-								break;
-							}
-						}
-					}
-
-					if (targetObj != null)
-					{
-						if (snapshot.HasValue && snapshot.Value.HasAny())
-						{
-							var serializeOptions = new System.Text.Json.JsonSerializerOptions 
-							{ 
-								DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-								WriteIndented = true 
-							};
-							var serializedSnapshot = System.Text.Json.JsonSerializer.SerializeToNode(snapshot.Value, serializeOptions);
-							targetObj["ObjectAttachments"] = serializedSnapshot;
-						}
-						else
-						{
-							targetObj.Remove("ObjectAttachments");
-						}
-
-						MapJsonFormatter.SaveFormattedJson(metadataPath, root);
-						_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
-					}
-				}
+					var atts = (snapshot.HasValue && snapshot.Value.HasAny()) ? snapshot?.Clone() : null;
+					bool updated = meta.UpdateUnit(targetId, u => { u.ObjectAttachments = atts; return u; });
+					if (!updated) updated = meta.UpdateBuilding(targetId, b => { b.ObjectAttachments = atts; return b; });
+					if (!updated) updated = meta.UpdateUnit(regKey, u => { u.ObjectAttachments = atts; return u; });
+					if (!updated) meta.UpdateBuilding(regKey, b => { b.ObjectAttachments = atts; return b; });
+				});
+				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 			}
 
 			if (GameHost.Instance != null)
@@ -8230,40 +7934,13 @@ public partial class MapEditorHUD : Control
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
 				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
-			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			string metadataPath = MetadataService.ResolveMetadataPath(wsPath);
 			if (!System.IO.File.Exists(metadataPath)) return;
 
-			string jsonStr = System.IO.File.ReadAllText(metadataPath);
-			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
-			if (root == null) return;
-
-			var weaponsArray = root["CustomWeapons"]?.AsArray();
-			if (weaponsArray == null)
+			MetadataService.Instance.UpdateMetadata(wsPath, meta =>
 			{
-				weaponsArray = new System.Text.Json.Nodes.JsonArray();
-				root["CustomWeapons"] = weaponsArray;
-			}
-
-			bool found = false;
-			var weaponJson = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(weapon, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
-
-			for (int i = 0; i < weaponsArray.Count; i++)
-			{
-				var wObj = weaponsArray[i]?.AsObject();
-				if (wObj != null && (wObj["WeaponId"]?.ToString() == weaponId || wObj["weaponId"]?.ToString() == weaponId))
-				{
-					weaponsArray[i] = weaponJson;
-					found = true;
-					break;
-				}
-			}
-
-			if (!found && weaponJson != null)
-			{
-				weaponsArray.Add(weaponJson);
-			}
-
-			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+				meta.AddOrUpdateWeapon(weapon);
+			});
 			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 		}
 		catch (Exception ex)
@@ -8283,41 +7960,13 @@ public partial class MapEditorHUD : Control
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
 				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
-			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			string metadataPath = MetadataService.ResolveMetadataPath(wsPath);
 			if (!System.IO.File.Exists(metadataPath)) return;
 
-			string jsonStr = System.IO.File.ReadAllText(metadataPath);
-			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
-			if (root == null) return;
-
-			var vfxArray = root["CustomVfx"]?.AsArray();
-			if (vfxArray == null)
+			MetadataService.Instance.UpdateMetadata(wsPath, meta =>
 			{
-				vfxArray = new System.Text.Json.Nodes.JsonArray();
-				root["CustomVfx"] = vfxArray;
-			}
-
-			bool found = false;
-			var vfxJson = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(config, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
-
-			for (int i = 0; i < vfxArray.Count; i++)
-			{
-				var vObj = vfxArray[i]?.AsObject();
-				if (vObj != null && (vObj["VfxId"]?.ToString() == vfxId || vObj["vfxId"]?.ToString() == vfxId))
-				{
-					vfxArray[i] = vfxJson;
-					found = true;
-					break;
-				}
-			}
-
-			if (!found && vfxJson != null)
-			{
-				vfxArray.Add(vfxJson);
-			}
-
-			SaveLoadService.CleanMetadataJsonSchema(root);
-			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+				meta.AddOrUpdateVfx(config);
+			});
 			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 		}
 		catch (Exception ex)
@@ -8340,29 +7989,13 @@ public partial class MapEditorHUD : Control
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
 				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
-			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			string metadataPath = MetadataService.ResolveMetadataPath(wsPath);
 			if (!System.IO.File.Exists(metadataPath)) return;
 
-			string jsonStr = System.IO.File.ReadAllText(metadataPath);
-			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
-			if (root == null) return;
-
-			var vfxArray = root["CustomVfx"]?.AsArray();
-			if (vfxArray != null)
+			MetadataService.Instance.UpdateMetadata(wsPath, meta =>
 			{
-				for (int i = vfxArray.Count - 1; i >= 0; i--)
-				{
-					var vObj = vfxArray[i]?.AsObject();
-					if (vObj != null && (string.Equals(vObj["VfxId"]?.ToString(), vfxId, StringComparison.OrdinalIgnoreCase) ||
-										 string.Equals(vObj["vfxId"]?.ToString(), vfxId, StringComparison.OrdinalIgnoreCase)))
-					{
-						vfxArray.RemoveAt(i);
-					}
-				}
-			}
-
-			SaveLoadService.CleanMetadataJsonSchema(root);
-			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+				meta.RemoveVfx(vfxId);
+			});
 			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 		}
 		catch (Exception ex)
@@ -8386,29 +8019,13 @@ public partial class MapEditorHUD : Control
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
 				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
-			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			string metadataPath = MetadataService.ResolveMetadataPath(wsPath);
 			if (!System.IO.File.Exists(metadataPath)) return;
 
-			string jsonStr = System.IO.File.ReadAllText(metadataPath);
-			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
-			if (root == null) return;
-
-			var unitsArray = root["CustomUnits"]?.AsArray() ?? root["Units"]?.AsArray();
-			if (unitsArray != null)
+			MetadataService.Instance.UpdateMetadata(wsPath, meta =>
 			{
-				for (int i = 0; i < unitsArray.Count; i++)
-				{
-					var uObj = unitsArray[i]?.AsObject();
-					if (uObj != null && (uObj["UnitId"]?.ToString() == unitId || uObj["unitId"]?.ToString() == unitId || uObj["Id"]?.ToString() == unitId))
-					{
-						var animJson = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(animations, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
-						uObj["Animations"] = animJson;
-						break;
-					}
-				}
-			}
-
-			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+				meta.UpdateUnit(unitId, u => { u.Animations = animations; return u; });
+			});
 			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 		}
 		catch (Exception ex)
@@ -8484,50 +8101,46 @@ public partial class MapEditorHUD : Control
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
 				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
-			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			string metadataPath = MetadataService.ResolveMetadataPath(wsPath);
 			if (!System.IO.File.Exists(metadataPath)) return;
 
-			string jsonStr = System.IO.File.ReadAllText(metadataPath);
-			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
-			if (root == null) return;
-
-			string targetArrayKey = domain.ToLowerInvariant() switch
+			MetadataService.Instance.UpdateMetadata(wsPath, meta =>
 			{
-				"units" => "CustomUnits",
-				"buildings" => "CustomBuildings",
-				"resources" => "CustomResources",
-				"props" => "CustomProps",
-				_ => "CustomUnits"
-			};
-
-			var targetArray = root[targetArrayKey]?.AsArray();
-			if (targetArray == null)
-			{
-				string fallbackKey = domain.ToLowerInvariant() switch
+				switch (domain.ToLowerInvariant())
 				{
-					"units" => "Units",
-					"buildings" => "Buildings",
-					"resources" => "Resources",
-					"props" => "Props",
-					_ => "Units"
-				};
-				targetArray = root[fallbackKey]?.AsArray();
-			}
-
-			if (targetArray != null)
-			{
-				for (int i = 0; i < targetArray.Count; i++)
-				{
-					var obj = targetArray[i]?.AsObject();
-					if (obj != null && (obj["UnitId"]?.ToString() == entityId || obj["unitId"]?.ToString() == entityId || obj["Id"]?.ToString() == entityId))
-					{
-						obj[fieldName] = newModelPath;
+					case "units":
+						meta.UpdateUnit(entityId, u =>
+						{
+							if (fieldName == "PortraitModelPath") u.PortraitModelPath = newModelPath;
+							else u.ModelPath = newModelPath;
+							return u;
+						});
 						break;
-					}
+					case "buildings":
+						meta.UpdateBuilding(entityId, b =>
+						{
+							if (fieldName == "PortraitModelPath") b.PortraitModelPath = newModelPath;
+							else b.ModelPath = newModelPath;
+							return b;
+						});
+						break;
+					case "resources":
+						meta.UpdateResource(entityId, r =>
+						{
+							if (fieldName == "PortraitModelPath") r.PortraitModelPath = newModelPath;
+							else r.ModelPath = newModelPath;
+							return r;
+						});
+						break;
+					case "props":
+						meta.UpdateProp(entityId, p =>
+						{
+							p.ModelPath = newModelPath;
+							return p;
+						});
+						break;
 				}
-			}
-
-			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+			});
 			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 		}
 		catch (Exception ex)
@@ -8554,31 +8167,20 @@ public partial class MapEditorHUD : Control
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
 				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
-			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			string metadataPath = MetadataService.ResolveMetadataPath(wsPath);
 			if (!System.IO.File.Exists(metadataPath)) return;
 
-			string jsonStr = System.IO.File.ReadAllText(metadataPath);
-			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
-			if (root == null) return;
-
-			var abiArray = root["CustomAbilities"]?.AsArray() ?? root["Abilities"]?.AsArray();
-			if (abiArray != null)
+			MetadataService.Instance.UpdateMetadata(wsPath, meta =>
 			{
-				for (int i = 0; i < abiArray.Count; i++)
+				meta.UpdateAbility(abilityId, ab =>
 				{
-					var obj = abiArray[i]?.AsObject();
-					if (obj != null && (obj["AbilityId"]?.ToString() == abilityId || obj["abilityId"]?.ToString() == abilityId || obj["Id"]?.ToString() == abilityId))
-					{
-						obj["VisualEffect"] = visualEffect;
-						obj["CastSound"] = castSound;
-						obj["IconPath"] = iconPath;
-						obj["AreaOfEffectRadius"] = aoeRadius;
-						break;
-					}
-				}
-			}
-
-			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+					ab.VisualEffect = visualEffect;
+					ab.CastSound = castSound;
+					ab.IconPath = iconPath;
+					ab.AreaOfEffectRadius = aoeRadius;
+					return ab;
+				});
+			});
 			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 		}
 		catch (Exception ex)
@@ -9077,29 +8679,14 @@ public partial class MapEditorHUD : Control
 				}
 			}
 
-			string metadataPath = System.IO.Path.Combine(workspacePath, "metadata.json");
-			if (System.IO.File.Exists(metadataPath))
+			if (MetadataService.Instance.TryLoadMetadata(workspacePath, out var metadata))
 			{
-				string json = System.IO.File.ReadAllText(metadataPath);
-				var root = System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject;
-				if (root != null)
-				{
-					if (root.TryGetPropertyValue("Name", out var n1) && TrySanitizeCandidate(n1?.ToString(), out var name1))
-						return name1;
-					if (root.TryGetPropertyValue("map_name", out var n2) && TrySanitizeCandidate(n2?.ToString(), out var name2))
-						return name2;
-					if (root.TryGetPropertyValue("MapName", out var n3) && TrySanitizeCandidate(n3?.ToString(), out var name3))
-						return name3;
-					if (root.TryGetPropertyValue("Title", out var n4) && TrySanitizeCandidate(n4?.ToString(), out var name4))
-						return name4;
-					if (root.TryGetPropertyValue("MapProperties", out var mp) && mp is System.Text.Json.Nodes.JsonObject mpObj)
-					{
-						if (mpObj.TryGetPropertyValue("Name", out var mpN1) && TrySanitizeCandidate(mpN1?.ToString(), out var mpName1))
-							return mpName1;
-						if (mpObj.TryGetPropertyValue("MapName", out var mpN2) && TrySanitizeCandidate(mpN2?.ToString(), out var mpName2))
-							return mpName2;
-					}
-				}
+				if (TrySanitizeCandidate(metadata.MapProperties?.MapName, out var name1))
+					return name1;
+				if (TrySanitizeCandidate(metadata.MapProperties?.Name, out var name2))
+					return name2;
+				if (TrySanitizeCandidate(metadata.MapProperties?.Title, out var name3))
+					return name3;
 			}
 
 			string mapJsonPath = System.IO.Path.Combine(workspacePath, "map.json");

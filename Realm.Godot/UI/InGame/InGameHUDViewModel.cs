@@ -424,9 +424,6 @@ public class InGameHUDViewModel
 
 	public bool IsChatActive { get; set; }
 
-	public float FireballCooldown { get; set; }
-	public float LightningCooldown { get; set; }
-	public float HolyLightCooldown { get; set; }
 
 	public string CurrentWeather { get; set; } = "clear";
 	public string ShroudType { get; set; } = "VisionShroud";
@@ -463,6 +460,7 @@ public class InGameHUDViewModel
 		public string Description { get; set; }
 		public List<string> Abilities { get; set; } = new();
 		public int Potions { get; set; }
+		public Dictionary<string, int> InventoryItems { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
 		public bool HasProduction { get; set; }
 		public string ProductionTitle { get; set; }
@@ -524,9 +522,6 @@ public class InGameHUDViewModel
 
 			IsConnectionLost = GameHost.Instance.IsConnectionLost;
 			CycleSelectionIndex = GameHost.Instance.CycleSelectionIndex;
-			FireballCooldown = GameHost.Instance.FireballCooldown;
-			LightningCooldown = GameHost.Instance.LightningCooldown;
-			HolyLightCooldown = GameHost.Instance.HolyLightCooldown;
 		}
 
 		int idleCount = 0;
@@ -702,7 +697,15 @@ public class InGameHUDViewModel
 
 				if (world.Has<Inventory>(u.Entity))
 				{
-					info.Potions = world.Get<Inventory>(u.Entity).Potions;
+					var inv = world.Get<Inventory>(u.Entity);
+					info.InventoryItems.Clear();
+					if (inv.Items != null)
+					{
+						foreach (var kvp in inv.Items)
+						{
+							info.InventoryItems[kvp.Key] = kvp.Value;
+						}
+					}
 				}
 
 				if (u.IsBuilding && !u.IsEnemy && world.Has<Realm.Ecs.Components.Resources.ConstructionState>(u.Entity))

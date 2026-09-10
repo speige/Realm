@@ -171,7 +171,7 @@ public partial class CameraControl : Camera3D
 		}
 	}
 
-	private float _targetHeight
+	public float TargetHeight
 	{
 		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).TargetHeight : 35.0f;
 		set
@@ -184,7 +184,7 @@ public partial class CameraControl : Camera3D
 		}
 	}
 
-	private float _currentHeight
+	public float CurrentHeight
 	{
 		get => HasCameraState ? GameHost.Instance.EcsWorld.Get<CameraState>(GameHost.Instance.WorldEntity).CurrentHeight : 35.0f;
 		set
@@ -322,6 +322,18 @@ public partial class CameraControl : Camera3D
 		}
 	}
 
+	private bool _isAltRightDragging = false;
+
+	public void ResetCamera()
+	{
+		if (IsLocked) return;
+		_targetYaw = 0.0f;
+		_targetPitch = -55.0f;
+		TargetHeight = 35.0f;
+		_isTopDown = false;
+		FollowTarget = null;
+	}
+
 	public void ToggleTopDown()
 	{
 		_isTopDown = !_isTopDown;
@@ -342,17 +354,17 @@ public partial class CameraControl : Camera3D
 	{
 		if (IsLocked) return;
 
-		if (_targetHeight < 25.0f)
+		if (TargetHeight < 25.0f)
 		{
-			_targetHeight = 35.0f;
+			TargetHeight = 35.0f;
 		}
-		else if (_targetHeight < 45.0f)
+		else if (TargetHeight < 45.0f)
 		{
-			_targetHeight = 55.0f;
+			TargetHeight = 55.0f;
 		}
 		else
 		{
-			_targetHeight = 15.0f;
+			TargetHeight = 15.0f;
 		}
 	}
 
@@ -374,13 +386,13 @@ public partial class CameraControl : Camera3D
 	public void ZoomIn()
 	{
 		if (IsLocked) return;
-		_targetHeight = Mathf.Clamp(_targetHeight - ZoomStep, MinZoom, GetMaxZoom());
+		TargetHeight = Mathf.Clamp(TargetHeight - ZoomStep, MinZoom, GetMaxZoom());
 	}
 
 	public void ZoomOut()
 	{
 		if (IsLocked) return;
-		_targetHeight = Mathf.Clamp(_targetHeight + ZoomStep, MinZoom, GetMaxZoom());
+		TargetHeight = Mathf.Clamp(TargetHeight + ZoomStep, MinZoom, GetMaxZoom());
 	}
 
 	private const float MapLimit = 95f;
@@ -394,7 +406,7 @@ public partial class CameraControl : Camera3D
 	public override void _Ready()
 	{
 		RotationDegrees = new Vector3(-55.0f, 0.0f, 0.0f);
-		Position = new Vector3(0.0f, _currentHeight, 25.0f);
+		Position = new Vector3(0.0f, CurrentHeight, 25.0f);
 		Input.MouseMode = Input.MouseModeEnum.Visible;
 	}
 
@@ -403,6 +415,7 @@ public partial class CameraControl : Camera3D
 		if (what == NotificationApplicationFocusOut)
 		{
 			_isDraggingMouse = false;
+			_isAltRightDragging = false;
 			if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
 			{
 				MapEditorHUD.Instance?.Set3DInteractionActive(false);
@@ -413,6 +426,16 @@ public partial class CameraControl : Camera3D
 	public override void _Input(InputEvent @event)
 	{
 		if (IsLocked || (InGameHUD.Instance != null && InGameHUD.Instance.IsChatActive) || SettingsMenu.IsOpen) return;
+
+		if (@event is InputEventKey keyEvent && keyEvent.Pressed && !keyEvent.Echo)
+		{
+			if (keyEvent.Keycode == Key.Home || (keyEvent.Keycode == Key.Space && keyEvent.ShiftPressed))
+			{
+				ResetCamera();
+				GetViewport().SetInputAsHandled();
+				return;
+			}
+		}
 
 		if (@event is InputEventMouseButton mouseBtn)
 		{
@@ -434,11 +457,11 @@ public partial class CameraControl : Camera3D
 
 				if (mouseBtn.ButtonIndex == MouseButton.WheelUp)
 				{
-					_targetHeight = Mathf.Clamp(_targetHeight - ZoomStep, MinZoom, GetMaxZoom());
+					TargetHeight = Mathf.Clamp(TargetHeight - ZoomStep, MinZoom, GetMaxZoom());
 				}
 				else if (mouseBtn.ButtonIndex == MouseButton.WheelDown)
 				{
-					_targetHeight = Mathf.Clamp(_targetHeight + ZoomStep, MinZoom, GetMaxZoom());
+					TargetHeight = Mathf.Clamp(TargetHeight + ZoomStep, MinZoom, GetMaxZoom());
 				}
 				else if (mouseBtn.ButtonIndex == MouseButton.Middle)
 				{
@@ -449,21 +472,48 @@ public partial class CameraControl : Camera3D
 						MapEditorHUD.Instance?.Set3DInteractionActive(true);
 					}
 				}
-			}
-			else if (mouseBtn.ButtonIndex == MouseButton.Middle)
-			{
-				_isDraggingMouse = false;
-				if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
+				else if (mouseBtn.ButtonIndex == MouseButton.Right && (mouseBtn.AltPressed || Input.IsKeyPressed(Key.Alt)))
 				{
-					MapEditorHUD.Instance?.Set3DInteractionActive(false);
+					_isAltRightDragging = true;
+					_lastMousePosition = mouseBtn.Position;
+					GetViewport().SetInputAsHandled();
+				}
+			}
+			else
+			{
+				if (mouseBtn.ButtonIndex == MouseButton.Middle)
+				{
+					_isDraggingMouse = false;
+					if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
+					{
+						MapEditorHUD.Instance?.Set3DInteractionActive(false);
+					}
+				}
+				else if (mouseBtn.ButtonIndex == MouseButton.Right && _isAltRightDragging)
+				{
+					_isAltRightDragging = false;
+					GetViewport().SetInputAsHandled();
 				}
 			}
 		}
-		else if (@event is InputEventMouseMotion mouseMotion && _isDraggingMouse)
+		else if (@event is InputEventMouseMotion mouseMotion && (_isDraggingMouse || _isAltRightDragging))
 		{
 			FollowTarget = null;
 			Vector2 deltaMouse = mouseMotion.Position - _lastMousePosition;
 			_lastMousePosition = mouseMotion.Position;
+
+			bool isAltHeld = mouseMotion.AltPressed || Input.IsKeyPressed(Key.Alt) || _isAltRightDragging;
+
+			if (isAltHeld)
+			{
+				_targetYaw = (_targetYaw - deltaMouse.X * 0.3f + 360.0f) % 360.0f;
+				_targetPitch = Mathf.Clamp(_targetPitch + deltaMouse.Y * 0.3f, -85.0f, -15.0f);
+				if (_isAltRightDragging)
+				{
+					GetViewport().SetInputAsHandled();
+				}
+				return;
+			}
 
 			if (Input.IsKeyPressed(Key.Shift) && GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
 			{
@@ -472,8 +522,8 @@ public partial class CameraControl : Camera3D
 			}
 
 			float sensFactor = 0.0005f + (GameSettings.MouseSens / 100.0f) * 0.003f;
-			float moveX = -deltaMouse.X * sensFactor * _currentHeight;
-			float moveZ = deltaMouse.Y * sensFactor * _currentHeight;
+			float moveX = -deltaMouse.X * sensFactor * CurrentHeight;
+			float moveZ = deltaMouse.Y * sensFactor * CurrentHeight;
 
 			float yawRad = Mathf.DegToRad(_currentYaw);
 			Vector3 forwardXZ = new Vector3(-Mathf.Sin(yawRad), 0f, -Mathf.Cos(yawRad));

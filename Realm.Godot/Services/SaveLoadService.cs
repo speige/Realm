@@ -16,6 +16,7 @@ using Realm.Ecs.Services;
 using Realm.Godot.Utils;
 using Realm.Godot.VFX;
 using Realm.Shared.Metadata;
+using Realm.Godot.Services;
 
 public class SaveLoadService
 {
@@ -425,13 +426,23 @@ public class SaveLoadService
 					return;
 				}
 
+				float rotX = 0f;
 				float rotY = 0f;
-				if (EcsWorld.Has<RotationY>(entity)) rotY = EcsWorld.Get<RotationY>(entity).Value;
+				float rotZ = 0f;
+				if (EcsWorld.Has<Realm.Ecs.Components.Meta.Rotation3D>(entity))
+				{
+					var r3d = EcsWorld.Get<Realm.Ecs.Components.Meta.Rotation3D>(entity).Value;
+					rotX = r3d.X; rotY = r3d.Y; rotZ = r3d.Z;
+				}
+				else if (EcsWorld.Has<RotationY>(entity))
+				{
+					rotY = EcsWorld.Get<RotationY>(entity).Value;
+				}
 
 				float scale = 1f;
 				if (EcsWorld.Has<ModelScale>(entity)) scale = EcsWorld.Get<ModelScale>(entity).Value;
 
-				string fingerprint = $"{decalId.DecalId}_{pos.Value.X:F3}_{pos.Value.Y:F3}_{pos.Value.Z:F3}_{rotY:F2}_{scale:F3}";
+				string fingerprint = $"{decalId.DecalId}_{pos.Value.X:F3}_{pos.Value.Y:F3}_{pos.Value.Z:F3}_{rotX:F2}_{rotY:F2}_{rotZ:F2}_{scale:F3}";
 				if (!savedDecalFingerprints.Add(fingerprint))
 				{
 					orphanedDecalEntities.Add(entity);
@@ -444,7 +455,9 @@ public class SaveLoadService
 					PosX = pos.Value.X,
 					PosY = pos.Value.Y,
 					PosZ = pos.Value.Z,
+					RotationX = rotX,
 					RotationY = rotY,
+					RotationZ = rotZ,
 					Scale = scale
 				});
 			});
@@ -506,12 +519,7 @@ public class SaveLoadService
 			{
 				try
 				{
-					var metaRoot = JsonNode.Parse(File.ReadAllText(metaPath)) as JsonObject;
-					if (metaRoot != null)
-					{
-						CleanMetadataJsonSchema(metaRoot);
-						MapJsonFormatter.SaveFormattedJson(metaPath, metaRoot);
-					}
+					MetadataService.Instance.UpdateMetadata(directory, meta => MetadataService.Instance.CleanMetadata(meta));
 				}
 				catch (Exception ex)
 				{
@@ -833,7 +841,7 @@ public class SaveLoadService
 			float right = saveData.CameraBoundsRight ?? 95.0f;
 			float top = saveData.CameraBoundsTop ?? -95.0f;
 			float bottom = saveData.CameraBoundsBottom ?? 125.0f;
-			string skybox = saveData.SkyboxPath ?? "Assets/skyboxes/jade_shrine.png";
+			string skybox = saveData.SkyboxPath;
 
 			WaterType currentWaterMode = EcsWorld.Has<EditorState>(worldEntity) ? EcsWorld.Get<EditorState>(worldEntity).WaterMode : WaterType.None;
 			var newEditorState = new EditorState(isBlock, step, left, right, top, bottom, skybox, false, MirrorMode.None, currentWaterMode);
@@ -897,7 +905,7 @@ public class SaveLoadService
 					var loadedDecalFingerprints = new HashSet<string>();
 					foreach (var d in saveData.Decals)
 					{
-						string fingerprint = $"{d.DecalId}_{d.PosX:F3}_{d.PosY:F3}_{d.PosZ:F3}_{d.RotationY:F2}_{d.Scale:F3}";
+						string fingerprint = $"{d.DecalId}_{d.PosX:F3}_{d.PosY:F3}_{d.PosZ:F3}_{d.RotationX:F2}_{d.RotationY:F2}_{d.RotationZ:F2}_{d.Scale:F3}";
 						if (!loadedDecalFingerprints.Add(fingerprint))
 						{
 							continue;
@@ -907,7 +915,7 @@ public class SaveLoadService
 						EcsWorld.Add(reqEnt, new DecalSpawnRequest(
 							d.DecalId,
 							new System.Numerics.Vector3(d.PosX, d.PosY, d.PosZ),
-							d.RotationY,
+							new System.Numerics.Vector3(d.RotationX, d.RotationY, d.RotationZ),
 							d.Scale
 						));
 					}
@@ -1464,37 +1472,16 @@ public class SaveLoadService
 		if (GameHost.PropRegistry != null && GameHost.PropRegistry.ContainsKey(propId)) return true;
 		if (GameHost.ResourceRegistry != null && GameHost.ResourceRegistry.ContainsKey(propId)) return true;
 
-		string metaPath = !string.IsNullOrEmpty(mapDirectory)
-			? Path.Combine(mapDirectory, "metadata.json")
-			: Path.Combine(MapWorkspaceService.GetActiveWorkspacePath(), "metadata.json");
+		string targetDir = !string.IsNullOrEmpty(mapDirectory)
+			? mapDirectory
+			: MapWorkspaceService.GetActiveWorkspacePath();
 
-		if (File.Exists(metaPath))
+		if (MetadataService.Instance.TryLoadMetadata(targetDir, out var metadata))
 		{
-			try
-			{
-				string json = File.ReadAllText(metaPath);
-				using var doc = JsonDocument.Parse(json);
-				if (doc.RootElement.ValueKind == JsonValueKind.Object)
-				{
-					if (doc.RootElement.TryGetProperty("CustomProps", out var propsProp) && propsProp.ValueKind == JsonValueKind.Array)
-					{
-						foreach (var el in propsProp.EnumerateArray())
-						{
-							if (el.TryGetProperty("UnitId", out var idProp) && propId.Equals(idProp.GetString(), StringComparison.OrdinalIgnoreCase))
-								return true;
-						}
-					}
-					if (doc.RootElement.TryGetProperty("CustomResources", out var resProp) && resProp.ValueKind == JsonValueKind.Array)
-					{
-						foreach (var el in resProp.EnumerateArray())
-						{
-							if (el.TryGetProperty("UnitId", out var idProp) && propId.Equals(idProp.GetString(), StringComparison.OrdinalIgnoreCase))
-								return true;
-						}
-					}
-				}
-			}
-			catch { }
+			if (metadata.CustomProps != null && metadata.CustomProps.Any(p => propId.Equals(p.UnitId, StringComparison.OrdinalIgnoreCase)))
+				return true;
+			if (metadata.CustomResources != null && metadata.CustomResources.Any(r => propId.Equals(r.UnitId, StringComparison.OrdinalIgnoreCase)))
+				return true;
 		}
 
 		return false;
@@ -1507,53 +1494,16 @@ public class SaveLoadService
 		if (GameHost.UnitRegistry != null && GameHost.UnitRegistry.ContainsKey(unitId)) return true;
 		if (GameHost.BuildingRegistry != null && GameHost.BuildingRegistry.ContainsKey(unitId)) return true;
 
-		string metaPath = !string.IsNullOrEmpty(mapDirectory)
-			? Path.Combine(mapDirectory, "metadata.json")
-			: Path.Combine(MapWorkspaceService.GetActiveWorkspacePath(), "metadata.json");
+		string targetDir = !string.IsNullOrEmpty(mapDirectory)
+			? mapDirectory
+			: MapWorkspaceService.GetActiveWorkspacePath();
 
-		if (File.Exists(metaPath))
+		if (MetadataService.Instance.TryLoadMetadata(targetDir, out var metadata))
 		{
-			try
-			{
-				string json = File.ReadAllText(metaPath);
-				using var doc = JsonDocument.Parse(json);
-				if (doc.RootElement.ValueKind == JsonValueKind.Object)
-				{
-					if (doc.RootElement.TryGetProperty("CustomUnits", out var unitsProp) && unitsProp.ValueKind == JsonValueKind.Array)
-					{
-						foreach (var el in unitsProp.EnumerateArray())
-						{
-							if (el.TryGetProperty("UnitId", out var idProp) && unitId.Equals(idProp.GetString(), StringComparison.OrdinalIgnoreCase))
-								return true;
-						}
-					}
-					if (doc.RootElement.TryGetProperty("CustomBuildings", out var bldProp) && bldProp.ValueKind == JsonValueKind.Array)
-					{
-						foreach (var el in bldProp.EnumerateArray())
-						{
-							if (el.TryGetProperty("UnitId", out var idProp) && unitId.Equals(idProp.GetString(), StringComparison.OrdinalIgnoreCase))
-								return true;
-						}
-					}
-					bool hasStructuredArrays = doc.RootElement.TryGetProperty("CustomUnits", out _)
-						|| doc.RootElement.TryGetProperty("CustomBuildings", out _)
-						|| doc.RootElement.TryGetProperty("CustomProps", out _)
-						|| doc.RootElement.TryGetProperty("CustomResources", out _);
-					if (!hasStructuredArrays)
-					{
-						foreach (var prop in doc.RootElement.EnumerateObject())
-						{
-							if (!prop.Name.Equals("MapProperties", StringComparison.OrdinalIgnoreCase) &&
-								!prop.Name.Equals("Assets", StringComparison.OrdinalIgnoreCase) &&
-								unitId.Equals(prop.Name, StringComparison.OrdinalIgnoreCase))
-							{
-								return true;
-							}
-						}
-					}
-				}
-			}
-			catch { }
+			if (metadata.CustomUnits != null && metadata.CustomUnits.Any(u => unitId.Equals(u.UnitId, StringComparison.OrdinalIgnoreCase)))
+				return true;
+			if (metadata.CustomBuildings != null && metadata.CustomBuildings.Any(b => unitId.Equals(b.UnitId, StringComparison.OrdinalIgnoreCase)))
+				return true;
 		}
 
 		return false;

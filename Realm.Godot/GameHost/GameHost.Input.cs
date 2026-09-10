@@ -944,22 +944,31 @@ public partial class GameHost
 						if (!_editorService.HasCachedRandom) GenerateNewRandomPlacementRotationAndScale();
 						float placementRot = (EditorRandomRotation && !_editorService.IsPastingObject) ? _editorService.CachedRandomRotation : EditorPlacementRotation;
 						float scaleVal = (EditorRandomScale && !_editorService.IsPastingObject) ? _editorService.CachedRandomScale : EditorPlacementScale;
-						var decal = SpawnDecalExternalWithParams(ActivePlaceId, hitPos, placementRot, scaleVal);
+						
+						Vector3 hitNormal = (terrainHit != null && terrainHit.ContainsKey("normal")) ? terrainHit["normal"].AsVector3() : (hit.ContainsKey("normal") ? hit["normal"].AsVector3() : GetTerrainNormalAt(hitPos));
+						Basis alignedBasis = CreateAlignedBasis(hitNormal);
+						alignedBasis = alignedBasis.Rotated(hitNormal, Mathf.DegToRad(placementRot));
+						Vector3 spawnRot = alignedBasis.GetRotationQuaternion().GetEuler() * (180f / MathF.PI);
+
+						var decal = SpawnDecalExternalWithParams(ActivePlaceId, hitPos, spawnRot, scaleVal);
 						if (decal != null)
 						{
 							var actions = new List<IEditorAction> {
-								new ObjectSpawnAction("decal", ActivePlaceId, hitPos, placementRot, scaleVal, false, decal)
+								new ObjectSpawnAction("decal", ActivePlaceId, hitPos, spawnRot, scaleVal, false, decal)
 							};
 							if (EditorMirrorMode != MirrorMode.None)
 							{
 								foreach (var t in GetMirroredTransforms(hitPos, placementRot))
 								{
 									Vector3 mPos = t.Position;
-									mPos.Y = GetTerrainHeightAt(mPos);
-									var mDecal = SpawnDecalExternalWithParams(ActivePlaceId, mPos, t.Rotation, scaleVal);
+									Vector3 mNormal = GetTerrainNormalAt(mPos);
+									Basis mBasis = CreateAlignedBasis(mNormal).Rotated(mNormal, Mathf.DegToRad(t.Rotation));
+									Vector3 mRot = mBasis.GetRotationQuaternion().GetEuler() * (180f / MathF.PI);
+
+									var mDecal = SpawnDecalExternalWithParams(ActivePlaceId, mPos, mRot, scaleVal);
 									if (mDecal != null)
 									{
-										actions.Add(new ObjectSpawnAction("decal", ActivePlaceId, mPos, t.Rotation, scaleVal, false, mDecal));
+										actions.Add(new ObjectSpawnAction("decal", ActivePlaceId, mPos, mRot, scaleVal, false, mDecal));
 									}
 								}
 							}
@@ -1705,7 +1714,8 @@ public partial class GameHost
 
 			if (keyEvent.Keycode == Key.Tab)
 			{
-				CycleSelectionFocus();
+				bool reverse = keyEvent.ShiftPressed || Input.IsKeyPressed(Key.Shift);
+				CycleSelectionFocus(reverse);
 				GetViewport().SetInputAsHandled();
 				return;
 			}
@@ -1715,11 +1725,22 @@ public partial class GameHost
 				GetViewport().SetInputAsHandled();
 				return;
 			}
-			if (keyEvent.Keycode == Key.F5)
+			if (keyEvent.Keycode >= Key.F5 && keyEvent.Keycode <= Key.F8)
 			{
-				InGameHUD.Instance?.ToggleHotkeyPanel();
-				GetViewport().SetInputAsHandled();
-				return;
+				int slot = (int)(keyEvent.Keycode - Key.F5) + 1;
+				bool ctrlPressed = Input.IsKeyPressed(Key.Ctrl);
+				if (ctrlPressed)
+				{
+					SaveCameraLocation(slot);
+					GetViewport().SetInputAsHandled();
+					return;
+				}
+				else
+				{
+					RecallCameraLocation(slot);
+					GetViewport().SetInputAsHandled();
+					return;
+				}
 			}
 	
 			if (keyEvent.Keycode == Key.Quoteleft) 
@@ -2564,10 +2585,15 @@ public partial class GameHost
 		InGameHUD.Instance?.ShowFeedbackText($"Selected {count} Buildings", new Color(0.9f, 0.7f, 0.2f));
 	}
 
-	private void CycleSelectionFocus(bool reverse = false)
+	public void CycleSelectionFocus(bool reverse = false)
 	{
 		if (SelectedUnits.Count <= 1) return;
-		int index = _inputService.CycleSelectionFocus(_worldEntity, SelectedUnits.Count, reverse);
+		var unitIds = new List<string>();
+		foreach (var u in SelectedUnits)
+		{
+			unitIds.Add(u.UnitId);
+		}
+		int index = _inputService.CycleSelectionFocus(_worldEntity, unitIds, reverse);
 		var focusUnit = SelectedUnits[index];
 
 		var camera = GetViewport().GetCamera3D();
@@ -2921,25 +2947,18 @@ public partial class GameHost
 
 	private void ExecuteSpellCast(string spellId, Vector3 position)
 	{
+		var def = GetAbilityDefinition(spellId);
+
 		if (_multiplayerActive && !Multiplayer.IsServer())
 		{
-			if (spellId == "fireball")
+			if (def != null && def.Cooldown > 0f)
 			{
-				FireballCooldown = FireballCooldownMax;
-				SpawnFireblastEffect(position);
-				SpawnTargetIndicator(position, new Color(0.9f, 0.3f, 0.1f));
+				SetPlayerSpellCooldown(spellId, def.Cooldown);
 			}
-			else if (spellId == "lightning")
+
+			if (def != null)
 			{
-				LightningCooldown = LightningCooldownMax;
-				SpawnLightningEffect(position);
-				SpawnTargetIndicator(position, new Color(0.2f, 0.5f, 1f));
-			}
-			else if (spellId == "holylight")
-			{
-				HolyLightCooldown = HolyLightCooldownMax;
-				SpawnHolyLightEffect(position);
-				SpawnTargetIndicator(position, new Color(0.2f, 0.9f, 0.3f));
+				_fxService.SpawnAbilityEffect(this, def, position);
 			}
 
 			var targetIds = new List<int>();
@@ -2951,84 +2970,52 @@ public partial class GameHost
 			return;
 		}
 
+		int focusedIdx = Math.Clamp(CycleSelectionIndex, 0, Math.Max(0, SelectedUnits.Count - 1));
+		Unit3D focusedUnit = SelectedUnits.Count > focusedIdx ? SelectedUnits[focusedIdx] : null;
+
 		IUnit caster = null;
-		if (SelectedUnits.Count > 0 && EcsWorld.IsAlive(SelectedUnits[0].Entity))
+		if (focusedUnit != null && EcsWorld.IsAlive(focusedUnit.Entity))
 		{
-			caster = GetUnitWrapper(SelectedUnits[0].Entity);
-			_audioService?.PlayUnitSound(SelectedUnits[0].UnitId, UnitSoundEvent.SpellCast, position);
+			caster = GetUnitWrapper(focusedUnit.Entity);
+			_audioService?.PlayUnitSound(focusedUnit.UnitId, UnitSoundEvent.SpellCast, position);
 		}
 		OnSpellCast?.Invoke(caster, spellId, new System.Numerics.Vector3(position.X, position.Y, position.Z));
 
-		Entity casterEntity = SelectedUnits.Count > 0 && EcsWorld.IsAlive(SelectedUnits[0].Entity) ? SelectedUnits[0].Entity : Entity.Null;
+		Entity casterEntity = focusedUnit != null && EcsWorld.IsAlive(focusedUnit.Entity) ? focusedUnit.Entity : Entity.Null;
 
-		if (spellId == "fireball")
+		float cd = GetPlayerSpellCooldown(spellId);
+		if (cd > 0f)
 		{
-			if (FireballCooldown > 0)
-			{
-				InGameHUD.Instance?.ShowFeedbackText($"Fireball on cooldown: {FireballCooldown:F1}s remaining", new Color(0.9f, 0.4f, 0.1f));
-				return;
-			}
-
-			if (_inputService.TryExecuteSpellCast(_playerEntity, casterEntity, spellId, out float maxCd))
-			{
-				SpawnFireblastEffect(position);
-				SpawnTargetIndicator(position, new Color(0.9f, 0.3f, 0.1f));
-				
-				if (InGameHUD.Instance != null)
-				{
-					InGameHUD.Instance.ShowFeedbackText("Cast: Fireball Spell", new Color(0.9f, 0.3f, 0.1f));
-					UIManager.Instance.PlayClickSound();
-				}
-
-				_simulationService.DealSpellDamageAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), 4.0f, 50f, SelectedUnits.Count > 0 ? SelectedUnits[0].Entity : Entity.Null);
-				InGameHUD.Instance?.RefreshUI(SelectedUnits);
-			}
+			string displayName = def?.DisplayName ?? spellId;
+			InGameHUD.Instance?.ShowFeedbackText($"{displayName} on cooldown: {cd:F1}s remaining", new Color(0.9f, 0.4f, 0.1f));
+			return;
 		}
-		else if (spellId == "lightning")
+
+		if (_inputService.TryExecuteSpellCast(_playerEntity, casterEntity, spellId, out float maxCd))
 		{
-			if (LightningCooldown > 0)
+			string displayName = def?.DisplayName ?? spellId;
+			if (InGameHUD.Instance != null)
 			{
-				InGameHUD.Instance?.ShowFeedbackText($"Lightning on cooldown: {LightningCooldown:F1}s remaining", new Color(0.2f, 0.6f, 1f));
-				return;
+				InGameHUD.Instance.ShowFeedbackText($"Cast: {displayName}", new Color(0.9f, 0.3f, 0.1f));
+				UIManager.Instance.PlayClickSound();
 			}
 
-			if (_inputService.TryExecuteSpellCast(_playerEntity, casterEntity, spellId, out float maxCd))
+			if (def != null)
 			{
-				SpawnLightningEffect(position);
-				SpawnTargetIndicator(position, new Color(0.2f, 0.5f, 1f));
-
-				if (InGameHUD.Instance != null)
+				_fxService.SpawnAbilityEffect(this, def, position);
+				if (def.Damage > 0f)
 				{
-					InGameHUD.Instance.ShowFeedbackText("Cast: Lightning Bolt", new Color(0.2f, 0.6f, 1f));
-					UIManager.Instance.PlayClickSound();
+					float aoe = def.AreaOfEffectRadius > 0f ? def.AreaOfEffectRadius : 4.0f;
+					_simulationService.DealSpellDamageAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), aoe, def.Damage, SelectedUnits.Count > 0 ? SelectedUnits[0].Entity : Entity.Null);
 				}
-
-				_simulationService.DealSpellDamageAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), 2.0f, 80f, SelectedUnits.Count > 0 ? SelectedUnits[0].Entity : Entity.Null);
-				InGameHUD.Instance?.RefreshUI(SelectedUnits);
-			}
-		}
-		else if (spellId == "holylight")
-		{
-			if (HolyLightCooldown > 0)
-			{
-				InGameHUD.Instance?.ShowFeedbackText($"Holy Light on cooldown: {HolyLightCooldown:F1}s remaining", new Color(0.2f, 0.9f, 0.3f));
-				return;
-			}
-
-			if (_inputService.TryExecuteSpellCast(_playerEntity, casterEntity, spellId, out float maxCd))
-			{
-				SpawnHolyLightEffect(position);
-				SpawnTargetIndicator(position, new Color(0.2f, 0.9f, 0.3f));
-
-				if (InGameHUD.Instance != null)
+				else if (def.Healing > 0f)
 				{
-					InGameHUD.Instance.ShowFeedbackText("Cast: Holy Light", new Color(0.2f, 0.9f, 0.3f));
-					UIManager.Instance.PlayClickSound();
+					float aoe = def.AreaOfEffectRadius > 0f ? def.AreaOfEffectRadius : 4.0f;
+					_simulationService.HealAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), aoe, def.Healing);
 				}
-
-				_simulationService.HealAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), 4.0f, 60f);
-				InGameHUD.Instance?.RefreshUI(SelectedUnits);
 			}
+
+			InGameHUD.Instance?.RefreshUI(SelectedUnits);
 		}
 	}
 
@@ -3043,45 +3030,62 @@ public partial class GameHost
 		ExecuteSpellCast(abilityId, new Godot.Vector3(pos.Value.X, pos.Value.Y, pos.Value.Z));
 	}
 
-	public void BuyHealingPotion(Entity castleEntity)
+	public void BuyItem(string itemId, Entity castleEntity)
 	{
+		string itemName = itemId;
 		float costGold = 50f;
+		if (ItemRegistry.TryGetValue(itemId, out var itemMeta))
+		{
+			if (!string.IsNullOrEmpty(itemMeta.Name)) itemName = itemMeta.Name;
+			if (itemMeta.CostGold > 0) costGold = itemMeta.CostGold;
+		}
+
 		if (InGameHUD.Instance != null && InGameHUD.Instance.Gold >= costGold)
 		{
 			if (GameHost.TryGetUnit3D(castleEntity, out var castle3D))
 			{
 				var selectedEntity = SelectedUnits.Count > 0 ? SelectedUnits[0].Entity : Entity.Null;
 
-				if (_inputService.BuyHealingPotion(_playerEntity, new System.Numerics.Vector3(castle3D.GlobalPosition.X, castle3D.GlobalPosition.Y, castle3D.GlobalPosition.Z), selectedEntity, out Entity targetUnitEntity))
+				if (_inputService.BuyItem(itemId, _playerEntity, new System.Numerics.Vector3(castle3D.GlobalPosition.X, castle3D.GlobalPosition.Y, castle3D.GlobalPosition.Z), selectedEntity, out Entity targetUnitEntity))
 				{
 					var targetUnit = AllUnits.Find(u => u.Entity == targetUnitEntity);
 					InGameHUD.Instance.Gold -= costGold;
 
-					InGameHUD.Instance.ShowFeedbackText($"Bought Healing Potion for {targetUnit.UnitId.ToUpper()}!", new Color(0.3f, 0.9f, 0.4f));
+					InGameHUD.Instance.ShowFeedbackText($"Bought {itemName} for {targetUnit.UnitId.ToUpper()}!", new Color(0.3f, 0.9f, 0.4f));
 					UIManager.Instance?.PlayClickSound();
 					InGameHUD.Instance.RefreshUI(SelectedUnits);
 				}
 				else
 				{
-					InGameHUD.Instance.ShowFeedbackText("Cannot buy potion: No friendly combat units nearby!", new Color(1.0f, 0.2f, 0.2f));
+					InGameHUD.Instance.ShowFeedbackText("Cannot buy item: No friendly combat units nearby!", new Color(1.0f, 0.2f, 0.2f));
 					UIManager.Instance?.PlayWarningSound();
 				}
 			}
 		}
 		else
 		{
-			InGameHUD.Instance?.ShowFeedbackText("Cannot buy potion: Insufficient gold!", new Color(1.0f, 0.2f, 0.2f));
+			InGameHUD.Instance?.ShowFeedbackText("Cannot buy item: Insufficient gold!", new Color(1.0f, 0.2f, 0.2f));
 			UIManager.Instance?.PlayWarningSound();
 		}
 	}
 
-	public void UseHealingPotion(Unit3D unit)
+	public void UseItem(Unit3D unit, string itemId)
 	{
-		if (_inputService.UseHealingPotion(unit.Entity, out float healedAmount))
+		string itemName = itemId;
+		if (ItemRegistry.TryGetValue(itemId, out var itemMeta) && !string.IsNullOrEmpty(itemMeta.Name))
 		{
-			InGameHUD.Instance?.ShowFeedbackText($"{unit.UnitId.ToUpper()} used Healing Potion (+{healedAmount:F0} HP)!", new Color(0.3f, 0.9f, 0.4f));
-			SpawnHolyLightEffect(unit.GlobalPosition);
+			itemName = itemMeta.Name;
+		}
+
+		if (_inputService.UseItem(unit.Entity, itemId, out float healedAmount))
+		{
+			InGameHUD.Instance?.ShowFeedbackText($"{unit.UnitId.ToUpper()} used {itemName} (+{healedAmount:F0} HP)!", new Color(0.3f, 0.9f, 0.4f));
+			if (!string.IsNullOrEmpty(itemMeta.UseAbility) && GetAbilityDefinition(itemMeta.UseAbility) is AbilityDefinition abDef)
+			{
+				_fxService.SpawnAbilityEffect(this, abDef, unit.GlobalPosition);
+			}
 			FlashHealUnit(unit);
+			_fxService.SpawnHealNumber(this, unit.GlobalPosition, healedAmount);
 
 			UIManager.Instance?.PlayClickSound();
 			InGameHUD.Instance?.RefreshUI(SelectedUnits);
@@ -3569,43 +3573,27 @@ public partial class GameHost
 		var meta = UnitRegistry[unitId];
 		if (InGameHUD.Instance == null) return;
 
-		Unit3D targetCastle = null;
-		bool foundCastle = false;
-
+		var candidateBuildingEntities = new List<Entity>();
 		foreach (var unit in SelectedUnits)
 		{
-			if (!unit.IsEnemy && unit.IsBuilding && EcsWorld.IsAlive(unit.Entity))
+			if (!unit.IsEnemy && unit.IsBuilding && EcsWorld.IsAlive(unit.Entity) && CanProduceUnits(unit))
 			{
-				if (EcsWorld.Has<Realm.Ecs.Components.Core.ProductionQueue>(unit.Entity))
-				{
-					var prod = EcsWorld.Get<Realm.Ecs.Components.Core.ProductionQueue>(unit.Entity);
-					if (prod.UnitIds.Count < 5)
-					{
-						targetCastle = unit;
-						foundCastle = true;
-						break;
-					}
-				}
-				else
-				{
-					targetCastle = unit;
-					foundCastle = true;
-					break;
-				}
+				candidateBuildingEntities.Add(unit.Entity);
 			}
 		}
 
-		if (!foundCastle)
+		if (candidateBuildingEntities.Count == 0)
 		{
-			bool hasBuildingSelected = SelectedUnits.Exists(u => !u.IsEnemy && u.IsBuilding);
-			if (hasBuildingSelected)
-			{
-				InGameHUD.Instance.ShowFeedbackText(TranslationServer.Translate("Training queue is full! (Max 5)"), new Color(1f, 0.3f, 0.3f));
-			}
-			else
-			{
-				InGameHUD.Instance.ShowFeedbackText(TranslationServer.Translate("Cannot train unit: No producing building selected!"), new Color(1f, 0.3f, 0.3f));
-			}
+			InGameHUD.Instance.ShowFeedbackText(TranslationServer.Translate("Cannot train unit: No producing building selected!"), new Color(1f, 0.3f, 0.3f));
+			UIManager.Instance?.PlayWarningSound();
+			return;
+		}
+
+		Entity targetBuildingEntity = _inputService.GetNextProductionStructure(candidateBuildingEntities);
+
+		if (targetBuildingEntity == Entity.Null)
+		{
+			InGameHUD.Instance.ShowFeedbackText(TranslationServer.Translate("Training queue is full! (Max 5)"), new Color(1f, 0.3f, 0.3f));
 			UIManager.Instance?.PlayWarningSound();
 			return;
 		}
@@ -3623,7 +3611,7 @@ public partial class GameHost
 		{
 			if (_multiplayerActive && !IsServerActive())
 			{
-				QueueClientCommand("train", new List<int> { GetServerEntityId(targetCastle.Entity) }, Vector3.Zero, 0, unitId);
+				QueueClientCommand("train", new List<int> { GetServerEntityId(targetBuildingEntity) }, Vector3.Zero, 0, unitId);
 				InGameHUD.Instance.Gold -= meta.CostGold;
 				InGameHUD.Instance.Wood -= meta.CostWood;
 				InGameHUD.Instance.Stone -= meta.CostStone;
@@ -3634,7 +3622,7 @@ public partial class GameHost
 			}
 			else
 			{
-				if (_inputService.TryQueueUnitAtCastle(_playerEntity, targetCastle.Entity, unitId, meta.PopCost, meta.ProductionTime))
+				if (_inputService.TryQueueUnitAtCastle(_playerEntity, targetBuildingEntity, unitId, meta.PopCost, meta.ProductionTime))
 				{
 					InGameHUD.Instance.Gold -= meta.CostGold;
 					InGameHUD.Instance.Wood -= meta.CostWood;
@@ -3698,6 +3686,67 @@ public partial class GameHost
 		}
 	}
 
+	public void SaveCameraLocation(int slotIndex)
+	{
+		if (slotIndex < 1 || slotIndex > 4) return;
+		var camera = MainCamera;
+		if (camera == null) return;
+
+		Vector3 pos = camera.GlobalPosition;
+		float zoom = camera is CameraControl camCtrl ? camCtrl.TargetHeight : pos.Y;
+
+		if (EcsWorld != null && EcsWorld.IsAlive(WorldEntity) && EcsWorld.Has<CameraState>(WorldEntity))
+		{
+			ref var state = ref EcsWorld.Get<CameraState>(WorldEntity);
+			var slot = new CameraLocationSlot
+			{
+				Position = new System.Numerics.Vector3(pos.X, pos.Y, pos.Z),
+				ZoomLevel = zoom,
+				IsSet = true
+			};
+			switch (slotIndex)
+			{
+				case 1: state.LocationSlot1 = slot; break;
+				case 2: state.LocationSlot2 = slot; break;
+				case 3: state.LocationSlot3 = slot; break;
+				case 4: state.LocationSlot4 = slot; break;
+			}
+		}
+
+		InGameHUD.Instance?.ShowFeedbackText($"Camera Location {slotIndex} Saved", new Color(0.5f, 0.8f, 1.0f));
+	}
+
+	public void RecallCameraLocation(int slotIndex)
+	{
+		if (slotIndex < 1 || slotIndex > 4) return;
+		if (EcsWorld == null || !EcsWorld.IsAlive(WorldEntity) || !EcsWorld.Has<CameraState>(WorldEntity)) return;
+
+		ref var state = ref EcsWorld.Get<CameraState>(WorldEntity);
+		CameraLocationSlot slot = slotIndex switch
+		{
+			1 => state.LocationSlot1,
+			2 => state.LocationSlot2,
+			3 => state.LocationSlot3,
+			4 => state.LocationSlot4,
+			_ => default
+		};
+
+		if (!slot.IsSet) return;
+
+		var camera = MainCamera;
+		if (camera == null) return;
+
+		Vector3 savedPos = new Vector3(slot.Position.X, slot.Position.Y, slot.Position.Z);
+		camera.GlobalPosition = savedPos;
+
+		if (camera is CameraControl camCtrl)
+		{
+			camCtrl.FollowTarget = null;
+			camCtrl.TargetHeight = slot.ZoomLevel;
+			camCtrl.CurrentHeight = savedPos.Y;
+		}
+	}
+
 	public void CycleCameraZoom()
 	{
 		var camera = GetViewport().GetCamera3D();
@@ -3731,12 +3780,27 @@ public partial class GameHost
 	{
 		if (EcsWorld.IsAlive(castleEntity))
 		{
+			string? peekCancelledId = null;
+			int popCost = 0;
+			if (EcsWorld.Has<Realm.Ecs.Components.Core.ProductionQueue>(castleEntity))
+			{
+				var prod = EcsWorld.Get<Realm.Ecs.Components.Core.ProductionQueue>(castleEntity);
+				if (index >= 0 && index < prod.UnitIds.Count)
+				{
+					peekCancelledId = prod.UnitIds[index];
+					if (UnitRegistry.TryGetValue(peekCancelledId, out var metaPeek))
+					{
+						popCost = metaPeek.PopCost;
+					}
+				}
+			}
+
 			if (_multiplayerActive && !IsServerActive())
 			{
 				QueueClientCommand("cancel_train", new List<int> { GetServerEntityId(castleEntity) }, Vector3.Zero, index, "");
 				if (EcsWorld.Has<Realm.Ecs.Components.Core.ProductionQueue>(castleEntity))
 				{
-					if (_inputService.CancelQueuedUnitAt(castleEntity, index, out string? cancelledId, out string? nextUnitId))
+					if (_inputService.CancelQueuedUnitAt(castleEntity, index, out string? cancelledId, out string? nextUnitId, popCost))
 					{
 						if (cancelledId != null)
 						{
@@ -3757,7 +3821,7 @@ public partial class GameHost
 			}
 			else if (EcsWorld.Has<Realm.Ecs.Components.Core.ProductionQueue>(castleEntity))
 			{
-				if (_inputService.CancelQueuedUnitAt(castleEntity, index, out string? cancelledId, out string? nextUnitId))
+				if (_inputService.CancelQueuedUnitAt(castleEntity, index, out string? cancelledId, out string? nextUnitId, popCost))
 				{
 					if (cancelledId != null)
 					{

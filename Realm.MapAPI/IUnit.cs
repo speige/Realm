@@ -88,11 +88,6 @@ public interface IUnit
     float Experience { get; set; }
 
     /// <summary>
-    /// Gets or sets the number of healing potions in the unit's inventory.
-    /// </summary>
-    int Potions { get; set; }
-
-    /// <summary>
     /// Gets the experience bounty awarded for defeating this unit.
     /// </summary>
     float XpBounty { get; }

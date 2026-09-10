@@ -1298,11 +1298,6 @@
             Gets or sets the experience points of the hero unit.
             </summary>
         </member>
-        <member name="P:Realm.MapAPI.IUnit.Potions">
-            <summary>
-            Gets or sets the number of healing potions in the unit's inventory.
-            </summary>
-        </member>
         <member name="P:Realm.MapAPI.IUnit.XpBounty">
             <summary>
             Gets the experience bounty awarded for defeating this unit.

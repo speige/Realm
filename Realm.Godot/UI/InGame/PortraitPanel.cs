@@ -172,37 +172,7 @@ public class PortraitPanel
 			}
 			_statsLabel.Text = statsText;
 
-			if (!info.IsBuilding)
-			{
-				_itemsBox.Visible = true;
-				var itemsHBox = _itemsBox.GetChild<HBoxContainer>(1);
-				var axeIcon = itemsHBox.GetChild<TextureRect>(0);
-				var shieldIcon = itemsHBox.GetChild<TextureRect>(1);
-
-				if (info.UnitId == "archer")
-				{
-					axeIcon.TooltipText = TranslationServer.Translate("Composite Recurve Bow\n+4 Attack Damage (Equipped)");
-					shieldIcon.TooltipText = TranslationServer.Translate("Elven Leather Boots\n+2 Movement Speed (Equipped)");
-				}
-				else if (info.UnitId == "priest")
-				{
-					axeIcon.TooltipText = TranslationServer.Translate("Blessed Rod\n+3 Healing Power (Equipped)");
-					shieldIcon.TooltipText = TranslationServer.Translate("Cloth Robes\n+1 Armor Block (Equipped)");
-				}
-				else
-				{
-					axeIcon.TooltipText = TranslationServer.Translate("Battle Axe\n+5 Attack Damage (Equipped)");
-					shieldIcon.TooltipText = TranslationServer.Translate("Battle Shield\n+3 Armor Block (Equipped)");
-				}
-
-				if (_btnUsePotion != null)
-				{
-					_btnUsePotion.Text = $" {info.Potions} ";
-					_btnUsePotion.TooltipText = string.Format(TranslationServer.Translate("[I] Healing Potion (Have: {0})\nRestores 50 HP on use."), info.Potions);
-					_btnUsePotion.Disabled = info.Potions <= 0 || info.IsEnemy;
-				}
-			}
-			else
+			if (info.IsBuilding)
 			{
 				_itemsBox.Visible = false;
 			}
@@ -307,6 +277,11 @@ public class PortraitPanel
 			selectedBorder.BorderColor = new Color(0.1f, 0.8f, 0.2f, 0.8f);
 			selectedBorder.SetBorderWidthAll(3);
 
+			int focusedIdx = viewModel.SelectedUnits.Count > 0
+				? (viewModel.CycleSelectionIndex < viewModel.SelectedUnits.Count ? viewModel.CycleSelectionIndex : 0)
+				: -1;
+			string activeUnitId = focusedIdx >= 0 ? viewModel.SelectedUnits[focusedIdx].UnitId : null;
+
 			for (int i = 0; i < _unitButtons.Count; i++)
 			{
 				var btn = _unitButtons[i];
@@ -320,12 +295,14 @@ public class PortraitPanel
 					btn.TooltipText = uInfo.UnitId.ToUpper();
 
 					bool isFocused = i == viewModel.CycleSelectionIndex;
-					if (isFocused)
+					bool inActiveSubGroup = uInfo.UnitId == activeUnitId;
+
+					if (inActiveSubGroup)
 					{
 						var focusedBorder = new StyleBoxFlat();
 						focusedBorder.BgColor = new Color(0, 0, 0, 0);
 						focusedBorder.BorderColor = new Color(0.95f, 0.82f, 0.55f, 1.0f);
-						focusedBorder.SetBorderWidthAll(3);
+						focusedBorder.SetBorderWidthAll(isFocused ? 3 : 2);
 						btn.AddThemeStyleboxOverride("normal", focusedBorder);
 					}
 					else
@@ -412,9 +389,19 @@ public class PortraitPanel
 
 		for (int i = 0; i < unitIds.Count; i++)
 		{
+			string unitId = unitIds[i];
+			string unitDisplayName = unitId.ToUpper();
+			if (GameHost.UnitRegistry.TryGetValue(unitId, out var uMeta) && !string.IsNullOrEmpty(uMeta.Name))
+			{
+				unitDisplayName = uMeta.Name;
+			}
+			unitDisplayName = TranslationServer.Translate(unitDisplayName);
+
 			var slot = new PanelContainer();
 			slot.CustomMinimumSize = new Vector2(32, 32);
-			
+			slot.MouseFilter = Control.MouseFilterEnum.Stop;
+			slot.TooltipText = $"{unitDisplayName}\n" + TranslationServer.Translate("Click to cancel & refund");
+
 			var border = new StyleBoxFlat();
 			border.BgColor = new Color(0, 0, 0, 0.4f);
 			border.BorderColor = UIStyle.ColorBronze;
@@ -423,12 +410,14 @@ public class PortraitPanel
 
 			var icon = new TextureRect();
 			icon.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
-			icon.Texture = RtexIconLoader.Load(GetUnitIcon(unitIds[i]));
+			icon.Texture = RtexIconLoader.Load(GetUnitIcon(unitId));
+			icon.MouseFilter = Control.MouseFilterEnum.Pass;
 			slot.AddChild(icon);
 
 			var btnCancel = new Button();
 			btnCancel.Text = "×";
 			btnCancel.FocusMode = Control.FocusModeEnum.None;
+			btnCancel.MouseFilter = Control.MouseFilterEnum.Ignore;
 			btnCancel.AddThemeFontSizeOverride("font_size", 9);
 			btnCancel.AddThemeColorOverride("font_color", new Color(0.9f, 0.2f, 0.2f));
 			btnCancel.AddThemeColorOverride("font_outline_color", Colors.Black);
@@ -444,11 +433,15 @@ public class PortraitPanel
 			btnCancel.AddThemeStyleboxOverride("focus", styleEmpty);
 
 			int idx = i;
-			btnCancel.Pressed += () =>
+			slot.GuiInput += (InputEvent e) =>
 			{
-				if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(castleEntity))
+				if (e is InputEventMouseButton mouseEvent && mouseEvent.Pressed &&
+					(mouseEvent.ButtonIndex == MouseButton.Left || mouseEvent.ButtonIndex == MouseButton.Right))
 				{
-					GameHost.Instance.CancelQueuedUnitAt(castleEntity, idx);
+					if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(castleEntity))
+					{
+						GameHost.Instance.CancelQueuedUnitAt(castleEntity, idx);
+					}
 				}
 			};
 
