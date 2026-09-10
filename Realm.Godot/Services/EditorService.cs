@@ -2648,7 +2648,7 @@ public class EditorService
 			}
 			else
 			{
-				EcsWorld.Add(worldEntity, new EditorState(true, 3.0f, -95.0f, 95.0f, -95.0f, 125.0f, "Assets/skyboxes/jade_shrine.png", false, MirrorMode.None, value));
+				EcsWorld.Add(worldEntity, new EditorState(true, 3.0f, -95.0f, 95.0f, -95.0f, 125.0f, "", false, MirrorMode.None, value));
 			}
 		}
 	}
@@ -2695,7 +2695,7 @@ public class EditorService
 
 	public string GetSkyboxPath(Entity worldEntity)
 	{
-		return EcsWorld.GetFieldOrDefault<EditorState, string>(worldEntity, s => s.SkyboxPath, "Assets/skyboxes/jade_shrine.png");
+		return EcsWorld.GetFieldOrDefault<EditorState, string>(worldEntity, s => s.SkyboxPath, "");
 	}
 
 	public void SetSkyboxPath(Entity worldEntity, string value)

@@ -829,7 +829,7 @@ public class SaveLoadService
 			float right = saveData.CameraBoundsRight ?? 95.0f;
 			float top = saveData.CameraBoundsTop ?? -95.0f;
 			float bottom = saveData.CameraBoundsBottom ?? 125.0f;
-			string skybox = saveData.SkyboxPath ?? "Assets/skyboxes/jade_shrine.png";
+			string skybox = saveData.SkyboxPath;
 
 			WaterType currentWaterMode = EcsWorld.Has<EditorState>(worldEntity) ? EcsWorld.Get<EditorState>(worldEntity).WaterMode : WaterType.None;
 			var newEditorState = new EditorState(isBlock, step, left, right, top, bottom, skybox, false, MirrorMode.None, currentWaterMode);

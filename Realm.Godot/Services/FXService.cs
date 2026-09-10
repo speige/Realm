@@ -29,10 +29,6 @@ public class FXService
 				SpawnSpritesheetEffect(parent, $"Assets/vfx/{visual}_sheet.png", position + new Vector3(0, 0.5f, 0), 4, 4, 0.04f, scale * 6f);
 			}
 		}
-		else if (def.Damage > 0f)
-		{
-			SpawnSpritesheetEffect(parent, "Assets/vfx/solar_flare_sheet.png", position + new Vector3(0, 0.5f, 0), 4, 4, 0.05f, scale * 6f);
-		}
 
 		SpawnTargetIndicator(parent, position, indicatorColor);
 	}
