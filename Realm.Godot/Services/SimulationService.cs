@@ -86,6 +86,7 @@ internal class SimulationService
 	public Action<System.Numerics.Vector3, System.Numerics.Vector3> OnHealEffectRequested;
 	public Action<Entity> OnHealFlashRequested;
 	public Action<Entity, Entity, float> OnUnitDamagedCallback;
+	public Action<Entity, Entity, float>? OnUnitHealedCallback;
 	public Action<Entity, Entity>? OnUnitAttackedCallback;
 	public Action<string> OnUnderAttackAlertRequested;
 	public Action<Entity> OnKillUnitRequested;
@@ -137,6 +138,7 @@ internal class SimulationService
 				EnqueueVFXRequest("heal_flash", EcsWorld.Get<Position>(ent).Value, EcsWorld.Get<Position>(ent).Value, 1.0f, 0f, ent.Id);
 		};
 		_combatService.OnUnitDamagedCallback = (e1, e2, d) => OnUnitDamagedCallback?.Invoke(e1, e2, d);
+		_combatService.OnUnitHealedCallback = (e1, e2, h) => OnUnitHealedCallback?.Invoke(e1, e2, h);
 		_combatService.OnUnitAttackedCallback = (e1, e2) => OnUnitAttackedCallback?.Invoke(e1, e2);
 		_combatService.OnUnderAttackAlertRequested = id => OnUnderAttackAlertRequested?.Invoke(id);
 		_combatService.OnKillUnitRequested = ent => OnKillUnitRequested?.Invoke(ent);

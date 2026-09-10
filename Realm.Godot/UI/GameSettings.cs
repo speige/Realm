@@ -115,6 +115,7 @@ public static class GameSettings
 	public static bool SeedMapFiles { get; set; } = false;
 	public static bool DisableShadows { get; set; } = false;
 	public static bool DisableDayNightLighting { get; set; } = false;
+	public static bool FloatingCombatText { get; set; } = true;
 
 	public static int GetSafeScreenIndex()
 	{
@@ -144,6 +145,7 @@ public static class GameSettings
 		Vsync = true;
 		DisableShadows = false;
 		DisableDayNightLighting = false;
+		FloatingCombatText = true;
 		MasterVolume = 80f;
 		MusicVolume = 70f;
 		SfxVolume = 90f;
@@ -259,6 +261,7 @@ public static class GameSettings
 				SeedMapFiles = data.SeedMapFiles;
 				DisableShadows = data.DisableShadows;
 				DisableDayNightLighting = data.DisableDayNightLighting;
+				FloatingCombatText = data.FloatingCombatText;
 				ShowHealthBars = data.ShowHealthBars;
 
 				if (Resolutions != null && Resolutions.Count > 0)
@@ -316,7 +319,8 @@ public static class GameSettings
 			RecordReplays = RecordReplays,
 			SeedMapFiles = SeedMapFiles,
 			DisableShadows = DisableShadows,
-			DisableDayNightLighting = DisableDayNightLighting
+			DisableDayNightLighting = DisableDayNightLighting,
+			FloatingCombatText = FloatingCombatText
 		};
 
 		string json = JsonSerializer.Serialize(data, JsonOptions);
@@ -500,6 +504,7 @@ public static class GameSettings
 		public bool SeedMapFiles { get; set; } = false;
 		public bool DisableShadows { get; set; } = false;
 		public bool DisableDayNightLighting { get; set; } = false;
+		public bool FloatingCombatText { get; set; } = true;
 	}
 
 	[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]

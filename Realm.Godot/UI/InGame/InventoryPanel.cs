@@ -54,9 +54,9 @@ public class InventoryPanel
                 $" {focusedUnit.Potions} ",
                 () => {
                     var selected = GameHost.Instance?.SelectedUnits;
-                    if (selected != null && selected.Count == 1 && !selected[0].IsEnemy)
+                    if (selected != null && selected.Count > focusIdx && !selected[focusIdx].IsEnemy)
                     {
-                        GameHost.Instance.UseHealingPotion(selected[0]);
+                        GameHost.Instance.UseHealingPotion(selected[focusIdx]);
                     }
                 }
             );

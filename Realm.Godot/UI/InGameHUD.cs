@@ -1512,7 +1512,8 @@ public partial class InGameHUD : Control
 		{
 			if (GameHost.Instance != null && GameHost.Instance.SelectedUnits.Count > 1)
 			{
-				GameHost.Instance.CycleSelectionIndex = (GameHost.Instance.CycleSelectionIndex + 1) % GameHost.Instance.SelectedUnits.Count;
+				bool reverse = Input.IsKeyPressed(Key.Shift);
+				GameHost.Instance.CycleSelectionFocus(reverse);
 				RefreshUI(GameHost.Instance.SelectedUnits);
 				GetViewport().SetInputAsHandled();
 			}

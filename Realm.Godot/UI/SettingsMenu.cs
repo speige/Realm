@@ -23,6 +23,7 @@ public partial class SettingsMenu : Control
 	private OptionButton _qualityOpt;
 	private CheckBox _disableShadowsChk;
 	private CheckBox _disableDayNightLightingChk;
+	private CheckBox _floatingCombatTextChk;
 	private OptionButton _windowModeOpt;
 	private OptionButton _vsyncOpt;
 	private OptionButton _healthBarsOpt;
@@ -92,6 +93,7 @@ public partial class SettingsMenu : Control
 
 		_disableShadowsChk = GetNode<CheckBox>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/DisableShadowsChk");
 		_disableDayNightLightingChk = GetNode<CheckBox>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/DisableDayNightLightingChk");
+		_floatingCombatTextChk = GetNode<CheckBox>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/VideoPanel/VBox/FloatingCombatTextChk");
 
 		_masterSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/MasterRow/MasterSlider");
 		_musicSlider = GetNode<HSlider>("CenterContainer/MainFrame/VBoxContainer/TopRowContainer/AudioPanel/VBox/MusicRow/MusicSlider");
@@ -351,6 +353,8 @@ public partial class SettingsMenu : Control
 		_disableShadowsChk.Text = TranslationServer.Translate(_disableShadowsChk.Text);
 		UIStyle.ApplyCheckboxStyle(_disableDayNightLightingChk);
 		_disableDayNightLightingChk.Text = TranslationServer.Translate(_disableDayNightLightingChk.Text);
+		UIStyle.ApplyCheckboxStyle(_floatingCombatTextChk);
+		_floatingCombatTextChk.Text = TranslationServer.Translate(_floatingCombatTextChk.Text);
 		UIStyle.ApplyCheckboxStyle(_displayFpsChk);
 		_displayFpsChk.Text = TranslationServer.Translate(_displayFpsChk.Text);
 		UIStyle.ApplyCheckboxStyle(_recordReplaysChk);
@@ -447,6 +451,8 @@ public partial class SettingsMenu : Control
 		_disableShadowsChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 		_disableDayNightLightingChk.Pressed += () => UIManager.Instance.PlayClickSound();
 		_disableDayNightLightingChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
+		_floatingCombatTextChk.Pressed += () => UIManager.Instance.PlayClickSound();
+		_floatingCombatTextChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 		_displayFpsChk.Pressed += () => UIManager.Instance.PlayClickSound();
 		_displayFpsChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 		_recordReplaysChk.Pressed += () => UIManager.Instance.PlayClickSound();
@@ -628,6 +634,7 @@ public partial class SettingsMenu : Control
 
 		_disableShadowsChk.ButtonPressed = GameSettings.DisableShadows;
 		_disableDayNightLightingChk.ButtonPressed = GameSettings.DisableDayNightLighting;
+		_floatingCombatTextChk.ButtonPressed = GameSettings.FloatingCombatText;
 		_displayFpsChk.ButtonPressed = GameSettings.DisplayFps;
 		_recordReplaysChk.ButtonPressed = GameSettings.RecordReplays;
 		_seedMapFilesChk.ButtonPressed = GameSettings.SeedMapFiles;
@@ -675,6 +682,7 @@ public partial class SettingsMenu : Control
 			GameSettings.Vsync = vsyncEnabled;
 			GameSettings.DisableShadows = _disableShadowsChk.ButtonPressed;
 			GameSettings.DisableDayNightLighting = _disableDayNightLightingChk.ButtonPressed;
+			GameSettings.FloatingCombatText = _floatingCombatTextChk.ButtonPressed;
 
 			GameSettings.MasterVolume = (float)_masterSlider.Value;
 			GameSettings.MusicVolume = (float)_musicSlider.Value;

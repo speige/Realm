@@ -169,7 +169,7 @@ public partial class GameHost
 			}
 			else if (spellId == "holylight")
 			{
-				_simulationService.HealAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), 4.0f, 60f);
+				_simulationService.HealAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), 4.0f, 50f);
 			}
 			InGameHUD.Instance?.RefreshUI(SelectedUnits);
 			if (LobbyManager.Instance != null)

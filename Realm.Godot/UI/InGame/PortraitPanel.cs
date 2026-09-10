@@ -307,6 +307,11 @@ public class PortraitPanel
 			selectedBorder.BorderColor = new Color(0.1f, 0.8f, 0.2f, 0.8f);
 			selectedBorder.SetBorderWidthAll(3);
 
+			int focusedIdx = viewModel.SelectedUnits.Count > 0
+				? (viewModel.CycleSelectionIndex < viewModel.SelectedUnits.Count ? viewModel.CycleSelectionIndex : 0)
+				: -1;
+			string activeUnitId = focusedIdx >= 0 ? viewModel.SelectedUnits[focusedIdx].UnitId : null;
+
 			for (int i = 0; i < _unitButtons.Count; i++)
 			{
 				var btn = _unitButtons[i];
@@ -320,12 +325,14 @@ public class PortraitPanel
 					btn.TooltipText = uInfo.UnitId.ToUpper();
 
 					bool isFocused = i == viewModel.CycleSelectionIndex;
-					if (isFocused)
+					bool inActiveSubGroup = uInfo.UnitId == activeUnitId;
+
+					if (inActiveSubGroup)
 					{
 						var focusedBorder = new StyleBoxFlat();
 						focusedBorder.BgColor = new Color(0, 0, 0, 0);
 						focusedBorder.BorderColor = new Color(0.95f, 0.82f, 0.55f, 1.0f);
-						focusedBorder.SetBorderWidthAll(3);
+						focusedBorder.SetBorderWidthAll(isFocused ? 3 : 2);
 						btn.AddThemeStyleboxOverride("normal", focusedBorder);
 					}
 					else

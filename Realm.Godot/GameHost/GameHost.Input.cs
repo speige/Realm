@@ -1705,7 +1705,8 @@ public partial class GameHost
 
 			if (keyEvent.Keycode == Key.Tab)
 			{
-				CycleSelectionFocus();
+				bool reverse = keyEvent.ShiftPressed || Input.IsKeyPressed(Key.Shift);
+				CycleSelectionFocus(reverse);
 				GetViewport().SetInputAsHandled();
 				return;
 			}
@@ -2564,10 +2565,15 @@ public partial class GameHost
 		InGameHUD.Instance?.ShowFeedbackText($"Selected {count} Buildings", new Color(0.9f, 0.7f, 0.2f));
 	}
 
-	private void CycleSelectionFocus(bool reverse = false)
+	public void CycleSelectionFocus(bool reverse = false)
 	{
 		if (SelectedUnits.Count <= 1) return;
-		int index = _inputService.CycleSelectionFocus(_worldEntity, SelectedUnits.Count, reverse);
+		var unitIds = new List<string>();
+		foreach (var u in SelectedUnits)
+		{
+			unitIds.Add(u.UnitId);
+		}
+		int index = _inputService.CycleSelectionFocus(_worldEntity, unitIds, reverse);
 		var focusUnit = SelectedUnits[index];
 
 		var camera = GetViewport().GetCamera3D();
@@ -2951,15 +2957,18 @@ public partial class GameHost
 			return;
 		}
 
+		int focusedIdx = Math.Clamp(CycleSelectionIndex, 0, Math.Max(0, SelectedUnits.Count - 1));
+		Unit3D focusedUnit = SelectedUnits.Count > focusedIdx ? SelectedUnits[focusedIdx] : null;
+
 		IUnit caster = null;
-		if (SelectedUnits.Count > 0 && EcsWorld.IsAlive(SelectedUnits[0].Entity))
+		if (focusedUnit != null && EcsWorld.IsAlive(focusedUnit.Entity))
 		{
-			caster = GetUnitWrapper(SelectedUnits[0].Entity);
-			_audioService?.PlayUnitSound(SelectedUnits[0].UnitId, UnitSoundEvent.SpellCast, position);
+			caster = GetUnitWrapper(focusedUnit.Entity);
+			_audioService?.PlayUnitSound(focusedUnit.UnitId, UnitSoundEvent.SpellCast, position);
 		}
 		OnSpellCast?.Invoke(caster, spellId, new System.Numerics.Vector3(position.X, position.Y, position.Z));
 
-		Entity casterEntity = SelectedUnits.Count > 0 && EcsWorld.IsAlive(SelectedUnits[0].Entity) ? SelectedUnits[0].Entity : Entity.Null;
+		Entity casterEntity = focusedUnit != null && EcsWorld.IsAlive(focusedUnit.Entity) ? focusedUnit.Entity : Entity.Null;
 
 		if (spellId == "fireball")
 		{
@@ -3026,7 +3035,7 @@ public partial class GameHost
 					UIManager.Instance.PlayClickSound();
 				}
 
-				_simulationService.HealAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), 4.0f, 60f);
+				_simulationService.HealAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), 4.0f, 50f);
 				InGameHUD.Instance?.RefreshUI(SelectedUnits);
 			}
 		}
@@ -3082,6 +3091,7 @@ public partial class GameHost
 			InGameHUD.Instance?.ShowFeedbackText($"{unit.UnitId.ToUpper()} used Healing Potion (+{healedAmount:F0} HP)!", new Color(0.3f, 0.9f, 0.4f));
 			SpawnHolyLightEffect(unit.GlobalPosition);
 			FlashHealUnit(unit);
+			_fxService.SpawnHealNumber(this, unit.GlobalPosition, healedAmount);
 
 			UIManager.Instance?.PlayClickSound();
 			InGameHUD.Instance?.RefreshUI(SelectedUnits);

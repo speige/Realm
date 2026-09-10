@@ -2561,7 +2561,7 @@ public class {mapName} : IMapScript
 		{
 			SpawnHolyLightEffect(godotPos);
 			SpawnTargetIndicator(godotPos, new Color(0.2f, 0.9f, 0.3f));
-			_simulationService.HealAOE(targetPosition, 4.0f, 60f);
+			_simulationService.HealAOE(targetPosition, 4.0f, 50f);
 		}
 		else
 		{
@@ -3924,6 +3924,16 @@ public class {mapName} : IMapScript
 				{
 					_fxService.SpawnDamageNumber(this, targetUnit3D.GlobalPosition, damage);
 					_audioService?.PlayUnitSound(targetUnit3D.UnitId, UnitSoundEvent.Wounded, targetUnit3D.GlobalPosition);
+				}
+			}
+		};
+		_simulationService.OnUnitHealedCallback = (targetEntity, healerEntity, healAmount) =>
+		{
+			if (EcsWorld.IsAlive(targetEntity))
+			{
+				if (GameHost.TryGetUnit3D(targetEntity, out var targetUnit3D))
+				{
+					_fxService.SpawnHealNumber(this, targetUnit3D.GlobalPosition, healAmount);
 				}
 			}
 		};

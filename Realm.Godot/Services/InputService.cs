@@ -438,6 +438,47 @@ internal class InputService
 		}
 	}
 
+	public int CycleSelectionFocus(Entity worldEntity, List<string> unitIds, bool reverse)
+	{
+		if (unitIds == null || unitIds.Count <= 1 || worldEntity == Entity.Null) return 0;
+
+		ref var state = ref EcsWorld.Get<InputState>(worldEntity);
+		int currentIndex = Math.Clamp(state.CycleSelectionIndex, 0, unitIds.Count - 1);
+
+		var subGroups = new List<string>();
+		foreach (var id in unitIds)
+		{
+			if (!subGroups.Contains(id))
+			{
+				subGroups.Add(id);
+			}
+		}
+
+		int newIndex;
+		if (subGroups.Count > 1)
+		{
+			string currentUnitId = unitIds[currentIndex];
+			int subGroupIdx = subGroups.IndexOf(currentUnitId);
+			if (subGroupIdx < 0) subGroupIdx = 0;
+
+			int nextSubGroupIdx = reverse
+				? (subGroupIdx - 1 + subGroups.Count) % subGroups.Count
+				: (subGroupIdx + 1) % subGroups.Count;
+
+			string targetUnitId = subGroups[nextSubGroupIdx];
+			newIndex = unitIds.IndexOf(targetUnitId);
+		}
+		else
+		{
+			newIndex = reverse
+				? (currentIndex - 1 + unitIds.Count) % unitIds.Count
+				: (currentIndex + 1) % unitIds.Count;
+		}
+
+		state.CycleSelectionIndex = newIndex;
+		return newIndex;
+	}
+
 	public int CycleSelectionFocus(Entity worldEntity, int selectedCount, bool reverse)
 	{
 		if (selectedCount <= 1 || worldEntity == Entity.Null) return 0;
