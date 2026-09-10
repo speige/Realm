@@ -1716,11 +1716,22 @@ public partial class GameHost
 				GetViewport().SetInputAsHandled();
 				return;
 			}
-			if (keyEvent.Keycode == Key.F5)
+			if (keyEvent.Keycode >= Key.F5 && keyEvent.Keycode <= Key.F8)
 			{
-				InGameHUD.Instance?.ToggleHotkeyPanel();
-				GetViewport().SetInputAsHandled();
-				return;
+				int slot = (int)(keyEvent.Keycode - Key.F5) + 1;
+				bool ctrlPressed = Input.IsKeyPressed(Key.Ctrl);
+				if (ctrlPressed)
+				{
+					SaveCameraLocation(slot);
+					GetViewport().SetInputAsHandled();
+					return;
+				}
+				else
+				{
+					RecallCameraLocation(slot);
+					GetViewport().SetInputAsHandled();
+					return;
+				}
 			}
 	
 			if (keyEvent.Keycode == Key.Quoteleft) 
@@ -3705,6 +3716,67 @@ public partial class GameHost
 				InGameHUD.Instance.ShowFeedbackText("Cannot upgrade: Insufficient resources!", new Color(1.0f, 0.2f, 0.2f));
 				UIManager.Instance?.PlayWarningSound();
 			}
+		}
+	}
+
+	public void SaveCameraLocation(int slotIndex)
+	{
+		if (slotIndex < 1 || slotIndex > 4) return;
+		var camera = MainCamera;
+		if (camera == null) return;
+
+		Vector3 pos = camera.GlobalPosition;
+		float zoom = camera is CameraControl camCtrl ? camCtrl.TargetHeight : pos.Y;
+
+		if (EcsWorld != null && EcsWorld.IsAlive(WorldEntity) && EcsWorld.Has<CameraState>(WorldEntity))
+		{
+			ref var state = ref EcsWorld.Get<CameraState>(WorldEntity);
+			var slot = new CameraLocationSlot
+			{
+				Position = new System.Numerics.Vector3(pos.X, pos.Y, pos.Z),
+				ZoomLevel = zoom,
+				IsSet = true
+			};
+			switch (slotIndex)
+			{
+				case 1: state.LocationSlot1 = slot; break;
+				case 2: state.LocationSlot2 = slot; break;
+				case 3: state.LocationSlot3 = slot; break;
+				case 4: state.LocationSlot4 = slot; break;
+			}
+		}
+
+		InGameHUD.Instance?.ShowFeedbackText($"Camera Location {slotIndex} Saved", new Color(0.5f, 0.8f, 1.0f));
+	}
+
+	public void RecallCameraLocation(int slotIndex)
+	{
+		if (slotIndex < 1 || slotIndex > 4) return;
+		if (EcsWorld == null || !EcsWorld.IsAlive(WorldEntity) || !EcsWorld.Has<CameraState>(WorldEntity)) return;
+
+		ref var state = ref EcsWorld.Get<CameraState>(WorldEntity);
+		CameraLocationSlot slot = slotIndex switch
+		{
+			1 => state.LocationSlot1,
+			2 => state.LocationSlot2,
+			3 => state.LocationSlot3,
+			4 => state.LocationSlot4,
+			_ => default
+		};
+
+		if (!slot.IsSet) return;
+
+		var camera = MainCamera;
+		if (camera == null) return;
+
+		Vector3 savedPos = new Vector3(slot.Position.X, slot.Position.Y, slot.Position.Z);
+		camera.GlobalPosition = savedPos;
+
+		if (camera is CameraControl camCtrl)
+		{
+			camCtrl.FollowTarget = null;
+			camCtrl.TargetHeight = slot.ZoomLevel;
+			camCtrl.CurrentHeight = savedPos.Y;
 		}
 	}
 

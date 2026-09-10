@@ -496,7 +496,7 @@ public partial class InGameHUD : Control
 		_minimapControls.AddChild(_btnSelectArmy);
 
 		var btnHotkeys = new Button();
-		SetupMinimapButton(btnHotkeys, "res://Assets/UI/game_menu.png", "Hotkey Reference [F5]", () => ToggleHotkeyPanel());
+		SetupMinimapButton(btnHotkeys, "res://Assets/UI/game_menu.png", "Hotkey Reference", () => ToggleHotkeyPanel());
 		_minimapControls.AddChild(btnHotkeys);
 
 		string currentWeather = "clear";
@@ -1593,8 +1593,8 @@ public partial class InGameHUD : Control
 		scroll.AddChild(vbox);
 
 		var titleLbl = new Label();
-		titleLbl.Text = TranslationServer.Translate("HOTKEY REFERENCE — [F5] to close");
-		UIStyle.ApplyTitle(titleLbl, TranslationServer.Translate("HOTKEY REFERENCE — [F5] to close"), 13);
+		titleLbl.Text = TranslationServer.Translate("HOTKEY REFERENCE");
+		UIStyle.ApplyTitle(titleLbl, TranslationServer.Translate("HOTKEY REFERENCE"), 13);
 		titleLbl.AddThemeColorOverride("font_color", UIStyle.ColorGold);
 		vbox.AddChild(titleLbl);
 
@@ -1642,6 +1642,8 @@ public partial class InGameHUD : Control
 			("Shift+WASD", "Fast pan"),
 			("Space",      "Center on your Castle"),
 			("Z",          "Cycle camera zoom"),
+			("Ctrl+F5..F8","Save Camera Location 1..4"),
+			("F5..F8",     "Jump to Saved Camera Location 1..4"),
 			("", ""),
 			("Selection:", ""),
 			("F1",         "Select all Idle units"),
@@ -1659,7 +1661,6 @@ public partial class InGameHUD : Control
 			("Chat / Cheats:", ""),
 			("Enter",      "Open chat"),
 			("", ""),
-			("[F5]",       "Toggle this hotkey panel"),
 			("[Esc]",      "Cancel / clear selection / open settings"),
 			("[Del]",      "Remove selected units (dev)"),
 		};
