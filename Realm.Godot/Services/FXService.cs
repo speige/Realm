@@ -9,14 +9,32 @@ public class FXService
 	public FXService(WorldAccessor ecsWorldAccessor)
 	{
 	}
-	public void SpawnFireblastEffect(Node3D parent, Vector3 position)
+	public void SpawnAbilityEffect(Node3D parent, AbilityDefinition def, Vector3 position, float scale = 1.0f)
 	{
-		SpawnSpritesheetEffect(parent, "Assets/vfx/solar_flare_sheet.png", position + new Vector3(0, 0.5f, 0), 4, 4, 0.05f, 6f);
-	}
+		if (parent == null || !GodotObject.IsInstanceValid(parent) || def == null) return;
 
-	public void SpawnLightningEffect(Node3D parent, Vector3 position)
-	{
-		SpawnSpritesheetEffect(parent, "Assets/vfx/arcane_surge_sheet.png", position + new Vector3(0, 0.5f, 0), 4, 4, 0.035f, 6f);
+		Color indicatorColor = def.Healing > 0f ? new Color(0.2f, 0.9f, 0.3f) : new Color(0.9f, 0.3f, 0.1f);
+
+		if (!string.IsNullOrEmpty(def.VisualEffect))
+		{
+			string visual = def.VisualEffect;
+			if (visual.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+				visual.EndsWith(".rtex", StringComparison.OrdinalIgnoreCase) ||
+				visual.Contains('/'))
+			{
+				SpawnSpritesheetEffect(parent, visual, position + new Vector3(0, 0.5f, 0), 4, 4, 0.04f, scale * 6f);
+			}
+			else
+			{
+				SpawnSpritesheetEffect(parent, $"Assets/vfx/{visual}_sheet.png", position + new Vector3(0, 0.5f, 0), 4, 4, 0.04f, scale * 6f);
+			}
+		}
+		else if (def.Damage > 0f)
+		{
+			SpawnSpritesheetEffect(parent, "Assets/vfx/solar_flare_sheet.png", position + new Vector3(0, 0.5f, 0), 4, 4, 0.05f, scale * 6f);
+		}
+
+		SpawnTargetIndicator(parent, position, indicatorColor);
 	}
 
 	public void SpawnSpritesheetEffect(Node parent, string texturePath, Vector3 worldPosition, int columns, int rows, float secondsPerFrame, float sizeInWorldUnits)
@@ -147,34 +165,6 @@ public class FXService
 		var tween = unit.CreateTween();
 		unit.Scale = new Vector3(0.9f, 1.25f, 0.9f);
 		tween.TweenProperty(unit, "scale", new Vector3(1.0f, 1.0f, 1.0f), 0.25f);
-	}
-
-	public void SpawnHolyLightEffect(Node3D parent, Vector3 position)
-	{
-		var cylinder = new MeshInstance3D();
-		var cylinderMesh = new CylinderMesh();
-		cylinderMesh.TopRadius = 2.0f;
-		cylinderMesh.BottomRadius = 2.0f;
-		cylinderMesh.Height = 8.0f;
-		cylinder.Mesh = cylinderMesh;
-		cylinder.Position = position + new Vector3(0, 4.0f, 0);
-
-		var material = new StandardMaterial3D();
-		material.AlbedoColor = new Color(1.0f, 0.9f, 0.3f, 0.6f);
-		material.EmissionEnabled = true;
-		material.Emission = new Color(0.9f, 0.8f, 0.2f);
-		material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-		cylinder.MaterialOverride = material;
-
-		parent.AddChild(cylinder);
-
-		var tween = parent.CreateTween();
-		tween.SetParallel(true);
-		tween.TweenProperty(cylinder, "scale:x", 0.05f, 0.6f);
-		tween.TweenProperty(cylinder, "scale:z", 0.05f, 0.6f);
-		tween.TweenProperty(material, "albedo_color:a", 0.0f, 0.6f);
-		tween.TweenProperty(material, "emission:a", 0.0f, 0.6f);
-		tween.Chain().TweenCallback(Callable.From(cylinder.QueueFree));
 	}
 
 	public void SpawnPing3DEffect(Node3D parent, Vector3 position)

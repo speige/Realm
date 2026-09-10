@@ -1691,23 +1691,6 @@ public partial class GameHost : Node3D, IGameAPI
 		}
 	}
 
-	public float FireballCooldown
-	{
-		get => GetPlayerSpellCooldown("fireball");
-		set => SetPlayerSpellCooldown("fireball", value);
-	}
-
-	public float LightningCooldown
-	{
-		get => GetPlayerSpellCooldown("lightning");
-		set => SetPlayerSpellCooldown("lightning", value);
-	}
-
-	public float HolyLightCooldown
-	{
-		get => GetPlayerSpellCooldown("holylight");
-		set => SetPlayerSpellCooldown("holylight", value);
-	}
 
 
 	public const float ResourceCap = ResourceConstants.ResourceCap;
@@ -2502,39 +2485,14 @@ public class {mapName} : IMapScript
 		Callable.From(() =>
 		{
 			var pos = new Vector3(position.X, position.Y, position.Z);
-			if (effectTypeId == "fireblast")
+			var def = GetAbilityDefinition(effectTypeId);
+			if (def != null)
 			{
-				SpawnSpritesheetEffect("Assets/vfx/solar_flare_sheet.png", pos + new Vector3(0, 0.5f, 0), 4, 4, 0.05f, scale * 6f);
+				_fxService.SpawnAbilityEffect(this, def, pos, scale);
 			}
-			else if (effectTypeId == "lightning")
+			else
 			{
-				SpawnSpritesheetEffect("Assets/vfx/arcane_surge_sheet.png", pos + new Vector3(0, 0.5f, 0), 4, 4, 0.035f, scale * 6f);
-			}
-			else if (effectTypeId == "holylight")
-			{
-				var cylinder = new MeshInstance3D();
-				var cylinderMesh = new CylinderMesh();
-				cylinderMesh.TopRadius = 1.5f * scale;
-				cylinderMesh.BottomRadius = 1.5f * scale;
-				cylinderMesh.Height = 8.0f;
-				cylinder.Mesh = cylinderMesh;
-				cylinder.Position = pos + new Vector3(0, 4.0f, 0);
-
-				var material = new StandardMaterial3D();
-				material.AlbedoColor = new Color(0.2f, 0.9f, 0.3f, 0.6f);
-				material.EmissionEnabled = true;
-				material.Emission = new Color(0.1f, 0.8f, 0.2f);
-				material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-				cylinder.MaterialOverride = material;
-
-				AddChild(cylinder);
-
-				var tween = CreateTween();
-				tween.SetParallel(true);
-				tween.TweenProperty(cylinder, "scale", new Vector3(1.2f, 1.0f, 1.2f), 0.5f);
-				tween.TweenProperty(material, "albedo_color:a", 0.0f, 0.5f);
-				tween.TweenProperty(material, "emission:a", 0.0f, 0.5f);
-				tween.Chain().TweenCallback(Callable.From(cylinder.QueueFree));
+				_fxService.SpawnSpritesheetEffect(this, effectTypeId, pos + new Vector3(0, 0.5f, 0), 4, 4, 0.05f, scale * 6f);
 			}
 		}).CallDeferred();
 	}
@@ -2565,26 +2523,15 @@ public class {mapName} : IMapScript
 
 		if (def != null)
 		{
+			_fxService.SpawnAbilityEffect(this, def, godotPos);
 			if (def.Damage > 0f)
 			{
 				float aoe = def.AreaOfEffectRadius > 0f ? def.AreaOfEffectRadius : 4.0f;
-				if (def.VisualEffect != null && def.VisualEffect.Equals("lightning", StringComparison.OrdinalIgnoreCase))
-				{
-					SpawnLightningEffect(godotPos);
-					SpawnTargetIndicator(godotPos, new Color(0.2f, 0.5f, 1f));
-				}
-				else
-				{
-					SpawnFireblastEffect(godotPos);
-					SpawnTargetIndicator(godotPos, new Color(0.9f, 0.3f, 0.1f));
-				}
 				_simulationService.DealSpellDamageAOE(targetPosition, aoe, def.Damage, casterEnt);
 			}
 			else if (def.Healing > 0f)
 			{
 				float aoe = def.AreaOfEffectRadius > 0f ? def.AreaOfEffectRadius : 4.0f;
-				SpawnHolyLightEffect(godotPos);
-				SpawnTargetIndicator(godotPos, new Color(0.2f, 0.9f, 0.3f));
 				_simulationService.HealAOE(targetPosition, aoe, def.Healing);
 			}
 			else
@@ -5226,17 +5173,9 @@ public class {mapName} : IMapScript
 			var godotTarget = new Vector3(req.TargetPosition.X, req.TargetPosition.Y, req.TargetPosition.Z);
 
 			var def = GetAbilityDefinition(req.EffectTypeId);
-			if (req.EffectTypeId == "fireblast" || (def != null && def.Damage > 0f && (def.VisualEffect == null || !def.VisualEffect.Equals("lightning", StringComparison.OrdinalIgnoreCase))))
+			if (def != null)
 			{
-				SpawnFireblastEffect(godotPos);
-			}
-			else if (def != null && def.Damage > 0f && def.VisualEffect != null && def.VisualEffect.Equals("lightning", StringComparison.OrdinalIgnoreCase))
-			{
-				SpawnLightningEffect(godotPos);
-			}
-			else if (req.EffectTypeId == "holylight" || (def != null && def.Healing > 0f))
-			{
-				SpawnHolyLightEffect(godotPos);
+				_fxService.SpawnAbilityEffect(this, def, godotPos);
 			}
 			else if (req.EffectTypeId == "arrow" || WeaponRegistry.ContainsKey(req.EffectTypeId) || req.EffectTypeId.StartsWith("proj:"))
 			{
@@ -5319,16 +5258,6 @@ public class {mapName} : IMapScript
 		return _environmentService?.GetTimeOfDayName(TimeOfDayIndex) ?? "Unknown";
 	}
 
-	private void SpawnFireblastEffect(Vector3 position)
-	{
-		_fxService.SpawnFireblastEffect(this, position);
-	}
-
-	private void SpawnLightningEffect(Vector3 position)
-	{
-		_fxService.SpawnLightningEffect(this, position);
-	}
-
 	private void SpawnSpritesheetEffect(string texturePath, Vector3 worldPosition, int columns, int rows, float secondsPerFrame, float sizeInWorldUnits)
 	{
 		_fxService.SpawnSpritesheetEffect(this, texturePath, worldPosition, columns, rows, secondsPerFrame, sizeInWorldUnits);
@@ -5347,11 +5276,6 @@ public class {mapName} : IMapScript
 	private void FlashHealUnit(Unit3D unit)
 	{
 		_fxService.FlashHealUnit(unit);
-	}
-
-	private void SpawnHolyLightEffect(Vector3 position)
-	{
-		_fxService.SpawnHolyLightEffect(this, position);
 	}
 
 	private void SpawnPing3DEffect(Vector3 position)

@@ -424,9 +424,6 @@ public class InGameHUDViewModel
 
 	public bool IsChatActive { get; set; }
 
-	public float FireballCooldown { get; set; }
-	public float LightningCooldown { get; set; }
-	public float HolyLightCooldown { get; set; }
 
 	public string CurrentWeather { get; set; } = "clear";
 	public string ShroudType { get; set; } = "VisionShroud";
@@ -525,9 +522,6 @@ public class InGameHUDViewModel
 
 			IsConnectionLost = GameHost.Instance.IsConnectionLost;
 			CycleSelectionIndex = GameHost.Instance.CycleSelectionIndex;
-			FireballCooldown = GameHost.Instance.GetPlayerSpellCooldown("fireball");
-			LightningCooldown = GameHost.Instance.GetPlayerSpellCooldown("lightning");
-			HolyLightCooldown = GameHost.Instance.GetPlayerSpellCooldown("holylight");
 		}
 
 		int idleCount = 0;

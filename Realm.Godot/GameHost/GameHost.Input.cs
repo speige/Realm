@@ -2949,21 +2949,7 @@ public partial class GameHost
 
 			if (def != null)
 			{
-				if (def.Healing > 0f)
-				{
-					SpawnHolyLightEffect(position);
-					SpawnTargetIndicator(position, new Color(0.2f, 0.9f, 0.3f));
-				}
-				else if (def.VisualEffect != null && def.VisualEffect.Equals("lightning", StringComparison.OrdinalIgnoreCase))
-				{
-					SpawnLightningEffect(position);
-					SpawnTargetIndicator(position, new Color(0.2f, 0.5f, 1f));
-				}
-				else
-				{
-					SpawnFireblastEffect(position);
-					SpawnTargetIndicator(position, new Color(0.9f, 0.3f, 0.1f));
-				}
+				_fxService.SpawnAbilityEffect(this, def, position);
 			}
 
 			var targetIds = new List<int>();
@@ -3007,26 +2993,15 @@ public partial class GameHost
 
 			if (def != null)
 			{
+				_fxService.SpawnAbilityEffect(this, def, position);
 				if (def.Damage > 0f)
 				{
 					float aoe = def.AreaOfEffectRadius > 0f ? def.AreaOfEffectRadius : 4.0f;
-					if (def.VisualEffect != null && def.VisualEffect.Equals("lightning", StringComparison.OrdinalIgnoreCase))
-					{
-						SpawnLightningEffect(position);
-						SpawnTargetIndicator(position, new Color(0.2f, 0.5f, 1f));
-					}
-					else
-					{
-						SpawnFireblastEffect(position);
-						SpawnTargetIndicator(position, new Color(0.9f, 0.3f, 0.1f));
-					}
 					_simulationService.DealSpellDamageAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), aoe, def.Damage, SelectedUnits.Count > 0 ? SelectedUnits[0].Entity : Entity.Null);
 				}
 				else if (def.Healing > 0f)
 				{
 					float aoe = def.AreaOfEffectRadius > 0f ? def.AreaOfEffectRadius : 4.0f;
-					SpawnHolyLightEffect(position);
-					SpawnTargetIndicator(position, new Color(0.2f, 0.9f, 0.3f));
 					_simulationService.HealAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), aoe, def.Healing);
 				}
 			}
@@ -3096,7 +3071,10 @@ public partial class GameHost
 		if (_inputService.UseItem(unit.Entity, itemId, out float healedAmount))
 		{
 			InGameHUD.Instance?.ShowFeedbackText($"{unit.UnitId.ToUpper()} used {itemName} (+{healedAmount:F0} HP)!", new Color(0.3f, 0.9f, 0.4f));
-			SpawnHolyLightEffect(unit.GlobalPosition);
+			if (!string.IsNullOrEmpty(itemMeta.UseAbility) && GetAbilityDefinition(itemMeta.UseAbility) is AbilityDefinition abDef)
+			{
+				_fxService.SpawnAbilityEffect(this, abDef, unit.GlobalPosition);
+			}
 			FlashHealUnit(unit);
 			_fxService.SpawnHealNumber(this, unit.GlobalPosition, healedAmount);
 

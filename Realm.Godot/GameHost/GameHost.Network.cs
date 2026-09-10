@@ -236,21 +236,7 @@ public partial class GameHost
 		var def = GetAbilityDefinition(spellId);
 		if (def != null)
 		{
-			if (def.Healing > 0f)
-			{
-				SpawnHolyLightEffect(position);
-				SpawnTargetIndicator(position, new Color(0.2f, 0.9f, 0.3f));
-			}
-			else if (def.VisualEffect != null && def.VisualEffect.Equals("lightning", StringComparison.OrdinalIgnoreCase))
-			{
-				SpawnLightningEffect(position);
-				SpawnTargetIndicator(position, new Color(0.2f, 0.5f, 1f));
-			}
-			else
-			{
-				SpawnFireblastEffect(position);
-				SpawnTargetIndicator(position, new Color(0.9f, 0.3f, 0.1f));
-			}
+			_fxService.SpawnAbilityEffect(this, def, position);
 		}
 	}
 
