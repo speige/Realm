@@ -990,7 +990,7 @@ public partial class GameHost
 						}
 						else
 						{
-							config = VfxAttachmentConfig.CreatePreset(ActivePlaceId);
+							config = new VfxAttachmentConfig { VfxId = ActivePlaceId, Name = ActivePlaceId };
 						}
 
 						Vector3 spawnPos = hitPos;

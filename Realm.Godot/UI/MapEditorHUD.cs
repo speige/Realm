@@ -7562,6 +7562,17 @@ public partial class MapEditorHUD : Control
 		_vfxStudioDialog.OpenForConfig(initialConfig, onApplied);
 	}
 
+	private VfxManagerDialog _vfxManagerDialog;
+
+	public void OpenVfxManagerDialog(Action<VfxAttachmentConfig> onSelected = null, string initialVfxId = null)
+	{
+		if (_vfxManagerDialog == null)
+		{
+			_vfxManagerDialog = new VfxManagerDialog(this);
+		}
+		_vfxManagerDialog.Open(onSelected, initialVfxId);
+	}
+
 	private ObjectAttachmentDialog _objectAttachmentDialog;
 
 	public void OpenObjectAttachmentDialog(
@@ -8107,12 +8118,12 @@ public partial class MapEditorHUD : Control
 
 			if (isBuildingMeta && GameHost.BuildingRegistry != null && GameHost.BuildingRegistry.TryGetValue(regKey, out var bMeta))
 			{
-				bMeta.ObjectAttachments = snapshot?.Clone();
+				bMeta.ObjectAttachments = (snapshot.HasValue && snapshot.Value.HasAny()) ? snapshot?.Clone() : null;
 				GameHost.BuildingRegistry[regKey] = bMeta;
 			}
 			else if (GameHost.UnitRegistry.TryGetValue(regKey, out var uMeta))
 			{
-				uMeta.ObjectAttachments = snapshot?.Clone();
+				uMeta.ObjectAttachments = (snapshot.HasValue && snapshot.Value.HasAny()) ? snapshot?.Clone() : null;
 				GameHost.UnitRegistry[regKey] = uMeta;
 			}
 
@@ -8158,9 +8169,14 @@ public partial class MapEditorHUD : Control
 
 					if (targetObj != null)
 					{
-						if (snapshot.HasValue)
+						if (snapshot.HasValue && snapshot.Value.HasAny())
 						{
-							var serializedSnapshot = System.Text.Json.JsonSerializer.SerializeToNode(snapshot.Value);
+							var serializeOptions = new System.Text.Json.JsonSerializerOptions 
+							{ 
+								DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+								WriteIndented = true 
+							};
+							var serializedSnapshot = System.Text.Json.JsonSerializer.SerializeToNode(snapshot.Value, serializeOptions);
 							targetObj["ObjectAttachments"] = serializedSnapshot;
 						}
 						else
@@ -8200,6 +8216,11 @@ public partial class MapEditorHUD : Control
 		{
 			GD.PrintErr($"[MapEditorHUD] RestoreUnitObjectAttachments error: {ex.Message}");
 		}
+	}
+
+	public void SaveAllUnitObjectAttachments(string targetId, GameHost.UnitObjectAttachments? attachments)
+	{
+		RestoreUnitObjectAttachments(targetId, attachments);
 	}
 
 	public void SaveCustomWeaponToMetadata(string weaponId, GameHost.WeaponMetadata weapon)
@@ -8302,6 +8323,51 @@ public partial class MapEditorHUD : Control
 		catch (Exception ex)
 		{
 			GD.PrintErr($"[MapEditorHUD] SaveCustomVfxToMetadata error: {ex.Message}");
+		}
+	}
+
+	public void RemoveCustomVfxFromMetadata(string vfxId)
+	{
+		try
+		{
+			if (string.IsNullOrEmpty(vfxId)) return;
+
+			if (GameHost.VfxRegistry != null)
+			{
+				GameHost.VfxRegistry.Remove(vfxId);
+			}
+
+			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
+				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
+				: _tempWorkspacePath;
+			string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
+			if (!System.IO.File.Exists(metadataPath)) return;
+
+			string jsonStr = System.IO.File.ReadAllText(metadataPath);
+			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonStr)?.AsObject();
+			if (root == null) return;
+
+			var vfxArray = root["CustomVfx"]?.AsArray();
+			if (vfxArray != null)
+			{
+				for (int i = vfxArray.Count - 1; i >= 0; i--)
+				{
+					var vObj = vfxArray[i]?.AsObject();
+					if (vObj != null && (string.Equals(vObj["VfxId"]?.ToString(), vfxId, StringComparison.OrdinalIgnoreCase) ||
+										 string.Equals(vObj["vfxId"]?.ToString(), vfxId, StringComparison.OrdinalIgnoreCase)))
+					{
+						vfxArray.RemoveAt(i);
+					}
+				}
+			}
+
+			SaveLoadService.CleanMetadataJsonSchema(root);
+			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] RemoveCustomVfxFromMetadata error: {ex.Message}");
 		}
 	}
 

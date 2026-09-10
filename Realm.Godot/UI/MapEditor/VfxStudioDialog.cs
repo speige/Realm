@@ -25,7 +25,6 @@ public partial class VfxStudioDialog : FloatingDialogBase
 	private Control _rowPrimitive;
 	private OptionButton _optBlendMode;
 	private OptionButton _optPlacementMode;
-	private OptionButton _optSocket;
 	private Control _rowBaseTexture;
 	private Control _rowParticleTexture;
 	private Control _rowParticleMesh;
@@ -239,14 +238,6 @@ public partial class VfxStudioDialog : FloatingDialogBase
 			}
 			UpdateSectionVisibilities();
 			RestartPreviewVfx();
-		}, 140f);
-
-		string[] socketNames = new[] { "Standalone (World)", "RightHand (Weapon)", "LeftHand (Offhand)", "Chest (Torso Aura)", "Root (Feet/Ground)", "Head (Crown)", "LeftFoot", "RightFoot" };
-		int currentSocketIdx = GetSocketIndex(_currentConfig.TargetSocket);
-		_optSocket = AddOptionDropdown(scrollBody, TranslationServer.Translate("Socket / Bone Bind"), socketNames, currentSocketIdx, (idx) =>
-		{
-			if (_isUpdatingUI) return;
-			_currentConfig.TargetSocket = GetSocketKeyFromIndex(idx);
 		}, 140f);
 
 		AddSectionHeader(scrollBody, "⚙️ " + TranslationServer.Translate("Settings"));
@@ -934,7 +925,6 @@ public partial class VfxStudioDialog : FloatingDialogBase
 			if (!isParticle && _optPrimitive != null) _optPrimitive.Selected = Math.Clamp((int)_currentConfig.PrimitiveType, 0, _optPrimitive.ItemCount - 1);
 			if (_optBlendMode != null) _optBlendMode.Selected = (int)_currentConfig.BlendMode;
 			if (_optPlacementMode != null) _optPlacementMode.Selected = (int)_currentConfig.PlacementMode;
-			if (_optSocket != null) _optSocket.Selected = GetSocketIndex(_currentConfig.TargetSocket);
 
 			if (_setBaseTextureVal != null) _setBaseTextureVal(_currentConfig.BaseTexture ?? string.Empty);
 			if (_setNoiseTextureVal != null) _setNoiseTextureVal(_currentConfig.NoiseTexture ?? string.Empty);
@@ -1093,45 +1083,6 @@ public partial class VfxStudioDialog : FloatingDialogBase
 		}
 	}
 
-	private void ApplyPreset(string presetName)
-	{
-		var preset = VfxAttachmentConfig.CreatePreset(presetName);
-		preset.VfxId = _currentConfig.VfxId;
-		preset.Name = _currentConfig.Name;
-		_currentConfig = preset;
-		UpdateUIFromCurrentConfig();
-		RestartPreviewVfx();
-	}
-
-	private static int GetSocketIndex(string socketKey)
-	{
-		return (socketKey?.ToLowerInvariant()) switch
-		{
-			"righthand" or "weapon" => 1,
-			"lefthand" or "offhand" => 2,
-			"chest" or "torso" => 3,
-			"root" or "feet" or "hips" => 4,
-			"head" or "crown" => 5,
-			"leftfoot" => 6,
-			"rightfoot" => 7,
-			_ => 0
-		};
-	}
-
-	private static string GetSocketKeyFromIndex(int index)
-	{
-		return index switch
-		{
-			1 => "RightHand",
-			2 => "LeftHand",
-			3 => "Chest",
-			4 => "Root",
-			5 => "Head",
-			6 => "LeftFoot",
-			7 => "RightFoot",
-			_ => "Standalone"
-		};
-	}
 
 	private List<string> ScanTextureAssets(bool includeAll)
 	{

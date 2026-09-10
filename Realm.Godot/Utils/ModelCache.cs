@@ -95,6 +95,34 @@ namespace Realm.Godot.Utils
 				return candUser;
 			}
 
+			string withGlb = cleanPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) ? cleanPath : $"{cleanPath}.glb";
+			string[] subDirs = new[] { "attachments", "items", "projectiles", "weapons", "props", "resources", "units", "buildings" };
+
+			string?[] baseLocations = new[] { tempWs, activeMap, currentMapDir, resDir, userDir };
+			foreach (var loc in baseLocations)
+			{
+				if (string.IsNullOrEmpty(loc) || !System.IO.Directory.Exists(loc)) continue;
+				foreach (var sub in subDirs)
+				{
+					string cand = System.IO.Path.Combine(loc, "Assets", "models", sub, withGlb);
+					if (System.IO.File.Exists(cand)) return cand;
+				}
+			}
+
+			string foundPath = PathUtils.FindPath(cleanPath);
+			if (System.IO.File.Exists(foundPath)) return foundPath;
+
+			string foundWithGlb = PathUtils.FindPath(withGlb);
+			if (System.IO.File.Exists(foundWithGlb)) return foundWithGlb;
+
+			foreach (var sub in subDirs)
+			{
+				string tPath = PathUtils.FindPath($"MapTemplate/Assets/models/{sub}/{withGlb}");
+				if (System.IO.File.Exists(tPath)) return tPath;
+				string rPath = PathUtils.FindPath($"Assets/models/{sub}/{withGlb}");
+				if (System.IO.File.Exists(rPath)) return rPath;
+			}
+
 			return modelPath;
 		}
 

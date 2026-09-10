@@ -2674,7 +2674,7 @@ public partial class GameHost
 		}
 		else
 		{
-			config = VfxAttachmentConfig.CreatePreset(vfxId);
+			config = new VfxAttachmentConfig { VfxId = vfxId, Name = vfxId };
 		}
 
 		if (normalOffset != 0f)
@@ -3449,7 +3449,7 @@ public partial class GameHost
 				}
 				else
 				{
-					config = VfxAttachmentConfig.CreatePreset(reqId);
+					config = new VfxAttachmentConfig { VfxId = reqId, Name = reqId };
 				}
 
 				var previewVfx = new ProceduralVfxInstance3D(config);

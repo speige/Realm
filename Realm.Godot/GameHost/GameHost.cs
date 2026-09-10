@@ -152,7 +152,7 @@ public partial class GameHost : Node3D, IGameAPI
 	public static readonly Dictionary<Entity, Unit3D> EntityToUnit3D = new();
 	public static readonly Dictionary<Entity, Prop3D> EntityToProp3D = new();
 	public static readonly Dictionary<Entity, ProceduralVfxInstance3D> EntityToVfx3D = new();
-	public static readonly Dictionary<string, VfxAttachmentConfig> VfxRegistry = new(VfxPresets.GetAllPresets(), StringComparer.OrdinalIgnoreCase);
+	public static readonly Dictionary<string, VfxAttachmentConfig> VfxRegistry = new(StringComparer.OrdinalIgnoreCase);
 
 	public static bool TryGetUnit3D(Entity entity, out Unit3D unit)
 	{
@@ -1028,6 +1028,21 @@ public partial class GameHost : Node3D, IGameAPI
 				overhead = CloneList(overhead),
 				pivot = CloneList(pivot)
 			};
+		}
+
+		public bool HasAny()
+		{
+			return (right_hand != null && right_hand.Count > 0) ||
+				   (left_hand != null && left_hand.Count > 0) ||
+				   (chest != null && chest.Count > 0) ||
+				   (root != null && root.Count > 0) ||
+				   (head != null && head.Count > 0) ||
+				   (left_foot != null && left_foot.Count > 0) ||
+				   (right_foot != null && right_foot.Count > 0) ||
+				   (ground != null && ground.Count > 0) ||
+				   (center != null && center.Count > 0) ||
+				   (overhead != null && overhead.Count > 0) ||
+				   (pivot != null && pivot.Count > 0);
 		}
 	}
 
@@ -3492,7 +3507,7 @@ public class {mapName} : IMapScript
 					var newResources = new Dictionary<string, ResourceMetadata>(StringComparer.OrdinalIgnoreCase);
 					var newWeapons = new Dictionary<string, WeaponMetadata>(StringComparer.OrdinalIgnoreCase);
 					var newAttachments = new Dictionary<string, AttachmentMetadata>(StringComparer.OrdinalIgnoreCase);
-					var newVfx = new Dictionary<string, VfxAttachmentConfig>(VfxPresets.GetAllPresets(), StringComparer.OrdinalIgnoreCase);
+					var newVfx = new Dictionary<string, VfxAttachmentConfig>(StringComparer.OrdinalIgnoreCase);
 
 					bool hasStructuredArrays = false;
 

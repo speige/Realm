@@ -777,6 +777,26 @@ public static class UIStyle
 		return style;
 	}
 
+	public static StyleBox CreateActiveInnerPanel()
+	{
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.20f, 0.35f, 0.45f, 0.85f);
+		style.BorderColor = ColorCyanGlow;
+		style.BorderWidthTop = 2;
+		style.BorderWidthBottom = 2;
+		style.BorderWidthLeft = 2;
+		style.BorderWidthRight = 2;
+		style.CornerRadiusTopLeft = 4;
+		style.CornerRadiusTopRight = 4;
+		style.CornerRadiusBottomLeft = 4;
+		style.CornerRadiusBottomRight = 4;
+		style.ContentMarginLeft = 14;
+		style.ContentMarginRight = 14;
+		style.ContentMarginTop = 10;
+		style.ContentMarginBottom = 10;
+		return style;
+	}
+
 	public static StyleBox CreateLightTitleBadge()
 	{
 		var style = new StyleBoxTexture();

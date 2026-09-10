@@ -92,6 +92,15 @@ public partial class SpellParticleInstance3D : Node3D
 		}
 	}
 
+	public float SpeedScale
+	{
+		get => (float)(_particles?.SpeedScale ?? 1.0);
+		set
+		{
+			if (_particles != null) _particles.SpeedScale = value;
+		}
+	}
+
 	private void ApplyConfig()
 	{
 		if (_particles == null || _processMaterial == null) return;

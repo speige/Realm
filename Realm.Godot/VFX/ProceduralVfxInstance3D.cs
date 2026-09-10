@@ -213,6 +213,50 @@ public partial class ProceduralVfxInstance3D : Node3D
 		UpdateSelectionRingRadius();
 	}
 
+	public void Restart()
+	{
+		if (_particleInstance != null && GodotObject.IsInstanceValid(_particleInstance))
+		{
+			_particleInstance.Restart();
+		}
+		if (_meshInstance != null && GodotObject.IsInstanceValid(_meshInstance))
+		{
+			_meshInstance.Visible = true;
+		}
+	}
+
+	public void Play()
+	{
+		if (_particleInstance != null && GodotObject.IsInstanceValid(_particleInstance))
+		{
+			_particleInstance.Restart();
+		}
+		if (_meshInstance != null && GodotObject.IsInstanceValid(_meshInstance))
+		{
+			_meshInstance.Visible = true;
+		}
+	}
+
+	public void Stop()
+	{
+		if (_particleInstance != null && GodotObject.IsInstanceValid(_particleInstance))
+		{
+			_particleInstance.Stop();
+		}
+		if (_meshInstance != null && GodotObject.IsInstanceValid(_meshInstance))
+		{
+			_meshInstance.Visible = false;
+		}
+	}
+
+	public void SetSpeedScale(float speed)
+	{
+		if (_particleInstance != null && GodotObject.IsInstanceValid(_particleInstance))
+		{
+			_particleInstance.SpeedScale = speed;
+		}
+	}
+
 	private void SetupEditorCollision()
 	{
 		bool isEditor = GameHost.Instance?.IsMapEditorMode == true;

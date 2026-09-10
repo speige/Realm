@@ -794,7 +794,7 @@ public partial class Unit3D : Prop3D
 
 	public Aabb CalculateModelLocalAabb()
 	{
-		var visual = GetNodeOrNull<Node3D>("VisualModel") ?? this;
+		var visual = (_modelNode != null && GodotObject.IsInstanceValid(_modelNode)) ? _modelNode : (GetNodeOrNull<Node3D>("VisualModel") ?? this);
 		Aabb combinedAabb = new Aabb();
 		bool hasAabb = false;
 
@@ -802,38 +802,55 @@ public partial class Unit3D : Prop3D
 		{
 			if (current is MeshInstance3D meshInst && meshInst.Mesh != null && meshInst.Visible)
 			{
-				Transform3D relXform = visual.GlobalTransform.AffineInverse() * meshInst.GlobalTransform;
-				Aabb mAabb = meshInst.Mesh.GetAabb();
-				Vector3 min = mAabb.Position;
-				Vector3 max = mAabb.End;
-				Vector3[] corners = new[]
+				Transform3D relXform = Transform3D.Identity;
+				Node? curr = meshInst;
+				while (curr != null && curr != visual)
 				{
-					new Vector3(min.X, min.Y, min.Z),
-					new Vector3(min.X, min.Y, max.Z),
-					new Vector3(min.X, max.Y, min.Z),
-					new Vector3(min.X, max.Y, max.Z),
-					new Vector3(max.X, min.Y, min.Z),
-					new Vector3(max.X, min.Y, max.Z),
-					new Vector3(max.X, max.Y, min.Z),
-					new Vector3(max.X, max.Y, max.Z)
-				};
-				for (int i = 0; i < 8; i++)
-				{
-					Vector3 pt = relXform * corners[i];
-					if (!hasAabb)
+					if (curr is Node3D n3d)
 					{
-						combinedAabb = new Aabb(pt, Vector3.Zero);
-						hasAabb = true;
+						relXform = n3d.Transform * relXform;
 					}
-					else
+					curr = curr.GetParent();
+				}
+
+				if (Mathf.Abs(relXform.Basis.Determinant()) > 0.0001f)
+				{
+					Aabb mAabb = meshInst.Mesh.GetAabb();
+					Vector3 min = mAabb.Position;
+					Vector3 max = mAabb.End;
+					Vector3[] corners = new[]
 					{
-						combinedAabb = combinedAabb.Expand(pt);
+						new Vector3(min.X, min.Y, min.Z),
+						new Vector3(min.X, min.Y, max.Z),
+						new Vector3(min.X, max.Y, min.Z),
+						new Vector3(min.X, max.Y, max.Z),
+						new Vector3(max.X, min.Y, min.Z),
+						new Vector3(max.X, min.Y, max.Z),
+						new Vector3(max.X, max.Y, min.Z),
+						new Vector3(max.X, max.Y, max.Z)
+					};
+					for (int i = 0; i < 8; i++)
+					{
+						Vector3 pt = relXform * corners[i];
+						if (!hasAabb)
+						{
+							combinedAabb = new Aabb(pt, Vector3.Zero);
+							hasAabb = true;
+						}
+						else
+						{
+							combinedAabb = combinedAabb.Expand(pt);
+						}
 					}
 				}
 			}
 			foreach (Node child in current.GetChildren())
 			{
-				if (child is not BoneAttachment3D && !child.Name.ToString().StartsWith("PseudoSocket_"))
+				if (child is not BoneAttachment3D &&
+					!child.Name.ToString().StartsWith("PseudoSocket_", StringComparison.OrdinalIgnoreCase) &&
+					!child.Name.ToString().StartsWith("SocketAttachment_", StringComparison.OrdinalIgnoreCase) &&
+					!child.Name.ToString().StartsWith("Att_", StringComparison.OrdinalIgnoreCase) &&
+					!child.Name.ToString().StartsWith("AttVisual_", StringComparison.OrdinalIgnoreCase))
 				{
 					Collect(child);
 				}
@@ -903,14 +920,33 @@ public partial class Unit3D : Prop3D
 		_pseudoSockets[normSocket] = socketNode;
 
 		Aabb aabb = CalculateModelLocalAabb();
-		Vector3 anchorPos = normSocket switch
+		var parentNode = (_modelNode != null && GodotObject.IsInstanceValid(_modelNode)) ? _modelNode : (Node3D)this;
+		var skeleton = FindSkeleton(parentNode);
+		bool isNonRigged = IsBuilding || skeleton == null;
+
+		Vector3 anchorPos;
+		if (isNonRigged)
 		{
-			"ground" or "footprint" or "base" => new Vector3(aabb.GetCenter().X, aabb.Position.Y, aabb.GetCenter().Z),
-			"center" or "centerofmass" => IsBuilding ? aabb.GetCenter() : new Vector3(0, aabb.GetCenter().Y, 0),
-			"overhead" or "top" or "crown" or "roof" => new Vector3(aabb.GetCenter().X, aabb.End.Y + (IsBuilding ? 0f : 0.3f), aabb.GetCenter().Z),
-			"pivot" or "origin" => Vector3.Zero,
-			_ => Vector3.Zero
-		};
+			anchorPos = normSocket switch
+			{
+				"center" or "centerofmass" => aabb.GetCenter(),
+				"top" or "overhead" or "roof" => new Vector3(aabb.GetCenter().X, aabb.End.Y, aabb.GetCenter().Z),
+				"base" or "ground" or "footprint" => new Vector3(aabb.GetCenter().X, aabb.Position.Y, aabb.GetCenter().Z),
+				"pivot" or "origin" => Vector3.Zero,
+				_ => Vector3.Zero
+			};
+		}
+		else
+		{
+			anchorPos = normSocket switch
+			{
+				"ground" or "footprint" or "base" => new Vector3(0, aabb.Position.Y, 0),
+				"center" or "centerofmass" => new Vector3(0, aabb.GetCenter().Y, 0),
+				"overhead" or "crown" or "top" or "roof" => new Vector3(0, aabb.End.Y + 0.3f, 0),
+				"pivot" or "origin" => Vector3.Zero,
+				_ => Vector3.Zero
+			};
+		}
 		socketNode.Position = anchorPos;
 		socketNode.Rotation = Vector3.Zero;
 
@@ -1042,7 +1078,7 @@ public partial class Unit3D : Prop3D
 			}
 			else
 			{
-				config = VfxAttachmentConfig.CreatePreset(vfxKey);
+				config = new VfxAttachmentConfig { VfxId = vfxKey, Name = vfxKey };
 			}
 
 			var vfxInstance = new ProceduralVfxInstance3D(config);
@@ -1094,17 +1130,27 @@ public partial class Unit3D : Prop3D
 			defaultScale = resMeta.Scale <= 0f ? 1.0f : resMeta.Scale;
 			defaultPos = new Vector3(0f, resMeta.YOffset, 0f);
 		}
-		else
+		Node? loaded = !string.IsNullOrEmpty(modelPath) ? Realm.Godot.Utils.ModelCache.GetModel(modelPath) : null;
+		if (loaded == null)
 		{
 			string clean = attachmentId;
 			if (!clean.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
 			{
 				clean += ".glb";
 			}
-			modelPath = System.IO.Path.Combine("Assets", "models", "attachments", clean).Replace('\\', '/');
+
+			string[] candidateSubfolders = new[] { "attachments", "items", "projectiles", "weapons", "props", "resources", "units", "buildings" };
+			foreach (var sub in candidateSubfolders)
+			{
+				string candidatePath = System.IO.Path.Combine("Assets", "models", sub, clean).Replace('\\', '/');
+				loaded = Realm.Godot.Utils.ModelCache.GetModel(candidatePath);
+				if (loaded != null)
+				{
+					break;
+				}
+			}
 		}
 
-		Node? loaded = Realm.Godot.Utils.ModelCache.GetModel(modelPath);
 		if (loaded == null)
 		{
 			loaded = Realm.Godot.Utils.ModelCache.GetModel(attachmentId);
@@ -1196,8 +1242,14 @@ public partial class Unit3D : Prop3D
 
 		if (matchedEntry.HasValue)
 		{
-			SetHandAttachment(Realm.Godot.Animation.HumanoidBone.RightHand, matchedEntry.Value.RightHandAttachment);
-			SetHandAttachment(Realm.Godot.Animation.HumanoidBone.LeftHand, matchedEntry.Value.LeftHandAttachment);
+			if (!string.IsNullOrEmpty(matchedEntry.Value.RightHandAttachment))
+			{
+				SetHandAttachment(Realm.Godot.Animation.HumanoidBone.RightHand, matchedEntry.Value.RightHandAttachment);
+			}
+			if (!string.IsNullOrEmpty(matchedEntry.Value.LeftHandAttachment))
+			{
+				SetHandAttachment(Realm.Godot.Animation.HumanoidBone.LeftHand, matchedEntry.Value.LeftHandAttachment);
+			}
 		}
 	}
 
