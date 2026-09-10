@@ -1150,14 +1150,8 @@ public partial class GameHost
 				mapDir = Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 			}
 			LoadUnitMetadata(mapDir);
-			string metadataPath = System.IO.Path.Combine(mapDir, "metadata.json");
-			if (!System.IO.File.Exists(metadataPath)) return;
-
-			string jsonText = System.IO.File.ReadAllText(metadataPath);
-			if (string.IsNullOrWhiteSpace(jsonText)) return;
-
-			var root = System.Text.Json.Nodes.JsonNode.Parse(jsonText) as System.Text.Json.Nodes.JsonObject;
-			if (root == null) return;
+			var metaService = _metadataService ?? Realm.Godot.Services.MetadataService.Instance;
+			var metadata = metaService.LoadMetadata(mapDir, fallbackToTemplate: false);
 
 			ModelYOffsets.Clear();
 			ModelScales.Clear();
@@ -1171,219 +1165,123 @@ public partial class GameHost
 			ModelSpawnShaders.Clear();
 			ModelDeathShaders.Clear();
 
-			if (root.ContainsKey("ModelSpawnShaders") && root["ModelSpawnShaders"] is System.Text.Json.Nodes.JsonObject mssObj)
+			foreach (var kvp in metadata.ModelSpawnShaders)
 			{
-				foreach (var kvp in mssObj)
+				if (!string.IsNullOrWhiteSpace(kvp.Value))
 				{
-					if (kvp.Value != null && !string.IsNullOrWhiteSpace(kvp.Value.ToString()))
-					{
-						ModelSpawnShaders[NormalizeModelAssetKey(kvp.Key)] = kvp.Value.ToString().Trim();
-					}
+					ModelSpawnShaders[NormalizeModelAssetKey(kvp.Key)] = kvp.Value.Trim();
 				}
 			}
 
-			if (root.ContainsKey("ModelDeathShaders") && root["ModelDeathShaders"] is System.Text.Json.Nodes.JsonObject mdsObj)
+			foreach (var kvp in metadata.ModelDeathShaders)
 			{
-				foreach (var kvp in mdsObj)
+				if (!string.IsNullOrWhiteSpace(kvp.Value))
 				{
-					if (kvp.Value != null && !string.IsNullOrWhiteSpace(kvp.Value.ToString()))
-					{
-						ModelDeathShaders[NormalizeModelAssetKey(kvp.Key)] = kvp.Value.ToString().Trim();
-					}
+					ModelDeathShaders[NormalizeModelAssetKey(kvp.Key)] = kvp.Value.Trim();
 				}
 			}
 
-			if (root.ContainsKey("ModelOffsets") && root["ModelOffsets"] is System.Text.Json.Nodes.JsonObject offsetsObj)
+			foreach (var kvp in metadata.ModelOffsets)
 			{
-				foreach (var kvp in offsetsObj)
+				if (IsValidModelYOffset(kvp.Key, kvp.Value))
 				{
-					if (kvp.Value != null && float.TryParse(kvp.Value.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float val) && IsValidModelYOffset(kvp.Key, val))
-					{
-						ModelYOffsets[NormalizeModelAssetKey(kvp.Key)] = val;
-					}
+					ModelYOffsets[NormalizeModelAssetKey(kvp.Key)] = kvp.Value;
 				}
 			}
 
-			if (root.ContainsKey("ModelScales") && root["ModelScales"] is System.Text.Json.Nodes.JsonObject scalesObj)
+			foreach (var kvp in metadata.ModelScales)
 			{
-				foreach (var kvp in scalesObj)
+				if (IsValidModelScale(kvp.Key, kvp.Value))
 				{
-					if (kvp.Value != null && float.TryParse(kvp.Value.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float val) && IsValidModelScale(kvp.Key, val))
-					{
-						ModelScales[NormalizeModelAssetKey(kvp.Key)] = val;
-					}
+					ModelScales[NormalizeModelAssetKey(kvp.Key)] = kvp.Value;
 				}
 			}
 
-			if (root.ContainsKey("ModelCollisionCircleRatios") && root["ModelCollisionCircleRatios"] is System.Text.Json.Nodes.JsonObject circlesObj)
+			foreach (var kvp in metadata.ModelCollisionCircleRatios)
 			{
-				foreach (var kvp in circlesObj)
+				if (IsValidModelCollisionRatio(kvp.Key, kvp.Value))
 				{
-					if (kvp.Value != null && float.TryParse(kvp.Value.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float val) && IsValidModelCollisionRatio(kvp.Key, val))
-					{
-						ModelCollisionCircleRatios[NormalizeModelAssetKey(kvp.Key)] = val;
-					}
+					ModelCollisionCircleRatios[NormalizeModelAssetKey(kvp.Key)] = kvp.Value;
 				}
 			}
 
-			if (root.ContainsKey("ModelObstacleRadii") && root["ModelObstacleRadii"] is System.Text.Json.Nodes.JsonObject radiiObj)
+			foreach (var kvp in metadata.ModelObstacleRadii)
 			{
-				foreach (var kvp in radiiObj)
+				if (kvp.Value > 0f)
 				{
-					if (kvp.Value != null && float.TryParse(kvp.Value.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float val) && val > 0f)
-					{
-						ModelObstacleRadii[NormalizeModelAssetKey(kvp.Key)] = val;
-					}
+					ModelObstacleRadii[NormalizeModelAssetKey(kvp.Key)] = kvp.Value;
 				}
 			}
 
-			if (root.ContainsKey("ModelBrightness") && root["ModelBrightness"] is System.Text.Json.Nodes.JsonObject mbObj)
+			foreach (var kvp in metadata.ModelBrightness)
 			{
-				foreach (var kvp in mbObj)
+				ModelBrightness[NormalizeModelAssetKey(kvp.Key)] = kvp.Value;
+			}
+
+			foreach (var kvp in metadata.ModelNormalModes)
+			{
+				if (Enum.TryParse<ModelNormalMode>(kvp.Value, true, out var modeVal))
 				{
-					if (kvp.Value != null && float.TryParse(kvp.Value.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float val))
-					{
-						ModelBrightness[NormalizeModelAssetKey(kvp.Key)] = val;
-					}
+					ModelNormalModes[NormalizeModelAssetKey(kvp.Key)] = modeVal;
 				}
 			}
 
-			if (root.ContainsKey("ModelNormalModes") && root["ModelNormalModes"] is System.Text.Json.Nodes.JsonObject nmObj)
+			foreach (var kvp in metadata.ModelNormalizeLuminance)
 			{
-				foreach (var kvp in nmObj)
-				{
-					if (kvp.Value != null && Enum.TryParse<ModelNormalMode>(kvp.Value.ToString(), true, out var modeVal))
-					{
-						string nKey = NormalizeModelAssetKey(kvp.Key);
-						ModelNormalModes[nKey] = modeVal;
-					}
-				}
+				ModelNormalizeLuminance[NormalizeModelAssetKey(kvp.Key)] = kvp.Value;
 			}
 
-			if (root.ContainsKey("ModelNormalizeLuminance") && root["ModelNormalizeLuminance"] is System.Text.Json.Nodes.JsonObject nlObj)
+			foreach (var kvp in metadata.ModelIgnorePlayerColor)
 			{
-				foreach (var kvp in nlObj)
-				{
-					if (kvp.Value != null && bool.TryParse(kvp.Value.ToString(), out bool val))
-					{
-						ModelNormalizeLuminance[NormalizeModelAssetKey(kvp.Key)] = val;
-					}
-				}
+				ModelIgnorePlayerColor[NormalizeModelAssetKey(kvp.Key)] = kvp.Value;
 			}
 
-			if (root.ContainsKey("ModelIgnorePlayerColor") && root["ModelIgnorePlayerColor"] is System.Text.Json.Nodes.JsonObject ipcObj)
+			void ProcessEntities<T>(IEnumerable<T> items, float defaultScale, Func<T, string> getId, Func<T, string> getModelPath, Func<T, float> getYOffset, Func<T, float> getScale, Func<T, float> getCollisionCircle, Func<T, float> getBrightness, Func<T, string> getTint, Func<T, ModelNormalMode> getNormalMode, Func<T, bool> getNormalizeLuminance)
 			{
-				foreach (var kvp in ipcObj)
+				if (items == null) return;
+				foreach (var item in items)
 				{
-					if (kvp.Value != null && bool.TryParse(kvp.Value.ToString(), out bool val))
+					string uId = getId(item);
+					if (string.IsNullOrEmpty(uId)) continue;
+					string normKey = NormalizeModelAssetKey(uId);
+					float yVal = getYOffset(item);
+					ModelYOffsets[normKey] = yVal;
+					float sVal = getScale(item);
+					if (sVal > 0f)
 					{
-						ModelIgnorePlayerColor[NormalizeModelAssetKey(kvp.Key)] = val;
+						ModelScales[normKey] = sVal;
 					}
-				}
-			}
-
-			string[] entityArrays = new[] { "CustomUnits", "CustomBuildings", "CustomResources", "CustomProps" };
-			foreach (var arrKey in entityArrays)
-			{
-				if (root.ContainsKey(arrKey) && root[arrKey] is System.Text.Json.Nodes.JsonArray arr)
-				{
-					foreach (var item in arr)
+					else if (!ModelScales.ContainsKey(normKey))
 					{
-						if (item is System.Text.Json.Nodes.JsonObject uObj && uObj.ContainsKey("UnitId"))
+						ModelScales[normKey] = defaultScale;
+					}
+
+					string mPath = getModelPath(item);
+					if (!string.IsNullOrEmpty(mPath))
+					{
+						string normModel = NormalizeModelAssetKey(mPath);
+						if (ModelScales.TryGetValue(normKey, out float assignedScale) && !ModelScales.ContainsKey(normModel))
 						{
-							string uId = uObj["UnitId"]?.ToString() ?? "";
-							string normKey = NormalizeModelAssetKey(uId);
-							if (uObj.ContainsKey("YOffset") && float.TryParse(uObj["YOffset"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float yVal))
-							{
-								ModelYOffsets[normKey] = yVal;
-							}
-							if (uObj.ContainsKey("Scale") && float.TryParse(uObj["Scale"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float sVal) && sVal > 0f)
-							{
-								ModelScales[normKey] = sVal;
-							}
-							else if (uObj.ContainsKey("ModelScale") && float.TryParse(uObj["ModelScale"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float msVal) && msVal > 0f)
-							{
-								ModelScales[normKey] = msVal;
-							}
-							else if (!ModelScales.ContainsKey(normKey))
-							{
-								float defaultScale = arrKey switch
-								{
-									"CustomResources" => 2.75f,
-									"CustomBuildings" => 1.2f,
-									"CustomProps" => 1.0f,
-									"CustomUnits" => 1.5f,
-									_ => 1.5f
-								};
-								ModelScales[normKey] = defaultScale;
-							}
-							if (uObj.ContainsKey("ModelPath") && uObj["ModelPath"]?.ToString() is string mPath && !string.IsNullOrEmpty(mPath))
-							{
-								string normModel = NormalizeModelAssetKey(mPath);
-								if (ModelScales.TryGetValue(normKey, out float assignedScale) && !ModelScales.ContainsKey(normModel))
-								{
-									ModelScales[normModel] = assignedScale;
-								}
-							}
-							if (uObj.ContainsKey("CollisionCircle") && float.TryParse(uObj["CollisionCircle"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float rVal))
-							{
-								ModelCollisionCircleRatios[normKey] = rVal;
-							}
-							if (uObj.ContainsKey("Brightness") && float.TryParse(uObj["Brightness"]?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float brightVal))
-							{
-								ModelBrightness[normKey] = brightVal;
-							}
-							if (uObj.ContainsKey("Tint") && uObj["Tint"]?.ToString() is string tintStr && !string.IsNullOrEmpty(tintStr))
-							{
-								ModelColorTint[normKey] = Color.FromString(tintStr, new Color(1, 1, 1));
-							}
-							if (uObj.ContainsKey("NormalMode") && Enum.TryParse<ModelNormalMode>(uObj["NormalMode"]?.ToString(), true, out var nmVal))
-							{
-								ModelNormalModes[normKey] = nmVal;
-							}
-							else if (!ModelNormalModes.ContainsKey(normKey))
-							{
-								ModelNormalModes[normKey] = ModelNormalMode.Flat;
-							}
-							if (uObj.ContainsKey("NormalizeLuminance") && bool.TryParse(uObj["NormalizeLuminance"]?.ToString(), out bool nlVal))
-							{
-								ModelNormalizeLuminance[normKey] = nlVal;
-							}
-							if (uObj.ContainsKey("IgnorePlayerColor") && bool.TryParse(uObj["IgnorePlayerColor"]?.ToString(), out bool ipcVal))
-							{
-								ModelIgnorePlayerColor[normKey] = ipcVal;
-							}
-							else if (uObj.ContainsKey("ignore_player_color") && bool.TryParse(uObj["ignore_player_color"]?.ToString(), out bool ipcVal2))
-							{
-								ModelIgnorePlayerColor[normKey] = ipcVal2;
-							}
-							else if (arrKey == "CustomProps" || arrKey == "CustomResources")
-							{
-								ModelIgnorePlayerColor[normKey] = true;
-							}
-							string? entityModelPath = uObj["ModelPath"]?.ToString();
-							string spawnShader = uObj["spawn_shader"]?.ToString() ?? uObj["SpawnShader"]?.ToString();
-							if (!string.IsNullOrWhiteSpace(spawnShader))
-							{
-								ModelSpawnShaders[normKey] = spawnShader.Trim();
-								if (!string.IsNullOrEmpty(entityModelPath))
-								{
-									ModelSpawnShaders[NormalizeModelAssetKey(entityModelPath)] = spawnShader.Trim();
-								}
-							}
-							string deathShader = uObj["death_shader"]?.ToString() ?? uObj["DeathShader"]?.ToString() ?? uObj["despawn_shader"]?.ToString() ?? uObj["DespawnShader"]?.ToString();
-							if (!string.IsNullOrWhiteSpace(deathShader))
-							{
-								ModelDeathShaders[normKey] = deathShader.Trim();
-								if (!string.IsNullOrEmpty(entityModelPath))
-								{
-									ModelDeathShaders[NormalizeModelAssetKey(entityModelPath)] = deathShader.Trim();
-								}
-							}
+							ModelScales[normModel] = assignedScale;
 						}
 					}
+
+					ModelCollisionCircleRatios[normKey] = getCollisionCircle(item);
+					ModelBrightness[normKey] = getBrightness(item);
+					string tintStr = getTint(item);
+					if (!string.IsNullOrEmpty(tintStr))
+					{
+						ModelColorTint[normKey] = Color.FromString(tintStr, new Color(1, 1, 1));
+					}
+					ModelNormalModes[normKey] = getNormalMode(item);
+					ModelNormalizeLuminance[normKey] = getNormalizeLuminance(item);
 				}
 			}
+
+			ProcessEntities(metadata.CustomResources, 2.75f, r => r.UnitId, r => r.ModelPath, r => r.YOffset, r => r.Scale, r => r.CollisionCircle, r => r.Brightness, r => r.Tint, r => r.NormalMode, r => r.NormalizeLuminance);
+			ProcessEntities(metadata.CustomBuildings, 1.2f, b => b.UnitId, b => b.ModelPath, b => b.YOffset, b => b.Scale, b => b.CollisionCircle, b => b.Brightness, b => b.Tint, b => b.NormalMode, b => b.NormalizeLuminance);
+			ProcessEntities(metadata.CustomProps, 1.0f, p => p.UnitId, p => p.ModelPath, p => p.YOffset, p => p.Scale, p => p.CollisionCircle, p => p.Brightness, p => p.Tint, p => p.NormalMode, p => p.NormalizeLuminance);
+			ProcessEntities(metadata.CustomUnits, 1.5f, u => u.UnitId, u => u.ModelPath, u => u.YOffset, u => u.Scale, u => u.CollisionCircle, u => u.Brightness, u => u.Tint, u => u.NormalMode, u => u.NormalizeLuminance);
 
 			var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(mapDir);
 			if (assetsObj != null && assetsObj.ContainsKey("glb") && assetsObj["glb"] is System.Text.Json.Nodes.JsonObject glbObj)
@@ -1580,149 +1478,88 @@ public partial class GameHost
 			{
 				mapDir = Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 			}
-			string metadataPath = System.IO.Path.Combine(mapDir, "metadata.json");
-
-			System.Text.Json.Nodes.JsonObject root = new System.Text.Json.Nodes.JsonObject();
-			if (System.IO.File.Exists(metadataPath))
+			var metaService = _metadataService ?? Realm.Godot.Services.MetadataService.Instance;
+			metaService.UpdateMetadata(mapDir, meta =>
 			{
-				string text = System.IO.File.ReadAllText(metadataPath);
-				if (!string.IsNullOrWhiteSpace(text))
+				foreach (var kvp in ModelYOffsets) meta.ModelOffsets[kvp.Key] = kvp.Value;
+				foreach (var kvp in ModelScales) meta.ModelScales[kvp.Key] = kvp.Value;
+				foreach (var kvp in ModelCollisionCircleRatios) meta.ModelCollisionCircleRatios[kvp.Key] = kvp.Value;
+				foreach (var kvp in ModelObstacleRadii) meta.ModelObstacleRadii[kvp.Key] = kvp.Value;
+				foreach (var kvp in ModelBrightness) meta.ModelBrightness[kvp.Key] = kvp.Value;
+				foreach (var kvp in ModelNormalModes) meta.ModelNormalModes[kvp.Key] = kvp.Value.ToString();
+				foreach (var kvp in ModelNormalizeLuminance) meta.ModelNormalizeLuminance[kvp.Key] = kvp.Value;
+				foreach (var kvp in ModelIgnorePlayerColor) meta.ModelIgnorePlayerColor[kvp.Key] = kvp.Value;
+				foreach (var kvp in ModelSpawnShaders)
 				{
-					root = System.Text.Json.Nodes.JsonNode.Parse(text) as System.Text.Json.Nodes.JsonObject ?? new System.Text.Json.Nodes.JsonObject();
+					if (!string.IsNullOrWhiteSpace(kvp.Value)) meta.ModelSpawnShaders[kvp.Key] = kvp.Value;
 				}
-			}
-
-			if (!root.ContainsKey("ModelOffsets") || root["ModelOffsets"] is not System.Text.Json.Nodes.JsonObject) root["ModelOffsets"] = new System.Text.Json.Nodes.JsonObject();
-			var offsetsObj = root["ModelOffsets"]!.AsObject();
-			foreach (var kvp in ModelYOffsets)
-			{
-				offsetsObj[kvp.Key] = kvp.Value;
-			}
-
-			if (!root.ContainsKey("ModelScales") || root["ModelScales"] is not System.Text.Json.Nodes.JsonObject) root["ModelScales"] = new System.Text.Json.Nodes.JsonObject();
-			var scalesObj = root["ModelScales"]!.AsObject();
-			foreach (var kvp in ModelScales)
-			{
-				scalesObj[kvp.Key] = kvp.Value;
-			}
-
-			if (!root.ContainsKey("ModelCollisionCircleRatios") || root["ModelCollisionCircleRatios"] is not System.Text.Json.Nodes.JsonObject) root["ModelCollisionCircleRatios"] = new System.Text.Json.Nodes.JsonObject();
-			var circleObj = root["ModelCollisionCircleRatios"]!.AsObject();
-			foreach (var kvp in ModelCollisionCircleRatios)
-			{
-				circleObj[kvp.Key] = kvp.Value;
-			}
-
-			if (!root.ContainsKey("ModelObstacleRadii") || root["ModelObstacleRadii"] is not System.Text.Json.Nodes.JsonObject) root["ModelObstacleRadii"] = new System.Text.Json.Nodes.JsonObject();
-			var radiiObj = root["ModelObstacleRadii"]!.AsObject();
-			foreach (var kvp in ModelObstacleRadii)
-			{
-				radiiObj[kvp.Key] = kvp.Value;
-			}
-
-			if (!root.ContainsKey("ModelBrightness") || root["ModelBrightness"] is not System.Text.Json.Nodes.JsonObject) root["ModelBrightness"] = new System.Text.Json.Nodes.JsonObject();
-			var brightObj = root["ModelBrightness"]!.AsObject();
-			foreach (var kvp in ModelBrightness)
-			{
-				brightObj[kvp.Key] = kvp.Value;
-			}
-
-			if (!root.ContainsKey("ModelNormalModes") || root["ModelNormalModes"] is not System.Text.Json.Nodes.JsonObject) root["ModelNormalModes"] = new System.Text.Json.Nodes.JsonObject();
-			var normalObj = root["ModelNormalModes"]!.AsObject();
-			foreach (var kvp in ModelNormalModes)
-			{
-				normalObj[kvp.Key] = kvp.Value.ToString();
-			}
-
-			if (!root.ContainsKey("ModelNormalizeLuminance") || root["ModelNormalizeLuminance"] is not System.Text.Json.Nodes.JsonObject) root["ModelNormalizeLuminance"] = new System.Text.Json.Nodes.JsonObject();
-			var lumObj = root["ModelNormalizeLuminance"]!.AsObject();
-			foreach (var kvp in ModelNormalizeLuminance)
-			{
-				lumObj[kvp.Key] = kvp.Value;
-			}
-
-			if (!root.ContainsKey("ModelIgnorePlayerColor") || root["ModelIgnorePlayerColor"] is not System.Text.Json.Nodes.JsonObject) root["ModelIgnorePlayerColor"] = new System.Text.Json.Nodes.JsonObject();
-			var ipcObj = root["ModelIgnorePlayerColor"]!.AsObject();
-			foreach (var kvp in ModelIgnorePlayerColor)
-			{
-				ipcObj[kvp.Key] = kvp.Value;
-			}
-
-			if (!root.ContainsKey("ModelSpawnShaders") || root["ModelSpawnShaders"] is not System.Text.Json.Nodes.JsonObject) root["ModelSpawnShaders"] = new System.Text.Json.Nodes.JsonObject();
-			var spawnObj = root["ModelSpawnShaders"]!.AsObject();
-			foreach (var kvp in ModelSpawnShaders)
-			{
-				if (!string.IsNullOrWhiteSpace(kvp.Value)) spawnObj[kvp.Key] = kvp.Value;
-			}
-
-			if (!root.ContainsKey("ModelDeathShaders") || root["ModelDeathShaders"] is not System.Text.Json.Nodes.JsonObject) root["ModelDeathShaders"] = new System.Text.Json.Nodes.JsonObject();
-			var deathObj = root["ModelDeathShaders"]!.AsObject();
-			foreach (var kvp in ModelDeathShaders)
-			{
-				if (!string.IsNullOrWhiteSpace(kvp.Value)) deathObj[kvp.Key] = kvp.Value;
-			}
-
-			string[] entityArrays = new[] { "CustomUnits", "CustomBuildings", "CustomResources", "CustomProps" };
-			foreach (var arrKey in entityArrays)
-			{
-				if (root.ContainsKey(arrKey) && root[arrKey] is System.Text.Json.Nodes.JsonArray arr)
+				foreach (var kvp in ModelDeathShaders)
 				{
-					foreach (var item in arr)
+					if (!string.IsNullOrWhiteSpace(kvp.Value)) meta.ModelDeathShaders[kvp.Key] = kvp.Value;
+				}
+
+				void UpdateEntityShaders(List<GameHost.UnitMetadata> entities)
+				{
+					if (entities == null) return;
+					for (int i = 0; i < entities.Count; i++)
 					{
-						if (item is System.Text.Json.Nodes.JsonObject uObj && uObj.ContainsKey("UnitId"))
-						{
-							string uId = uObj["UnitId"]?.ToString() ?? "";
-							string normKey = NormalizeModelAssetKey(uId);
-							string mPath = uObj.ContainsKey("ModelPath") ? uObj["ModelPath"]?.ToString() : null;
-							string normModel = !string.IsNullOrEmpty(mPath) ? NormalizeModelAssetKey(mPath) : "";
+						var entity = entities[i];
+						if (string.IsNullOrEmpty(entity.UnitId)) continue;
+						string normKey = NormalizeModelAssetKey(entity.UnitId);
+						string normModel = !string.IsNullOrEmpty(entity.ModelPath) ? NormalizeModelAssetKey(entity.ModelPath) : "";
 
-							string sVal = "";
-							if (!string.IsNullOrEmpty(normKey) && ModelSpawnShaders.TryGetValue(normKey, out string sv1)) sVal = sv1;
-							else if (!string.IsNullOrEmpty(normModel) && ModelSpawnShaders.TryGetValue(normModel, out string sv2)) sVal = sv2;
-							else sVal = GetModelSpawnShader(uId);
+						string sVal = "";
+						if (!string.IsNullOrEmpty(normKey) && ModelSpawnShaders.TryGetValue(normKey, out string sv1)) sVal = sv1;
+						else if (!string.IsNullOrEmpty(normModel) && ModelSpawnShaders.TryGetValue(normModel, out string sv2)) sVal = sv2;
+						else sVal = GetModelSpawnShader(entity.UnitId);
 
-							if (!string.IsNullOrWhiteSpace(sVal))
-							{
-								uObj["spawn_shader"] = sVal;
-								uObj.Remove("SpawnShader");
-							}
-							else
-							{
-								uObj.Remove("spawn_shader");
-								uObj.Remove("SpawnShader");
-							}
+						entity.SpawnShader = !string.IsNullOrWhiteSpace(sVal) ? sVal : null;
 
-							string dVal = "";
-							if (!string.IsNullOrEmpty(normKey) && ModelDeathShaders.TryGetValue(normKey, out string dv1)) dVal = dv1;
-							else if (!string.IsNullOrEmpty(normModel) && ModelDeathShaders.TryGetValue(normModel, out string dv2)) dVal = dv2;
-							else dVal = GetModelDeathShader(uId);
+						string dVal = "";
+						if (!string.IsNullOrEmpty(normKey) && ModelDeathShaders.TryGetValue(normKey, out string dv1)) dVal = dv1;
+						else if (!string.IsNullOrEmpty(normModel) && ModelDeathShaders.TryGetValue(normModel, out string dv2)) dVal = dv2;
+						else dVal = GetModelDeathShader(entity.UnitId);
 
-							if (!string.IsNullOrWhiteSpace(dVal))
-							{
-								uObj["death_shader"] = dVal;
-								uObj.Remove("DeathShader");
-								uObj.Remove("despawn_shader");
-								uObj.Remove("DespawnShader");
-							}
-							else
-							{
-								uObj.Remove("death_shader");
-								uObj.Remove("DeathShader");
-								uObj.Remove("despawn_shader");
-								uObj.Remove("DespawnShader");
-							}
-						}
+						entity.DeathShader = !string.IsNullOrWhiteSpace(dVal) ? dVal : null;
+						entities[i] = entity;
 					}
 				}
-			}
 
-			root.Remove("Assets");
-			if (root.TryGetPropertyValue("MapProperties", out var mpNode) && mpNode is System.Text.Json.Nodes.JsonObject mpObj2)
-			{
-				mpObj2.Remove("Assets");
-			}
-			SaveLoadService.CleanMetadataJsonSchema(root);
-			MapJsonFormatter.SaveFormattedJson(metadataPath, root);
+				UpdateEntityShaders(meta.CustomUnits);
+				UpdateEntityShaders(meta.CustomBuildings);
+
+				if (meta.CustomResources != null)
+				{
+					for (int i = 0; i < meta.CustomResources.Count; i++)
+					{
+						var res = meta.CustomResources[i];
+						if (string.IsNullOrEmpty(res.UnitId)) continue;
+						string normKey = NormalizeModelAssetKey(res.UnitId);
+						string normModel = !string.IsNullOrEmpty(res.ModelPath) ? NormalizeModelAssetKey(res.ModelPath) : "";
+						string sVal = !string.IsNullOrEmpty(normKey) && ModelSpawnShaders.TryGetValue(normKey, out string sv1) ? sv1 : (!string.IsNullOrEmpty(normModel) && ModelSpawnShaders.TryGetValue(normModel, out string sv2) ? sv2 : GetModelSpawnShader(res.UnitId));
+						string dVal = !string.IsNullOrEmpty(normKey) && ModelDeathShaders.TryGetValue(normKey, out string dv1) ? dv1 : (!string.IsNullOrEmpty(normModel) && ModelDeathShaders.TryGetValue(normModel, out string dv2) ? dv2 : GetModelDeathShader(res.UnitId));
+						res.SpawnShader = !string.IsNullOrWhiteSpace(sVal) ? sVal : null;
+						res.DeathShader = !string.IsNullOrWhiteSpace(dVal) ? dVal : null;
+						meta.CustomResources[i] = res;
+					}
+				}
+
+				if (meta.CustomProps != null)
+				{
+					for (int i = 0; i < meta.CustomProps.Count; i++)
+					{
+						var prop = meta.CustomProps[i];
+						if (string.IsNullOrEmpty(prop.UnitId)) continue;
+						string normKey = NormalizeModelAssetKey(prop.UnitId);
+						string normModel = !string.IsNullOrEmpty(prop.ModelPath) ? NormalizeModelAssetKey(prop.ModelPath) : "";
+						string sVal = !string.IsNullOrEmpty(normKey) && ModelSpawnShaders.TryGetValue(normKey, out string sv1) ? sv1 : (!string.IsNullOrEmpty(normModel) && ModelSpawnShaders.TryGetValue(normModel, out string sv2) ? sv2 : GetModelSpawnShader(prop.UnitId));
+						string dVal = !string.IsNullOrEmpty(normKey) && ModelDeathShaders.TryGetValue(normKey, out string dv1) ? dv1 : (!string.IsNullOrEmpty(normModel) && ModelDeathShaders.TryGetValue(normModel, out string dv2) ? dv2 : GetModelDeathShader(prop.UnitId));
+						prop.SpawnShader = !string.IsNullOrWhiteSpace(sVal) ? sVal : null;
+						prop.DeathShader = !string.IsNullOrWhiteSpace(dVal) ? dVal : null;
+						meta.CustomProps[i] = prop;
+					}
+				}
+			});
 		}
 		catch (Exception ex)
 		{

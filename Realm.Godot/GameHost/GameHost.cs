@@ -52,12 +52,14 @@ public partial class GameHost : Node3D, IGameAPI
 	private SpectatorService _spectatorService;
 	private Realm.Godot.Services.ModelOptimization.ModelOptimizerService _modelOptimizerService;
 	private TerrainNavMeshService _terrainNavMeshService;
+	private Realm.Godot.Services.MetadataService _metadataService;
 
 	public CheatService CheatService => _cheatService;
 	public EnvironmentService EnvironmentService => _environmentService;
 	public SpectatorService SpectatorService => _spectatorService;
 	public ShroudService ShroudService => _shroudService;
 	public Realm.Godot.Services.ModelOptimization.ModelOptimizerService ModelOptimizerService => _modelOptimizerService;
+	public Realm.Godot.Services.MetadataService MetadataService => _metadataService;
 
 	public bool UnlimitedPowerEnabled { get; set; } = false;
 	public bool GigachadEnabled { get; set; } = false;
@@ -3478,284 +3480,113 @@ public class {mapName} : IMapScript
 		ActiveMapName = mapName;
 		LocalizationManager.CurrentMapName = mapName;
 		LocalizationManager.SetupTranslations();
+
 		string path = (mapName.StartsWith("user://") || mapName.StartsWith("res://") || System.IO.Path.IsPathRooted(mapName))
 			? System.IO.Path.Combine(mapName, "metadata.json")
 			: $"res://Maps/{mapName}/metadata.json";
-		string globalPath = ProjectSettings.GlobalizePath(path);
-		string jsonText = "";
 
-		if (FileAccess.FileExists(path))
+		var metaService = _metadataService ?? Realm.Godot.Services.MetadataService.Instance;
+		var metadata = metaService.LoadMetadata(path, fallbackToTemplate: true);
+
+		var newUnits = new Dictionary<string, UnitMetadata>(StringComparer.OrdinalIgnoreCase);
+		var newBuildings = new Dictionary<string, UnitMetadata>(StringComparer.OrdinalIgnoreCase);
+		var newProps = new Dictionary<string, PropMetadata>(StringComparer.OrdinalIgnoreCase);
+		var newResources = new Dictionary<string, ResourceMetadata>(StringComparer.OrdinalIgnoreCase);
+		var newWeapons = new Dictionary<string, WeaponMetadata>(StringComparer.OrdinalIgnoreCase);
+		var newAttachments = new Dictionary<string, AttachmentMetadata>(StringComparer.OrdinalIgnoreCase);
+		var newVfx = new Dictionary<string, VfxAttachmentConfig>(StringComparer.OrdinalIgnoreCase);
+
+		foreach (var meta in metadata.CustomWeapons)
 		{
-			using var file = FileAccess.Open(path, FileAccess.ModeFlags.Read);
-			jsonText = file.GetAsText();
+			if (!string.IsNullOrEmpty(meta.WeaponId))
+				newWeapons[meta.WeaponId] = meta;
 		}
-		else if (System.IO.File.Exists(globalPath))
+
+		foreach (var meta in metadata.CustomAttachments)
 		{
-			jsonText = System.IO.File.ReadAllText(globalPath);
-		}
-
-		if (!string.IsNullOrEmpty(jsonText))
-		{
-			try
+			if (!string.IsNullOrEmpty(meta.AttachmentId))
 			{
-				using var doc = System.Text.Json.JsonDocument.Parse(jsonText);
-				if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object)
-				{
-					var newUnits = new Dictionary<string, UnitMetadata>(StringComparer.OrdinalIgnoreCase);
-					var newBuildings = new Dictionary<string, UnitMetadata>(StringComparer.OrdinalIgnoreCase);
-					var newProps = new Dictionary<string, PropMetadata>(StringComparer.OrdinalIgnoreCase);
-					var newResources = new Dictionary<string, ResourceMetadata>(StringComparer.OrdinalIgnoreCase);
-					var newWeapons = new Dictionary<string, WeaponMetadata>(StringComparer.OrdinalIgnoreCase);
-					var newAttachments = new Dictionary<string, AttachmentMetadata>(StringComparer.OrdinalIgnoreCase);
-					var newVfx = new Dictionary<string, VfxAttachmentConfig>(StringComparer.OrdinalIgnoreCase);
-
-					bool hasStructuredArrays = false;
-
-					if (doc.RootElement.TryGetProperty("CustomWeapons", out var weapProp) && weapProp.ValueKind == JsonValueKind.Array)
-					{
-						var list = JsonSerializer.Deserialize<List<WeaponMetadata>>(weapProp.GetRawText(), Options);
-						if (list != null)
-						{
-							foreach (var meta in list)
-							{
-								if (!string.IsNullOrEmpty(meta.WeaponId))
-									newWeapons[meta.WeaponId] = meta;
-							}
-						}
-					}
-
-					if (doc.RootElement.TryGetProperty("CustomAttachments", out var attachProp) && attachProp.ValueKind == JsonValueKind.Array)
-					{
-						hasStructuredArrays = true;
-						var list = JsonSerializer.Deserialize<List<AttachmentMetadata>>(attachProp.GetRawText(), Options);
-						if (list != null)
-						{
-							foreach (var meta in list)
-							{
-								if (!string.IsNullOrEmpty(meta.AttachmentId))
-								{
-									newAttachments[meta.AttachmentId] = meta;
-								}
-							}
-						}
-					}
-
-					var assetsRoot = doc.RootElement.TryGetProperty("Assets", out var aProp) 
-						? aProp 
-						: (doc.RootElement.TryGetProperty("MapProperties", out var mpProp) && mpProp.TryGetProperty("Assets", out var mpaProp) ? mpaProp : default);
-					if (assetsRoot.ValueKind == JsonValueKind.Object && assetsRoot.TryGetProperty("glb", out var glbProp) && glbProp.TryGetProperty("attachments", out var attGlbProp) && attGlbProp.ValueKind == JsonValueKind.Object)
-					{
-						foreach (var itemProp in attGlbProp.EnumerateObject())
-						{
-							string fileName = itemProp.Name;
-							string id = System.IO.Path.GetFileNameWithoutExtension(fileName);
-							float scale = 1.0f;
-							Vector3 posOffset = Vector3.Zero;
-							Vector3 rotOffset = Vector3.Zero;
-							string hand = "RightHand";
-							string? childVfxId = null;
-							Vector3 childVfxPos = Vector3.Zero;
-							Vector3 childVfxRot = Vector3.Zero;
-							Vector3 childVfxScale = Vector3.One;
-							if (itemProp.Value.ValueKind == JsonValueKind.Object)
-							{
-								if (itemProp.Value.TryGetProperty("scale", out var sc) && sc.TryGetSingle(out var sVal)) scale = sVal;
-								if (itemProp.Value.TryGetProperty("position_offset", out var po) && po.ValueKind == JsonValueKind.Array)
-								{
-									var arr = po.EnumerateArray().ToArray();
-									if (arr.Length >= 3) posOffset = new Vector3(arr[0].GetSingle(), arr[1].GetSingle(), arr[2].GetSingle());
-								}
-								if (itemProp.Value.TryGetProperty("rotation_offset", out var ro) && ro.ValueKind == JsonValueKind.Array)
-								{
-									var arr = ro.EnumerateArray().ToArray();
-									if (arr.Length >= 3) rotOffset = new Vector3(arr[0].GetSingle(), arr[1].GetSingle(), arr[2].GetSingle());
-								}
-								if (itemProp.Value.TryGetProperty("default_hand", out var dh)) hand = dh.GetString() ?? "RightHand";
-								if (itemProp.Value.TryGetProperty("child_vfx_id", out var cvid)) childVfxId = cvid.GetString();
-								else if (itemProp.Value.TryGetProperty("ChildVfxId", out var cvid2)) childVfxId = cvid2.GetString();
-								if (itemProp.Value.TryGetProperty("child_vfx_position", out var cvp) && cvp.ValueKind == JsonValueKind.Array)
-								{
-									var arr = cvp.EnumerateArray().ToArray();
-									if (arr.Length >= 3) childVfxPos = new Vector3(arr[0].GetSingle(), arr[1].GetSingle(), arr[2].GetSingle());
-								}
-								if (itemProp.Value.TryGetProperty("child_vfx_rotation", out var cvr) && cvr.ValueKind == JsonValueKind.Array)
-								{
-									var arr = cvr.EnumerateArray().ToArray();
-									if (arr.Length >= 3) childVfxRot = new Vector3(arr[0].GetSingle(), arr[1].GetSingle(), arr[2].GetSingle());
-								}
-								if (itemProp.Value.TryGetProperty("child_vfx_scale", out var cvs) && cvs.ValueKind == JsonValueKind.Array)
-								{
-									var arr = cvs.EnumerateArray().ToArray();
-									if (arr.Length >= 3) childVfxScale = new Vector3(arr[0].GetSingle(), arr[1].GetSingle(), arr[2].GetSingle());
-								}
-							}
-							var meta = new AttachmentMetadata
-							{
-								AttachmentId = id,
-								Name = id,
-								ModelPath = System.IO.Path.Combine("Assets", "models", "attachments", fileName).Replace('\\', '/'),
-								Scale = scale,
-								PositionOffset = posOffset,
-								RotationOffset = rotOffset,
-								DefaultHand = hand,
-								ChildVfxId = childVfxId,
-								ChildVfxPosition = childVfxPos,
-								ChildVfxRotation = childVfxRot,
-								ChildVfxScale = childVfxScale
-							};
-							newAttachments[id] = meta;
-							newAttachments[fileName] = meta;
-						}
-					}
-
-					if (doc.RootElement.TryGetProperty("CustomUnits", out var unitsProp) && unitsProp.ValueKind == JsonValueKind.Array)
-					{
-						hasStructuredArrays = true;
-						var list = JsonSerializer.Deserialize<List<UnitMetadata>>(unitsProp.GetRawText(), Options);
-						if (list != null)
-						{
-							foreach (var meta in list)
-							{
-								if (!string.IsNullOrEmpty(meta.UnitId))
-								{
-									var copy = meta;
-									if (copy.Scale <= 0f) copy.Scale = 1.0f;
-									newUnits[copy.UnitId] = copy;
-								}
-							}
-						}
-					}
-
-					if (doc.RootElement.TryGetProperty("CustomBuildings", out var bldProp) && bldProp.ValueKind == JsonValueKind.Array)
-					{
-						hasStructuredArrays = true;
-						var list = JsonSerializer.Deserialize<List<UnitMetadata>>(bldProp.GetRawText(), Options);
-						if (list != null)
-						{
-							foreach (var meta in list)
-							{
-								if (!string.IsNullOrEmpty(meta.UnitId))
-								{
-									var copy = meta;
-									if (copy.Scale <= 0f) copy.Scale = 1.5f;
-									newBuildings[copy.UnitId] = copy;
-								}
-							}
-						}
-					}
-
-					if (doc.RootElement.TryGetProperty("CustomResources", out var resProp) && resProp.ValueKind == JsonValueKind.Array)
-					{
-						hasStructuredArrays = true;
-						var list = JsonSerializer.Deserialize<List<ResourceMetadata>>(resProp.GetRawText(), Options);
-						if (list != null)
-						{
-							foreach (var meta in list)
-							{
-								if (!string.IsNullOrEmpty(meta.UnitId))
-								{
-									var copy = meta;
-									if (copy.Scale <= 0f) copy.Scale = 2.75f;
-									if (copy.PathingType == 0) copy.PathingType = 255;
-									newResources[copy.UnitId] = copy;
-								}
-							}
-						}
-					}
-
-					if (doc.RootElement.TryGetProperty("CustomProps", out var propProp) && propProp.ValueKind == JsonValueKind.Array)
-					{
-						hasStructuredArrays = true;
-						var list = JsonSerializer.Deserialize<List<PropMetadata>>(propProp.GetRawText(), Options);
-						if (list != null)
-						{
-							foreach (var meta in list)
-							{
-								if (!string.IsNullOrEmpty(meta.UnitId))
-								{
-									var copy = meta;
-									if (copy.Scale <= 0f) copy.Scale = 1.25f;
-									if (copy.PathingType == 0) copy.PathingType = 255;
-									newProps[copy.UnitId] = copy;
-								}
-							}
-						}
-					}
-
-					if (doc.RootElement.TryGetProperty("CustomAbilities", out var abProp) && abProp.ValueKind == JsonValueKind.Array)
-					{
-						hasStructuredArrays = true;
-						var list = JsonSerializer.Deserialize<List<AbilityMetadata>>(abProp.GetRawText(), Options);
-						if (list != null)
-						{
-							RegisterCustomAbilities(list);
-						}
-					}
-
-					if (doc.RootElement.TryGetProperty("CustomVfx", out var vfxProp) && vfxProp.ValueKind == JsonValueKind.Array)
-					{
-						hasStructuredArrays = true;
-						var list = JsonSerializer.Deserialize<List<VfxAttachmentConfig>>(vfxProp.GetRawText(), Options);
-						if (list != null)
-						{
-							foreach (var cfg in list)
-							{
-								if (!string.IsNullOrEmpty(cfg.VfxId))
-								{
-									newVfx[cfg.VfxId] = cfg;
-								}
-							}
-						}
-					}
-
-					if (!hasStructuredArrays)
-					{
-						var loadedRegistry = JsonSerializer.Deserialize<Dictionary<string, UnitMetadata>>(jsonText, Options);
-						if (loadedRegistry != null)
-						{
-							var skipKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-							{
-								"MapProperties", "CustomWeapons", "CustomAbilities", "CustomUpgrades", "CustomItems", "CustomUnits", "CustomBuildings", "CustomResources", "CustomProps", "CustomVfx", "Assets"
-							};
-							foreach (var kvp in loadedRegistry)
-							{
-								if (!skipKeys.Contains(kvp.Key))
-								{
-									newUnits[kvp.Key] = kvp.Value;
-								}
-							}
-						}
-					}
-
-					UnitRegistry.Clear();
-					foreach (var kvp in newUnits) UnitRegistry[kvp.Key] = kvp.Value;
-
-					BuildingRegistry.Clear();
-					foreach (var kvp in newBuildings) BuildingRegistry[kvp.Key] = kvp.Value;
-
-					PropRegistry.Clear();
-					foreach (var kvp in newProps) PropRegistry[kvp.Key] = kvp.Value;
-
-					ResourceRegistry.Clear();
-					foreach (var kvp in newResources) ResourceRegistry[kvp.Key] = kvp.Value;
-
-					WeaponRegistry.Clear();
-					foreach (var kvp in newWeapons) WeaponRegistry[kvp.Key] = kvp.Value;
-
-					AttachmentRegistry.Clear();
-					foreach (var kvp in newAttachments) AttachmentRegistry[kvp.Key] = kvp.Value;
-
-					VfxRegistry.Clear();
-					foreach (var kvp in newVfx) VfxRegistry[kvp.Key] = kvp.Value;
-
-					Prop3D.ClearModelPathCache();
-				}
-			}
-			catch (Exception ex)
-			{
-				GD.PrintErr($"Failed to load custom unit registry: {ex.Message}");
+				newAttachments[meta.AttachmentId] = meta;
 			}
 		}
+
+		foreach (var meta in metadata.CustomUnits)
+		{
+			if (!string.IsNullOrEmpty(meta.UnitId))
+			{
+				var copy = meta;
+				if (copy.Scale <= 0f) copy.Scale = 1.0f;
+				newUnits[copy.UnitId] = copy;
+			}
+		}
+
+		foreach (var meta in metadata.CustomBuildings)
+		{
+			if (!string.IsNullOrEmpty(meta.UnitId))
+			{
+				var copy = meta;
+				if (copy.Scale <= 0f) copy.Scale = 1.5f;
+				newBuildings[copy.UnitId] = copy;
+			}
+		}
+
+		foreach (var meta in metadata.CustomResources)
+		{
+			if (!string.IsNullOrEmpty(meta.UnitId))
+			{
+				var copy = meta;
+				if (copy.Scale <= 0f) copy.Scale = 2.75f;
+				if (copy.PathingType == 0) copy.PathingType = 255;
+				newResources[copy.UnitId] = copy;
+			}
+		}
+
+		foreach (var meta in metadata.CustomProps)
+		{
+			if (!string.IsNullOrEmpty(meta.UnitId))
+			{
+				var copy = meta;
+				if (copy.Scale <= 0f) copy.Scale = 1.25f;
+				if (copy.PathingType == 0) copy.PathingType = 255;
+				newProps[copy.UnitId] = copy;
+			}
+		}
+
+		if (metadata.CustomAbilities.Count > 0)
+		{
+			RegisterCustomAbilities(metadata.CustomAbilities);
+		}
+
+		foreach (var cfg in metadata.CustomVfx)
+		{
+			if (!string.IsNullOrEmpty(cfg.VfxId))
+			{
+				newVfx[cfg.VfxId] = cfg;
+			}
+		}
+
+		UnitRegistry.Clear();
+		foreach (var kvp in newUnits) UnitRegistry[kvp.Key] = kvp.Value;
+
+		BuildingRegistry.Clear();
+		foreach (var kvp in newBuildings) BuildingRegistry[kvp.Key] = kvp.Value;
+
+		PropRegistry.Clear();
+		foreach (var kvp in newProps) PropRegistry[kvp.Key] = kvp.Value;
+
+		ResourceRegistry.Clear();
+		foreach (var kvp in newResources) ResourceRegistry[kvp.Key] = kvp.Value;
+
+		WeaponRegistry.Clear();
+		foreach (var kvp in newWeapons) WeaponRegistry[kvp.Key] = kvp.Value;
+
+		AttachmentRegistry.Clear();
+		foreach (var kvp in newAttachments) AttachmentRegistry[kvp.Key] = kvp.Value;
+
+		VfxRegistry.Clear();
+		foreach (var kvp in newVfx) VfxRegistry[kvp.Key] = kvp.Value;
+
+		Prop3D.ClearModelPathCache();
 	}
 
 	public void SaveAttachmentDefaultsToMetadata(string fileName, AttachmentMetadata meta)

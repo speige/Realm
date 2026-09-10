@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using Realm.Godot.Animation;
 using Realm.Godot.Utils;
 using Realm.Godot.VFX;
+using Realm.Godot.Services;
 
 public partial class ObjectAttachmentDialog : FloatingDialogBase
 {
@@ -1732,76 +1733,64 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 			GD.PrintErr($"[ObjectAttachmentDialog] Error loading unioned assets: {ex.Message}");
 		}
 
-		// 4. Metadata.json custom collections
-		string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
-		if (!System.IO.File.Exists(metadataPath))
+		try
 		{
-			string tPath = PathUtils.FindPath("MapTemplate/metadata.json");
-			if (System.IO.File.Exists(tPath)) metadataPath = tPath;
-		}
+			var metadata = MetadataService.Instance.LoadMetadata(wsPath, fallbackToTemplate: true);
 
-		if (System.IO.File.Exists(metadataPath))
-		{
-			try
+			if (metadata.CustomItems != null)
 			{
-				string jsonStr = System.IO.File.ReadAllText(metadataPath);
-				var root = JsonNode.Parse(jsonStr)?.AsObject();
-				if (root != null)
+				foreach (var it in metadata.CustomItems)
 				{
-					void CollectCustomModels(string arrayName, string[] idProperties)
+					string val = !string.IsNullOrEmpty(it.ItemId) ? it.ItemId : (!string.IsNullOrEmpty(it.Name) ? it.Name : "");
+					if (!string.IsNullOrEmpty(val))
 					{
-						if (root[arrayName] is JsonArray arr)
-						{
-							foreach (var node in arr)
-							{
-								if (node is JsonObject obj)
-								{
-									foreach (var prop in idProperties)
-									{
-										string? val = obj[prop]?.ToString();
-										if (!string.IsNullOrEmpty(val))
-										{
-											string cleanId = System.IO.Path.GetFileNameWithoutExtension(val);
-											if (seen.Add(cleanId))
-											{
-												result.Add(cleanId);
-											}
-											break;
-										}
-									}
-								}
-							}
-						}
-					}
-
-					CollectCustomModels("CustomItems", new[] { "ItemId", "ModelPath", "AttachmentId", "UnitId", "Name" });
-					CollectCustomModels("CustomWeapons", new[] { "WeaponId", "ModelPath", "AttachmentId", "Name" });
-					CollectCustomModels("CustomAttachments", new[] { "AttachmentId", "attachment_id", "ModelPath" });
-
-					if (root["CustomVfx"] is JsonArray customVfxArr)
-					{
-						foreach (var node in customVfxArr)
-						{
-							if (node is JsonObject vfxObj)
-							{
-								string? vId = vfxObj["VfxId"]?.ToString() ?? vfxObj["vfxId"]?.ToString();
-								if (!string.IsNullOrEmpty(vId))
-								{
-									string vfxKey = $"vfx:{vId}";
-									if (seen.Add(vfxKey))
-									{
-										result.Add(vfxKey);
-									}
-								}
-							}
-						}
+						string cleanId = System.IO.Path.GetFileNameWithoutExtension(val);
+						if (seen.Add(cleanId)) result.Add(cleanId);
 					}
 				}
 			}
-			catch (Exception ex)
+
+			if (metadata.CustomWeapons != null)
 			{
-				GD.PrintErr($"[ObjectAttachmentDialog] Error scanning metadata: {ex.Message}");
+				foreach (var wpn in metadata.CustomWeapons)
+				{
+					string val = !string.IsNullOrEmpty(wpn.WeaponId) ? wpn.WeaponId : (!string.IsNullOrEmpty(wpn.ProjectileModelPath) ? wpn.ProjectileModelPath : (!string.IsNullOrEmpty(wpn.Name) ? wpn.Name : ""));
+					if (!string.IsNullOrEmpty(val))
+					{
+						string cleanId = System.IO.Path.GetFileNameWithoutExtension(val);
+						if (seen.Add(cleanId)) result.Add(cleanId);
+					}
+				}
 			}
+
+			if (metadata.CustomAttachments != null)
+			{
+				foreach (var att in metadata.CustomAttachments)
+				{
+					string val = !string.IsNullOrEmpty(att.AttachmentId) ? att.AttachmentId : (!string.IsNullOrEmpty(att.ModelPath) ? att.ModelPath : "");
+					if (!string.IsNullOrEmpty(val))
+					{
+						string cleanId = System.IO.Path.GetFileNameWithoutExtension(val);
+						if (seen.Add(cleanId)) result.Add(cleanId);
+					}
+				}
+			}
+
+			if (metadata.CustomVfx != null)
+			{
+				foreach (var vfx in metadata.CustomVfx)
+				{
+					if (!string.IsNullOrEmpty(vfx.VfxId))
+					{
+						string vfxKey = $"vfx:{vfx.VfxId}";
+						if (seen.Add(vfxKey)) result.Add(vfxKey);
+					}
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[ObjectAttachmentDialog] Error scanning metadata: {ex.Message}");
 		}
 
 		// 5. GameHost.AttachmentRegistry

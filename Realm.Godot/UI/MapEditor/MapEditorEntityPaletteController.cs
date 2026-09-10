@@ -1,7 +1,9 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Realm.Godot.VFX;
+using Realm.Godot.Services;
 
 public class MapEditorEntityPaletteController
 {
@@ -180,114 +182,97 @@ public class MapEditorEntityPaletteController
 		{
 			string wsPath = MapEditorHUD.TempWorkspaceGodotPath;
 			string globalWs = Godot.ProjectSettings.GlobalizePath(wsPath);
-			string metadataPath = System.IO.Path.Combine(globalWs, "metadata.json");
 
-			if (System.IO.File.Exists(metadataPath))
+			if (MetadataService.Instance.TryLoadMetadata(globalWs, out var metadata))
 			{
-				string json = System.IO.File.ReadAllText(metadataPath);
-				var rootNode = System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject;
-				if (rootNode != null)
+				if (category == "VFX")
 				{
-					if (category == "VFX")
+					foreach (var prim in Enum.GetValues<VfxPrimitiveType>())
 					{
-						foreach (var prim in Enum.GetValues<VfxPrimitiveType>())
+						string primKey = $"vfx:{prim}";
+						if (!_categoryFiles.Contains(primKey))
 						{
-							string primKey = $"vfx:{prim}";
-							if (!_categoryFiles.Contains(primKey))
+							_categoryFiles.Add(primKey);
+							_idToDisplayName[primKey] = "✨ " + prim.ToString();
+						}
+					}
+
+					if (GameHost.VfxRegistry != null)
+					{
+						foreach (var kvp in GameHost.VfxRegistry)
+						{
+							string vfxKey = kvp.Key;
+							if (!_categoryFiles.Contains(vfxKey))
 							{
-								_categoryFiles.Add(primKey);
-								_idToDisplayName[primKey] = "✨ " + prim.ToString();
+								_categoryFiles.Add(vfxKey);
+								_idToDisplayName[vfxKey] = "✨ " + (!string.IsNullOrEmpty(kvp.Value.Name) ? kvp.Value.Name : kvp.Key);
 							}
 						}
+					}
 
-						if (GameHost.VfxRegistry != null)
+					if (metadata.CustomVfx != null)
+					{
+						foreach (var vObj in metadata.CustomVfx)
 						{
-							foreach (var kvp in GameHost.VfxRegistry)
+							string vId = vObj.VfxId ?? "";
+							string name = vObj.Name ?? "";
+							if (!string.IsNullOrEmpty(vId) && !_categoryFiles.Contains(vId))
 							{
-								string vfxKey = kvp.Key;
-								if (!_categoryFiles.Contains(vfxKey))
+								_categoryFiles.Add(vId);
+								if (!string.IsNullOrEmpty(name))
 								{
-									_categoryFiles.Add(vfxKey);
-									_idToDisplayName[vfxKey] = "✨ " + (!string.IsNullOrEmpty(kvp.Value.Name) ? kvp.Value.Name : kvp.Key);
-								}
-							}
-						}
-
-						if (rootNode.ContainsKey("CustomVfx") && rootNode["CustomVfx"] is System.Text.Json.Nodes.JsonArray customVfxArr)
-						{
-							foreach (var node in customVfxArr)
-							{
-								if (node is System.Text.Json.Nodes.JsonObject vObj && vObj.ContainsKey("VfxId"))
-								{
-									string vId = vObj["VfxId"]?.ToString() ?? "";
-									string name = vObj.ContainsKey("Name") ? vObj["Name"]?.ToString() ?? "" : "";
-									if (!string.IsNullOrEmpty(vId) && !_categoryFiles.Contains(vId))
-									{
-										_categoryFiles.Add(vId);
-										if (!string.IsNullOrEmpty(name))
-										{
-											_idToDisplayName[vId] = "✨ " + name;
-										}
-									}
+									_idToDisplayName[vId] = "✨ " + name;
 								}
 							}
 						}
 					}
-					else if (category == "Decals")
+				}
+				else if (category == "Decals")
+				{
+					var unionedAssets = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(globalWs);
+					if (unionedAssets.ContainsKey("decals") && unionedAssets["decals"] is System.Text.Json.Nodes.JsonObject decalsObj)
 					{
-						var unionedAssets = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(globalWs);
-						if (unionedAssets.ContainsKey("decals") && unionedAssets["decals"] is System.Text.Json.Nodes.JsonObject decalsObj)
+						foreach (var kvp in decalsObj)
 						{
-							foreach (var kvp in decalsObj)
+							string decalFile = kvp.Key;
+							string relDecalPath = System.IO.Path.Combine("Assets", "decals", decalFile);
+							if (!_categoryFiles.Contains(relDecalPath) && !_categoryFiles.Contains(decalFile))
 							{
-								string decalFile = kvp.Key;
-								string relDecalPath = System.IO.Path.Combine("Assets", "decals", decalFile);
-								if (!_categoryFiles.Contains(relDecalPath) && !_categoryFiles.Contains(decalFile))
+								if (System.IO.File.Exists(System.IO.Path.Combine(globalWs, relDecalPath)))
 								{
-									if (System.IO.File.Exists(System.IO.Path.Combine(globalWs, relDecalPath)))
-									{
-										_categoryFiles.Add(relDecalPath);
-									}
-									else if (System.IO.File.Exists(System.IO.Path.Combine(globalWs, decalFile)))
-									{
-										_categoryFiles.Add(decalFile);
-									}
-									else
-									{
-										_categoryFiles.Add(relDecalPath);
-									}
+									_categoryFiles.Add(relDecalPath);
+								}
+								else if (System.IO.File.Exists(System.IO.Path.Combine(globalWs, decalFile)))
+								{
+									_categoryFiles.Add(decalFile);
+								}
+								else
+								{
+									_categoryFiles.Add(relDecalPath);
 								}
 							}
 						}
 					}
-					else
+				}
+				else
+				{
+					IEnumerable<(string UnitId, string Name)> entities = category switch
 					{
-						string primaryArrayKey = category switch
-						{
-							"Units" or "Characters" => "CustomUnits",
-							"Buildings" => "CustomBuildings",
-							"Resources" or "Environment" => "CustomResources",
-							"Props" => "CustomProps",
-							_ => "CustomUnits"
-						};
+						"Units" or "Characters" => metadata.CustomUnits.Select(u => (u.UnitId, u.Name)),
+						"Buildings" => metadata.CustomBuildings.Select(b => (b.UnitId, b.Name)),
+						"Resources" or "Environment" => metadata.CustomResources.Select(r => (r.UnitId, r.Name)),
+						"Props" => metadata.CustomProps.Select(p => (p.UnitId, p.Name)),
+						_ => metadata.CustomUnits.Select(u => (u.UnitId, u.Name))
+					};
 
-						if (rootNode.ContainsKey(primaryArrayKey) && rootNode[primaryArrayKey] is System.Text.Json.Nodes.JsonArray primaryArr)
+					foreach (var (uId, name) in entities)
+					{
+						if (!string.IsNullOrEmpty(uId) && !_categoryFiles.Contains(uId))
 						{
-							foreach (var node in primaryArr)
+							_categoryFiles.Add(uId);
+							if (!string.IsNullOrEmpty(name))
 							{
-								if (node is System.Text.Json.Nodes.JsonObject uObj && uObj.ContainsKey("UnitId"))
-								{
-									string uId = uObj["UnitId"]?.ToString() ?? "";
-									string name = uObj.ContainsKey("Name") ? uObj["Name"]?.ToString() ?? "" : "";
-									if (!string.IsNullOrEmpty(uId) && !_categoryFiles.Contains(uId))
-									{
-										_categoryFiles.Add(uId);
-										if (!string.IsNullOrEmpty(name))
-										{
-											_idToDisplayName[uId] = name;
-										}
-									}
-								}
+								_idToDisplayName[uId] = name;
 							}
 						}
 					}

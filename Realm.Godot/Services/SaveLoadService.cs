@@ -16,6 +16,7 @@ using Realm.Ecs.Services;
 using Realm.Godot.Utils;
 using Realm.Godot.VFX;
 using Realm.Shared.Metadata;
+using Realm.Godot.Services;
 
 public class SaveLoadService
 {
@@ -506,12 +507,7 @@ public class SaveLoadService
 			{
 				try
 				{
-					var metaRoot = JsonNode.Parse(File.ReadAllText(metaPath)) as JsonObject;
-					if (metaRoot != null)
-					{
-						CleanMetadataJsonSchema(metaRoot);
-						MapJsonFormatter.SaveFormattedJson(metaPath, metaRoot);
-					}
+					MetadataService.Instance.UpdateMetadata(directory, meta => MetadataService.Instance.CleanMetadata(meta));
 				}
 				catch (Exception ex)
 				{
@@ -1464,37 +1460,16 @@ public class SaveLoadService
 		if (GameHost.PropRegistry != null && GameHost.PropRegistry.ContainsKey(propId)) return true;
 		if (GameHost.ResourceRegistry != null && GameHost.ResourceRegistry.ContainsKey(propId)) return true;
 
-		string metaPath = !string.IsNullOrEmpty(mapDirectory)
-			? Path.Combine(mapDirectory, "metadata.json")
-			: Path.Combine(MapWorkspaceService.GetActiveWorkspacePath(), "metadata.json");
+		string targetDir = !string.IsNullOrEmpty(mapDirectory)
+			? mapDirectory
+			: MapWorkspaceService.GetActiveWorkspacePath();
 
-		if (File.Exists(metaPath))
+		if (MetadataService.Instance.TryLoadMetadata(targetDir, out var metadata))
 		{
-			try
-			{
-				string json = File.ReadAllText(metaPath);
-				using var doc = JsonDocument.Parse(json);
-				if (doc.RootElement.ValueKind == JsonValueKind.Object)
-				{
-					if (doc.RootElement.TryGetProperty("CustomProps", out var propsProp) && propsProp.ValueKind == JsonValueKind.Array)
-					{
-						foreach (var el in propsProp.EnumerateArray())
-						{
-							if (el.TryGetProperty("UnitId", out var idProp) && propId.Equals(idProp.GetString(), StringComparison.OrdinalIgnoreCase))
-								return true;
-						}
-					}
-					if (doc.RootElement.TryGetProperty("CustomResources", out var resProp) && resProp.ValueKind == JsonValueKind.Array)
-					{
-						foreach (var el in resProp.EnumerateArray())
-						{
-							if (el.TryGetProperty("UnitId", out var idProp) && propId.Equals(idProp.GetString(), StringComparison.OrdinalIgnoreCase))
-								return true;
-						}
-					}
-				}
-			}
-			catch { }
+			if (metadata.CustomProps != null && metadata.CustomProps.Any(p => propId.Equals(p.UnitId, StringComparison.OrdinalIgnoreCase)))
+				return true;
+			if (metadata.CustomResources != null && metadata.CustomResources.Any(r => propId.Equals(r.UnitId, StringComparison.OrdinalIgnoreCase)))
+				return true;
 		}
 
 		return false;
@@ -1507,53 +1482,16 @@ public class SaveLoadService
 		if (GameHost.UnitRegistry != null && GameHost.UnitRegistry.ContainsKey(unitId)) return true;
 		if (GameHost.BuildingRegistry != null && GameHost.BuildingRegistry.ContainsKey(unitId)) return true;
 
-		string metaPath = !string.IsNullOrEmpty(mapDirectory)
-			? Path.Combine(mapDirectory, "metadata.json")
-			: Path.Combine(MapWorkspaceService.GetActiveWorkspacePath(), "metadata.json");
+		string targetDir = !string.IsNullOrEmpty(mapDirectory)
+			? mapDirectory
+			: MapWorkspaceService.GetActiveWorkspacePath();
 
-		if (File.Exists(metaPath))
+		if (MetadataService.Instance.TryLoadMetadata(targetDir, out var metadata))
 		{
-			try
-			{
-				string json = File.ReadAllText(metaPath);
-				using var doc = JsonDocument.Parse(json);
-				if (doc.RootElement.ValueKind == JsonValueKind.Object)
-				{
-					if (doc.RootElement.TryGetProperty("CustomUnits", out var unitsProp) && unitsProp.ValueKind == JsonValueKind.Array)
-					{
-						foreach (var el in unitsProp.EnumerateArray())
-						{
-							if (el.TryGetProperty("UnitId", out var idProp) && unitId.Equals(idProp.GetString(), StringComparison.OrdinalIgnoreCase))
-								return true;
-						}
-					}
-					if (doc.RootElement.TryGetProperty("CustomBuildings", out var bldProp) && bldProp.ValueKind == JsonValueKind.Array)
-					{
-						foreach (var el in bldProp.EnumerateArray())
-						{
-							if (el.TryGetProperty("UnitId", out var idProp) && unitId.Equals(idProp.GetString(), StringComparison.OrdinalIgnoreCase))
-								return true;
-						}
-					}
-					bool hasStructuredArrays = doc.RootElement.TryGetProperty("CustomUnits", out _)
-						|| doc.RootElement.TryGetProperty("CustomBuildings", out _)
-						|| doc.RootElement.TryGetProperty("CustomProps", out _)
-						|| doc.RootElement.TryGetProperty("CustomResources", out _);
-					if (!hasStructuredArrays)
-					{
-						foreach (var prop in doc.RootElement.EnumerateObject())
-						{
-							if (!prop.Name.Equals("MapProperties", StringComparison.OrdinalIgnoreCase) &&
-								!prop.Name.Equals("Assets", StringComparison.OrdinalIgnoreCase) &&
-								unitId.Equals(prop.Name, StringComparison.OrdinalIgnoreCase))
-							{
-								return true;
-							}
-						}
-					}
-				}
-			}
-			catch { }
+			if (metadata.CustomUnits != null && metadata.CustomUnits.Any(u => unitId.Equals(u.UnitId, StringComparison.OrdinalIgnoreCase)))
+				return true;
+			if (metadata.CustomBuildings != null && metadata.CustomBuildings.Any(b => unitId.Equals(b.UnitId, StringComparison.OrdinalIgnoreCase)))
+				return true;
 		}
 
 		return false;

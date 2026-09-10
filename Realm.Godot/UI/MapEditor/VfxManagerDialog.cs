@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Realm.Godot.Utils;
 using Realm.Godot.VFX;
+using Realm.Godot.Services;
 
 public partial class VfxManagerDialog : FloatingDialogBase
 {
@@ -366,40 +367,21 @@ public partial class VfxManagerDialog : FloatingDialogBase
 		}
 		catch { }
 
-		string metadataPath = Path.Combine(wsPath, "metadata.json");
-		if (!File.Exists(metadataPath))
+		try
 		{
-			string tPath = PathUtils.FindPath("MapTemplate/metadata.json");
-			if (File.Exists(tPath)) metadataPath = tPath;
-		}
-
-		if (File.Exists(metadataPath))
-		{
-			try
+			var metadata = MetadataService.Instance.LoadMetadata(wsPath, fallbackToTemplate: true);
+			if (metadata.CustomVfx != null)
 			{
-				string jsonStr = File.ReadAllText(metadataPath);
-				var root = JsonNode.Parse(jsonStr)?.AsObject();
-				if (root?["CustomVfx"] is JsonArray customVfxArr)
+				foreach (var cfg in metadata.CustomVfx)
 				{
-					foreach (var node in customVfxArr)
+					if (cfg != null && !string.IsNullOrEmpty(cfg.VfxId))
 					{
-						if (node is JsonObject obj)
-						{
-							try
-							{
-								var cfg = JsonSerializer.Deserialize<VfxAttachmentConfig>(obj.ToJsonString());
-								if (cfg != null && !string.IsNullOrEmpty(cfg.VfxId))
-								{
-									result[cfg.VfxId] = cfg;
-								}
-							}
-							catch { }
-						}
+						result[cfg.VfxId] = cfg;
 					}
 				}
 			}
-			catch { }
 		}
+		catch { }
 
 		return result;
 	}

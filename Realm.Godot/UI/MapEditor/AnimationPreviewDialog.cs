@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Realm.Godot.Animation;
 using Realm.Godot.Utils;
+using Realm.Godot.Services;
 
 public partial class AnimationPreviewDialog : FloatingDialogBase
 {
@@ -337,28 +338,11 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 				try
 				{
 					string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
-					string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
-					if (!System.IO.File.Exists(metadataPath))
+					var metadata = MetadataService.Instance.LoadMetadata(wsPath, fallbackToTemplate: true);
+					var unit = metadata.GetUnit(unitId);
+					if (unit.HasValue && !string.IsNullOrEmpty(unit.Value.ModelPath))
 					{
-						string tPath = PathUtils.FindPath("MapTemplate/metadata.json");
-						if (System.IO.File.Exists(tPath)) metadataPath = tPath;
-					}
-					if (System.IO.File.Exists(metadataPath))
-					{
-						string json = System.IO.File.ReadAllText(metadataPath);
-						var root = System.Text.Json.Nodes.JsonNode.Parse(json)?.AsObject();
-						var customUnits = root?["CustomUnits"]?.AsArray();
-						if (customUnits != null)
-						{
-							foreach (var uNode in customUnits)
-							{
-								if (uNode?["UnitId"]?.ToString() == unitId)
-								{
-									modelPath = uNode["ModelPath"]?.ToString();
-									break;
-								}
-							}
-						}
+						modelPath = unit.Value.ModelPath;
 					}
 				}
 				catch { }
@@ -410,57 +394,17 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 			try
 			{
 				string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
-				string metadataPath = System.IO.Path.Combine(wsPath, "metadata.json");
-				if (!System.IO.File.Exists(metadataPath))
+				var metadata = MetadataService.Instance.LoadMetadata(wsPath, fallbackToTemplate: true);
+				var unit = metadata.GetUnit(_currentUnitId);
+				if (unit.HasValue && unit.Value.Animations != null)
 				{
-					string tPath = PathUtils.FindPath("MapTemplate/metadata.json");
-					if (System.IO.File.Exists(tPath)) metadataPath = tPath;
-				}
-				if (System.IO.File.Exists(metadataPath))
-				{
-					string json = System.IO.File.ReadAllText(metadataPath);
-					var root = System.Text.Json.Nodes.JsonNode.Parse(json)?.AsObject();
-					var customUnits = root?["CustomUnits"]?.AsArray();
-					if (customUnits != null)
+					foreach (var kvp in unit.Value.Animations)
 					{
-						foreach (var uNode in customUnits)
-						{
-							if (uNode?["UnitId"]?.ToString() == _currentUnitId)
-							{
-								var anims = uNode["Animations"]?.AsObject();
-								if (anims != null)
-								{
-									foreach (var prop in anims)
-									{
-										var list = new List<GameHost.UnitAnimationEntry>();
-										if (prop.Value is System.Text.Json.Nodes.JsonArray arr)
-										{
-											foreach (var item in arr)
-											{
-												if (item is System.Text.Json.Nodes.JsonObject obj)
-												{
-													string a = obj["Animation"]?.ToString() ?? obj["Name"]?.ToString() ?? string.Empty;
-													string? r = obj["RightHandAttachment"]?.ToString() ?? obj["RightHand"]?.ToString();
-													string? l = obj["LeftHandAttachment"]?.ToString() ?? obj["LeftHand"]?.ToString();
-													list.Add(new GameHost.UnitAnimationEntry { Animation = a, RightHandAttachment = r, LeftHandAttachment = l });
-												}
-												else if (item != null)
-												{
-													list.Add(new GameHost.UnitAnimationEntry { Animation = item.ToString() });
-												}
-											}
-										}
-										else if (prop.Value != null)
-										{
-											list.Add(new GameHost.UnitAnimationEntry { Animation = prop.Value.ToString() });
-										}
-										_workingAnimations[prop.Key] = list;
-										_initialAnimations[prop.Key] = new List<GameHost.UnitAnimationEntry>(list);
-									}
-								}
-								break;
-							}
-						}
+						var list = kvp.Value != null
+							? new List<GameHost.UnitAnimationEntry>(kvp.Value)
+							: new List<GameHost.UnitAnimationEntry>();
+						_workingAnimations[kvp.Key] = list;
+						_initialAnimations[kvp.Key] = new List<GameHost.UnitAnimationEntry>(list);
 					}
 				}
 			}
