@@ -66,7 +66,6 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	private SpritesheetAssetEditDialog _spritesheetEditDialog;
 	private TerrainTextureEditDialog _textureEditDialog;
 	private DecalSettingsDialog _decalEditDialog;
-	private ChangeAssetTypeDialog _changeTypeDialog;
 	private ShaderEditorDialog _shaderEditDialog;
 
 	private string _currentCategory = "glb_characters";
@@ -94,7 +93,6 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		_spritesheetEditDialog = new SpritesheetAssetEditDialog(hud);
 		_textureEditDialog = new TerrainTextureEditDialog(hud);
 		_decalEditDialog = new DecalSettingsDialog(hud);
-		_changeTypeDialog = new ChangeAssetTypeDialog(hud);
 		_shaderEditDialog = new ShaderEditorDialog(hud);
 
 		_audioPlayer = new AudioStreamPlayer();
@@ -262,9 +260,9 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		_optAssetCategory.SetItemMetadata(11, "icons");
 		_optAssetCategory.AddItem(TranslationServer.Translate("Decals"), 12);
 		_optAssetCategory.SetItemMetadata(12, "decals");
-		_optAssetCategory.AddItem(TranslationServer.Translate("Ribbon Textures"), 13);
+		_optAssetCategory.AddItem(TranslationServer.Translate("Ribbons"), 13);
 		_optAssetCategory.SetItemMetadata(13, "ribbons");
-		_optAssetCategory.AddItem(TranslationServer.Translate("Noise Textures"), 14);
+		_optAssetCategory.AddItem(TranslationServer.Translate("Noise"), 14);
 		_optAssetCategory.SetItemMetadata(14, "noise_textures");
 		_optAssetCategory.AddItem(TranslationServer.Translate("Skyboxes"), 15);
 		_optAssetCategory.SetItemMetadata(15, "skyboxes");
@@ -632,13 +630,10 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		{
 			return subCategoryOrFolder switch
 			{
-				"units" => "Character",
+				"units" or "characters" => "Character",
 				"buildings" => "Building",
-				"resources" => "Environment",
-				"projectiles" => "Projectile",
-				"props" => "Prop",
-				"attachments" => "Attachment",
-				"weapons" => "Weapon",
+				"resources" or "props" or "environment" => "Prop",
+				"projectiles" or "attachments" or "weapons" or "items" => "Item",
 				_ => "Prop"
 			};
 		}
@@ -925,23 +920,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			hBox.AddChild(btnEdit);
 		}
 
-		// Action 4: Change Type Button (3D Models only)
-		if (IsGlbCategory(category, out string glbSubCat) || category == "glb")
-		{
-			var btnChangeType = new Button();
-			btnChangeType.Set("icon_max_width", 0);
-			btnChangeType.Text = "\uf021";
-			if (faFont != null) btnChangeType.AddThemeFontOverride("font", faFont);
-			btnChangeType.AddThemeFontSizeOverride("font_size", 11);
-			btnChangeType.FocusMode = FocusModeEnum.None;
-			btnChangeType.CustomMinimumSize = new Vector2(26, 22);
-			btnChangeType.TooltipText = TranslationServer.Translate("Change Asset Type");
-			string rowSub = !string.IsNullOrEmpty(subCategory) ? subCategory : glbSubCat;
-			btnChangeType.Pressed += () => OpenChangeTypeDialog(category, key, rowSub);
-			hBox.AddChild(btnChangeType);
-		}
-
-		// Action 5: Delete Button
+		// Action 4: Delete Button
 		var btnDelete = new Button();
 		btnDelete.Set("icon_max_width", 0);
 		btnDelete.Text = "\uf00d";
@@ -2912,211 +2891,6 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		}
 	}
 
-	private void OpenChangeTypeDialog(string category, string key, string currentSubCategory)
-	{
-		_changeTypeDialog.OpenForAsset(key, currentSubCategory, (targetSubCategory) =>
-		{
-			MoveGlbAssetType(key, currentSubCategory, targetSubCategory);
-		});
-	}
-
-	private void MoveGlbAssetType(string key, string fromSubCat, string toSubCat)
-	{
-		if (string.IsNullOrEmpty(key) || string.IsNullOrEmpty(fromSubCat) || string.IsNullOrEmpty(toSubCat)) return;
-		if (fromSubCat.Equals(toSubCat, StringComparison.OrdinalIgnoreCase)) return;
-
-		try
-		{
-			string wsPath = GetWorkspacePath();
-			string srcDir = Path.Combine(wsPath, "Assets", "models", fromSubCat);
-			string srcPath = Path.Combine(srcDir, key);
-			string dstDir = Path.Combine(wsPath, "Assets", "models", toSubCat);
-			Directory.CreateDirectory(dstDir);
-			string dstPath = Path.Combine(dstDir, key);
-
-			if (File.Exists(srcPath))
-			{
-				if (!srcPath.Equals(dstPath, StringComparison.OrdinalIgnoreCase))
-				{
-					File.Copy(srcPath, dstPath, true);
-					File.Delete(srcPath);
-				}
-			}
-			else if (!File.Exists(dstPath))
-			{
-				foreach (var candidateSub in new[] { "units", "buildings", "resources", "props", "projectiles" })
-				{
-					string candidatePath = Path.Combine(wsPath, "Assets", "models", candidateSub, key);
-					if (File.Exists(candidatePath))
-					{
-						File.Copy(candidatePath, dstPath, true);
-						File.Delete(candidatePath);
-						break;
-					}
-				}
-			}
-
-			string hash = "";
-			if (File.Exists(dstPath))
-			{
-				hash = ComputeHashHex(File.ReadAllBytes(dstPath));
-			}
-
-			string metaPath = Path.Combine(wsPath, "metadata.json");
-			JsonObject root = File.Exists(metaPath)
-				? (JsonNode.Parse(File.ReadAllText(metaPath))?.AsObject() ?? new JsonObject())
-				: new JsonObject();
-			root.Remove("Assets");
-
-			var assetsObj = MapAssetHelper.LoadUnionedAssets(wsPath);
-			if (!assetsObj.ContainsKey("glb") || assetsObj["glb"] == null) assetsObj["glb"] = new JsonObject();
-			var glbObj = assetsObj["glb"]!.AsObject();
-
-			string canonicalType = toSubCat switch
-			{
-				"units" => "Character",
-				"buildings" => "Building",
-				"resources" => "Environment",
-				"projectiles" => "Projectile",
-				"props" => "Prop",
-				"attachments" => "Attachment",
-				"weapons" => "Weapon",
-				_ => "Prop"
-			};
-
-			JsonNode existingMeta = null;
-			if (glbObj.ContainsKey(fromSubCat) && glbObj[fromSubCat] is JsonObject fromObj && fromObj.ContainsKey(key))
-			{
-				existingMeta = fromObj[key]?.DeepClone();
-				fromObj.Remove(key);
-			}
-
-			JsonObject itemMetaObj;
-			if (existingMeta is JsonObject metaObj)
-			{
-				itemMetaObj = metaObj;
-			}
-			else
-			{
-				itemMetaObj = new JsonObject();
-				if (existingMeta != null) itemMetaObj["hash"] = existingMeta.ToString();
-				else if (!string.IsNullOrEmpty(hash)) itemMetaObj["hash"] = hash;
-			}
-			itemMetaObj["asset_type"] = canonicalType;
-			itemMetaObj["default_asset_type"] = toSubCat;
-
-			if (!glbObj.ContainsKey(toSubCat) || glbObj[toSubCat] == null) glbObj[toSubCat] = new JsonObject();
-			glbObj[toSubCat].AsObject()[key] = itemMetaObj;
-
-			string unitId = Path.GetFileNameWithoutExtension(key);
-
-			// Remove from old custom entity array
-			string oldArrayKey = fromSubCat switch
-			{
-				"units" => "CustomUnits",
-				"buildings" => "CustomBuildings",
-				"resources" => "CustomResources",
-				"props" => "CustomProps",
-				_ => null
-			};
-
-			if (oldArrayKey != null && root.ContainsKey(oldArrayKey) && root[oldArrayKey] is JsonArray oldArr)
-			{
-				for (int i = oldArr.Count - 1; i >= 0; i--)
-				{
-					if (oldArr[i] is JsonObject uObj)
-					{
-						string uId = uObj["UnitId"]?.ToString() ?? "";
-						string mPath = uObj["ModelPath"]?.ToString() ?? "";
-						if (uId.Equals(unitId, StringComparison.OrdinalIgnoreCase) || mPath.Equals(key, StringComparison.OrdinalIgnoreCase))
-						{
-							oldArr.RemoveAt(i);
-						}
-					}
-				}
-			}
-
-			// Add to new custom entity array
-			string newArrayKey = toSubCat switch
-			{
-				"units" => "CustomUnits",
-				"buildings" => "CustomBuildings",
-				"resources" => "CustomResources",
-				"props" => "CustomProps",
-				_ => null
-			};
-
-			if (newArrayKey != null)
-			{
-				if (!root.ContainsKey(newArrayKey) || root[newArrayKey] == null) root[newArrayKey] = new JsonArray();
-				var newArr = root[newArrayKey].AsArray();
-				bool exists = false;
-				foreach (var item in newArr)
-				{
-					if (item is JsonObject uObj && (uObj["UnitId"]?.ToString() == unitId || uObj["ModelPath"]?.ToString() == key))
-					{
-						exists = true;
-						break;
-					}
-				}
-
-				if (!exists)
-				{
-					float defaultScale = toSubCat switch
-					{
-						"resources" => 2.75f,
-						"buildings" => 1.5f,
-						"props" => 1.25f,
-						"units" => 1.0f,
-						_ => 1.0f
-					};
-
-					int defaultPathing = toSubCat switch
-					{
-						"units" => 9,
-						"buildings" => 32,
-						"resources" => 255,
-						"props" => 255,
-						_ => 9
-					};
-
-					var defaultEntity = new JsonObject
-					{
-						["UnitId"] = unitId,
-						["Name"] = unitId,
-						["Description"] = "",
-						["ModelPath"] = key,
-						["Scale"] = defaultScale,
-						["YOffset"] = 0.0f,
-						["PathingType"] = defaultPathing,
-						["NormalMode"] = "Flat",
-						["NormalizeLuminance"] = true,
-						["Animations"] = new JsonObject()
-					};
-
-					if (toSubCat == "resources" || toSubCat == "props")
-					{
-						defaultEntity["IgnorePlayerColor"] = true;
-					}
-
-					newArr.Add(defaultEntity);
-				}
-			}
-
-			MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj);
-			SaveLoadService.CleanMetadataJsonSchema(root);
-			MapJsonFormatter.SaveFormattedJson(metaPath, root);
-			RefreshAssetList();
-			ClearPreview();
-			Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Changed asset '{0}' type from {1} to {2}."), key, fromSubCat, toSubCat));
-		}
-		catch (Exception ex)
-		{
-			GD.PrintErr($"[AssetManagerDialog] MoveGlbAssetType error: {ex.Message}");
-			Hud?.ShowFeedback($"Change type error: {ex.Message}");
-		}
-	}
-
 	private void OpenEditSubDialog(string category, string key, JsonNode extraData)
 	{
 		if (category == "vfx_spritesheets" || category == "vfx" || (extraData is JsonObject edObjVfx && edObjVfx.ContainsKey("asset_type") && edObjVfx["asset_type"]?.ToString() == "SpellSpritesheet"))
@@ -3565,8 +3339,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		"music" => TranslationServer.Translate("Music"),
 		"icons" => TranslationServer.Translate("Icons"),
 		"decals" => TranslationServer.Translate("Decals"),
-		"ribbons" or "ribbon_textures" => TranslationServer.Translate("Ribbon Textures"),
-		"noise_textures" => TranslationServer.Translate("Noise Textures"),
+		"ribbons" or "ribbon_textures" => TranslationServer.Translate("Ribbons"),
+		"noise_textures" or "noise" => TranslationServer.Translate("Noise"),
 		"skyboxes" => TranslationServer.Translate("Skyboxes"),
 		_ => cat
 	};

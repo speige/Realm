@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json.Nodes;
+using Realm.Godot.Utils;
 using Realm.Shared.Metadata;
 
 namespace Realm.Godot.VFX;
@@ -304,6 +305,63 @@ public class VfxShaderManager
 			}
 
 			string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
+			string fileName = Path.GetFileName(path);
+			string cleanBase = Path.GetFileNameWithoutExtension(path);
+
+			// 1. Check workspace metadata.json / manifest.json / unioned assets
+			try
+			{
+				var assetsObj = MapAssetHelper.LoadUnionedAssets(wsPath);
+				if (assetsObj != null)
+				{
+					foreach (var cat in new[] { "vfx_spritesheets", "vfx", "textures", "decals", "ribbons", "noise_textures" })
+					{
+						if (assetsObj.TryGetPropertyValue(cat, out var catNode))
+						{
+							if (catNode is JsonObject catObj)
+							{
+								JsonNode? entry = null;
+								if (catObj.TryGetPropertyValue(path, out var e1)) entry = e1;
+								else if (catObj.TryGetPropertyValue(fileName, out var e2)) entry = e2;
+								else if (catObj.TryGetPropertyValue($"{cleanBase}.rtex", out var e3)) entry = e3;
+								else if (catObj.TryGetPropertyValue($"{cleanBase}.png", out var e4)) entry = e4;
+
+							if (entry is JsonObject eObj)
+							{
+								int cols = 1;
+								int rows = 1;
+								float fps = 20.0f;
+								bool subframeBlend = true;
+
+								if (eObj.TryGetPropertyValue("columns", out var cNode) && int.TryParse(cNode?.ToString(), out int parsedCols) && parsedCols > 0)
+									cols = parsedCols;
+								if (eObj.TryGetPropertyValue("rows", out var rNode) && int.TryParse(rNode?.ToString(), out int parsedRows) && parsedRows > 0)
+									rows = parsedRows;
+								if (eObj.TryGetPropertyValue("fps", out var fNode) && float.TryParse(fNode?.ToString(), out float parsedFps) && parsedFps > 0.001f)
+									fps = parsedFps;
+								if (eObj.TryGetPropertyValue("subframe_blend", out var sbNode) && bool.TryParse(sbNode?.ToString(), out bool parsedSb))
+									subframeBlend = parsedSb;
+
+								string? assetType = eObj["asset_type"]?.ToString() ?? eObj["type"]?.ToString();
+								bool isSpritesheet = string.Equals(assetType, "Spritesheet", StringComparison.OrdinalIgnoreCase) ||
+								                     string.Equals(assetType, "SpellSpritesheet", StringComparison.OrdinalIgnoreCase) ||
+								                     cols > 1 || rows > 1;
+
+								if (isSpritesheet)
+								{
+									var result = (cols, rows, fps, subframeBlend);
+									SpritesheetMetaCache[path] = result;
+									return result;
+								}
+							}
+						}
+					}
+				}
+			}
+			}
+			catch { }
+
+			// 2. Check embedded metadata inside .rtex or candidate files
 			string[] candidates = new[]
 			{
 				path,
@@ -361,7 +419,9 @@ public class VfxShaderManager
 									subframeBlend = parsedSb;
 
 								string? assetType = obj["asset_type"]?.ToString() ?? obj["type"]?.ToString();
-								bool isSpritesheet = string.Equals(assetType, "Spritesheet", StringComparison.OrdinalIgnoreCase) || cols > 1 || rows > 1;
+								bool isSpritesheet = string.Equals(assetType, "Spritesheet", StringComparison.OrdinalIgnoreCase) ||
+								                     string.Equals(assetType, "SpellSpritesheet", StringComparison.OrdinalIgnoreCase) ||
+								                     cols > 1 || rows > 1;
 
 								if (isSpritesheet)
 								{

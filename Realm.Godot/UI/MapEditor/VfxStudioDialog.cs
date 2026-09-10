@@ -334,8 +334,10 @@ public partial class VfxStudioDialog : FloatingDialogBase
 						meta.Columns,
 						meta.Rows,
 						meta.Fps,
-						(cols, rows, fps) =>
+						meta.SubframeBlend,
+						(cols, rows, fps, subframeBlend) =>
 						{
+							SaveSpritesheetGrid(tex, cols, rows, fps, subframeBlend);
 							VfxShaderManager.ClearCache();
 							RestartPreviewVfx();
 						}
@@ -1598,6 +1600,57 @@ public partial class VfxStudioDialog : FloatingDialogBase
 			Vector3 dir = (_targetPosition - newPos).Normalized();
 			Vector3 up = Mathf.Abs(dir.Dot(Vector3.Up)) > 0.99f ? Vector3.Forward : Vector3.Up;
 			_camera.LookAtFromPosition(newPos, _targetPosition, up);
+		}
+	}
+
+	private void SaveSpritesheetGrid(string key, int columns, int rows, float fps = 20.0f, bool subframeBlend = true)
+	{
+		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
+
+		try
+		{
+			var assetsObj = MapAssetHelper.LoadUnionedAssets(wsPath);
+			if (!assetsObj.ContainsKey("vfx_spritesheets") || assetsObj["vfx_spritesheets"] == null)
+			{
+				assetsObj["vfx_spritesheets"] = new JsonObject();
+			}
+
+			var vfxSheets = assetsObj["vfx_spritesheets"]!.AsObject();
+			string fileName = Path.GetFileName(key);
+			string cleanBase = Path.GetFileNameWithoutExtension(key);
+
+			string targetKey = fileName;
+			JsonNode? existingNode = null;
+			if (vfxSheets.TryGetPropertyValue(fileName, out var s1)) { targetKey = fileName; existingNode = s1; }
+			else if (vfxSheets.TryGetPropertyValue(key, out var s2)) { targetKey = key; existingNode = s2; }
+			else if (vfxSheets.TryGetPropertyValue($"{cleanBase}.rtex", out var s3)) { targetKey = $"{cleanBase}.rtex"; existingNode = s3; }
+			else if (vfxSheets.TryGetPropertyValue($"{cleanBase}.png", out var s4)) { targetKey = $"{cleanBase}.png"; existingNode = s4; }
+
+			JsonObject newSheetObj;
+			if (existingNode is JsonObject exObj)
+			{
+				newSheetObj = exObj;
+			}
+			else
+			{
+				newSheetObj = new JsonObject();
+				if (existingNode is JsonValue v)
+				{
+					newSheetObj["hash"] = v.ToString();
+				}
+			}
+
+			newSheetObj["columns"] = columns;
+			newSheetObj["rows"] = rows;
+			newSheetObj["fps"] = Math.Round(fps, 2);
+			newSheetObj["subframe_blend"] = subframeBlend;
+
+			vfxSheets[targetKey] = newSheetObj;
+			MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[VfxStudioDialog] SaveSpritesheetGrid error: {ex.Message}");
 		}
 	}
 }
