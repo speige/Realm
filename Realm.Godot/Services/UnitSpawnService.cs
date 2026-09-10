@@ -189,7 +189,7 @@ internal class UnitSpawnService
 			EcsWorld.Add(entity, new MovementStats(speed, 20f, 10f));
 			EcsWorld.Add(entity, new PathingFlags(pathingFlags));
 			EcsWorld.Add(entity, new Realm.Ecs.Components.Tags.Movable());
-			EcsWorld.Add(entity, new Inventory(1));
+			EcsWorld.Add(entity, new Inventory());
 		}
 		else
 		{

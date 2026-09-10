@@ -139,7 +139,7 @@ public class ReplayService
 		{
 			EcsWorld.Add(entity, new MovementStats(meta.Speed, 20f, 10f));
 			EcsWorld.Add(entity, new Realm.Ecs.Components.Tags.Movable());
-			EcsWorld.Add(entity, new Inventory(1));
+			EcsWorld.Add(entity, new Inventory());
 		}
 		else
 		{

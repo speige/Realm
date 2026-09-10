@@ -64,7 +64,6 @@ public partial class InGameHUD : Control
 	private Button _btnTrainArcher;
 	private Button _btnTrainPriest;
 	private Button _btnTrainWorker;
-	private Button _btnBuyPotion;
 	private Button _btnUpgradeWeapons;
 	private Button _btnUpgradeShields;
 	private Button _btnUpgradeHarvesting;
@@ -1015,14 +1014,6 @@ public partial class InGameHUD : Control
 		_btnUsePotion.AddChild(potHotkeyLabel);
 
 		itemsHBox.AddChild(_btnUsePotion);
-		_btnUsePotion.Pressed += () =>
-		{
-			var selected = GameHost.Instance?.SelectedUnits;
-			if (selected != null && selected.Count == 1 && !selected[0].IsEnemy)
-			{
-				GameHost.Instance.UseHealingPotion(selected[0]);
-			}
-		};
 
 		_productionBox = new VBoxContainer();
 		_productionBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
@@ -1985,15 +1976,6 @@ public partial class InGameHUD : Control
 		_btnSetRally = new Button();
 		SetupHUDButton(_btnSetRally, "res://Assets/UI/alliance_flag.png", TranslationServer.Translate("[Y] Set Rally Point — Set location where new units will walk"), () => GameHost.Instance?.EnterCommandTargeting("rally"));
 		
-		_btnBuyPotion = new Button();
-		SetupHUDButton(_btnBuyPotion, "res://Assets/UI/alliance_flag.png", TranslationServer.Translate("[I] Buy Potion (Cost: 50 Gold) — Buy a Healing Potion for a nearby combat unit"), () => {
-			var selected = GameHost.Instance?.SelectedUnits;
-			if (selected != null && selected.Count == 1)
-			{
-				GameHost.Instance.BuyHealingPotion(selected[0].Entity);
-			}
-		});
-
 		_btnUpgradeWeapons = new Button();
 		SetupHUDButton(_btnUpgradeWeapons, "res://Assets/UI/battle_axe.png", TranslationServer.Translate("[W] Upgrade Weapons (Cost: 150 Gold, 100 Wood)\nPermanently increases unit damage by +3"), () => GameHost.Instance?.BuyWeaponsUpgrade());
 		_btnUpgradeShields = new Button();

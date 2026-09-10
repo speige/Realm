@@ -329,7 +329,7 @@ public partial class CameraControl : Camera3D
 		if (IsLocked) return;
 		_targetYaw = 0.0f;
 		_targetPitch = -55.0f;
-		_targetHeight = 35.0f;
+		TargetHeight = 35.0f;
 		_isTopDown = false;
 		FollowTarget = null;
 	}

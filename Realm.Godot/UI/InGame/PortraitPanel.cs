@@ -172,37 +172,7 @@ public class PortraitPanel
 			}
 			_statsLabel.Text = statsText;
 
-			if (!info.IsBuilding)
-			{
-				_itemsBox.Visible = true;
-				var itemsHBox = _itemsBox.GetChild<HBoxContainer>(1);
-				var axeIcon = itemsHBox.GetChild<TextureRect>(0);
-				var shieldIcon = itemsHBox.GetChild<TextureRect>(1);
-
-				if (info.UnitId == "archer")
-				{
-					axeIcon.TooltipText = TranslationServer.Translate("Composite Recurve Bow\n+4 Attack Damage (Equipped)");
-					shieldIcon.TooltipText = TranslationServer.Translate("Elven Leather Boots\n+2 Movement Speed (Equipped)");
-				}
-				else if (info.UnitId == "priest")
-				{
-					axeIcon.TooltipText = TranslationServer.Translate("Blessed Rod\n+3 Healing Power (Equipped)");
-					shieldIcon.TooltipText = TranslationServer.Translate("Cloth Robes\n+1 Armor Block (Equipped)");
-				}
-				else
-				{
-					axeIcon.TooltipText = TranslationServer.Translate("Battle Axe\n+5 Attack Damage (Equipped)");
-					shieldIcon.TooltipText = TranslationServer.Translate("Battle Shield\n+3 Armor Block (Equipped)");
-				}
-
-				if (_btnUsePotion != null)
-				{
-					_btnUsePotion.Text = $" {info.Potions} ";
-					_btnUsePotion.TooltipText = string.Format(TranslationServer.Translate("[I] Healing Potion (Have: {0})\nRestores 50 HP on use."), info.Potions);
-					_btnUsePotion.Disabled = info.Potions <= 0 || info.IsEnemy;
-				}
-			}
-			else
+			if (info.IsBuilding)
 			{
 				_itemsBox.Visible = false;
 			}

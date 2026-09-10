@@ -44,24 +44,44 @@ public class InventoryPanel
 		}
 
         int totalItems = 0;
-        
-        // Add potions
-        if (focusedUnit.Potions > 0)
+
+        if (focusedUnit.InventoryItems != null)
         {
-            var btn = CreateButton(
-                "res://Assets/UI/alliance_flag.png",
-                $"Healing Potion (Have: {focusedUnit.Potions})\nRestores 50 HP on use.",
-                $" {focusedUnit.Potions} ",
-                () => {
-                    var selected = GameHost.Instance?.SelectedUnits;
-                    if (selected != null && selected.Count > focusIdx && !selected[focusIdx].IsEnemy)
-                    {
-                        GameHost.Instance.UseHealingPotion(selected[focusIdx]);
-                    }
+            foreach (var kvp in focusedUnit.InventoryItems)
+            {
+                if (totalItems >= 6) break;
+
+                string itemId = kvp.Key;
+                int count = kvp.Value;
+                if (count <= 0) continue;
+
+                string name = itemId.ToUpper();
+                string desc = "Item";
+                string iconPath = "res://Assets/UI/alliance_flag.png";
+
+                if (GameHost.ItemRegistry.TryGetValue(itemId, out var itemMeta))
+                {
+                    if (!string.IsNullOrEmpty(itemMeta.Name)) name = itemMeta.Name;
+                    if (!string.IsNullOrEmpty(itemMeta.Description)) desc = itemMeta.Description;
+                    if (!string.IsNullOrEmpty(itemMeta.IconPath)) iconPath = itemMeta.IconPath;
                 }
-            );
-            _inventoryGrid.AddChild(btn);
-            totalItems++;
+
+                string capturedItemId = itemId;
+                var btn = CreateButton(
+                    iconPath,
+                    $"{name} (Have: {count})\n{desc}",
+                    $" {count} ",
+                    () => {
+                        var selected = GameHost.Instance?.SelectedUnits;
+                        if (selected != null && selected.Count > focusIdx && !selected[focusIdx].IsEnemy)
+                        {
+                            GameHost.Instance.UseItem(selected[focusIdx], capturedItemId);
+                        }
+                    }
+                );
+                _inventoryGrid.AddChild(btn);
+                totalItems++;
+            }
         }
 
         // Fill rest of the 2x3 grid

@@ -757,7 +757,7 @@ internal class InputService
 		return true;
 	}
 
-	public bool BuyHealingPotion(Entity playerEntity, System.Numerics.Vector3 castlePos, Entity selectedUnitEntity, out Entity targetUnitEntity)
+	public bool BuyItem(string itemId, Entity playerEntity, System.Numerics.Vector3 castlePos, Entity selectedUnitEntity, out Entity targetUnitEntity)
 	{
 		targetUnitEntity = Entity.Null;
 
@@ -777,7 +777,8 @@ internal class InputService
 		{
 			targetUnitEntity = target;
 			ref var inv = ref EcsWorld.Get<Inventory>(target);
-			inv.Potions += 1;
+			int currentCount = inv.GetItemCount(itemId);
+			inv.SetItemCount(itemId, currentCount + 1);
 			return true;
 		}
 
@@ -806,19 +807,20 @@ internal class InputService
 		return closestUnit;
 	}
 
-	public bool UseHealingPotion(Entity unitEntity, out float healedAmount)
+	public bool UseItem(Entity unitEntity, string itemId, out float healedAmount)
 	{
 		healedAmount = 0f;
 		if (!EcsWorld.IsAlive(unitEntity) || !EcsWorld.Has<Inventory>(unitEntity) || !EcsWorld.Has<Health>(unitEntity))
 			return false;
 
 		ref var inv = ref EcsWorld.Get<Inventory>(unitEntity);
-		if (inv.Potions <= 0) return false;
+		int currentCount = inv.GetItemCount(itemId);
+		if (currentCount <= 0) return false;
 
 		ref var hp = ref EcsWorld.Get<Health>(unitEntity);
 		if (hp.Current >= hp.Max) return false;
 
-		inv.Potions--;
+		inv.SetItemCount(itemId, currentCount - 1);
 		float oldCurrent = hp.Current;
 		hp.Current = Math.Min(hp.Max, hp.Current + 50f);
 		healedAmount = hp.Current - oldCurrent;

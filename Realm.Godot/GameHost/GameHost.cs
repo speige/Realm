@@ -1706,6 +1706,7 @@ public partial class GameHost : Node3D, IGameAPI
 	public static readonly Dictionary<string, ResourceMetadata> ResourceRegistry = new(StringComparer.OrdinalIgnoreCase);
 	public static readonly Dictionary<string, WeaponMetadata> WeaponRegistry = new(StringComparer.OrdinalIgnoreCase);
 	public static readonly Dictionary<string, AttachmentMetadata> AttachmentRegistry = new(StringComparer.OrdinalIgnoreCase);
+	public static readonly Dictionary<string, ItemMetadata> ItemRegistry = new(StringComparer.OrdinalIgnoreCase);
 
 	public static bool TryGetUnitOrBuildingMetadata(string? unitId, out UnitMetadata meta)
 	{
@@ -3494,6 +3495,7 @@ public class {mapName} : IMapScript
 		var newResources = new Dictionary<string, ResourceMetadata>(StringComparer.OrdinalIgnoreCase);
 		var newWeapons = new Dictionary<string, WeaponMetadata>(StringComparer.OrdinalIgnoreCase);
 		var newAttachments = new Dictionary<string, AttachmentMetadata>(StringComparer.OrdinalIgnoreCase);
+		var newItems = new Dictionary<string, ItemMetadata>(StringComparer.OrdinalIgnoreCase);
 		var newVfx = new Dictionary<string, VfxAttachmentConfig>(StringComparer.OrdinalIgnoreCase);
 
 		foreach (var meta in metadata.CustomWeapons)
@@ -3507,6 +3509,14 @@ public class {mapName} : IMapScript
 			if (!string.IsNullOrEmpty(meta.AttachmentId))
 			{
 				newAttachments[meta.AttachmentId] = meta;
+			}
+		}
+
+		foreach (var meta in metadata.CustomItems)
+		{
+			if (!string.IsNullOrEmpty(meta.ItemId))
+			{
+				newItems[meta.ItemId] = meta;
 			}
 		}
 
@@ -3582,6 +3592,9 @@ public class {mapName} : IMapScript
 
 		AttachmentRegistry.Clear();
 		foreach (var kvp in newAttachments) AttachmentRegistry[kvp.Key] = kvp.Value;
+
+		ItemRegistry.Clear();
+		foreach (var kvp in newItems) ItemRegistry[kvp.Key] = kvp.Value;
 
 		VfxRegistry.Clear();
 		foreach (var kvp in newVfx) VfxRegistry[kvp.Key] = kvp.Value;

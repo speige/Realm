@@ -3063,43 +3063,56 @@ public partial class GameHost
 		ExecuteSpellCast(abilityId, new Godot.Vector3(pos.Value.X, pos.Value.Y, pos.Value.Z));
 	}
 
-	public void BuyHealingPotion(Entity castleEntity)
+	public void BuyItem(string itemId, Entity castleEntity)
 	{
+		string itemName = itemId;
 		float costGold = 50f;
+		if (ItemRegistry.TryGetValue(itemId, out var itemMeta))
+		{
+			if (!string.IsNullOrEmpty(itemMeta.Name)) itemName = itemMeta.Name;
+			if (itemMeta.CostGold > 0) costGold = itemMeta.CostGold;
+		}
+
 		if (InGameHUD.Instance != null && InGameHUD.Instance.Gold >= costGold)
 		{
 			if (GameHost.TryGetUnit3D(castleEntity, out var castle3D))
 			{
 				var selectedEntity = SelectedUnits.Count > 0 ? SelectedUnits[0].Entity : Entity.Null;
 
-				if (_inputService.BuyHealingPotion(_playerEntity, new System.Numerics.Vector3(castle3D.GlobalPosition.X, castle3D.GlobalPosition.Y, castle3D.GlobalPosition.Z), selectedEntity, out Entity targetUnitEntity))
+				if (_inputService.BuyItem(itemId, _playerEntity, new System.Numerics.Vector3(castle3D.GlobalPosition.X, castle3D.GlobalPosition.Y, castle3D.GlobalPosition.Z), selectedEntity, out Entity targetUnitEntity))
 				{
 					var targetUnit = AllUnits.Find(u => u.Entity == targetUnitEntity);
 					InGameHUD.Instance.Gold -= costGold;
 
-					InGameHUD.Instance.ShowFeedbackText($"Bought Healing Potion for {targetUnit.UnitId.ToUpper()}!", new Color(0.3f, 0.9f, 0.4f));
+					InGameHUD.Instance.ShowFeedbackText($"Bought {itemName} for {targetUnit.UnitId.ToUpper()}!", new Color(0.3f, 0.9f, 0.4f));
 					UIManager.Instance?.PlayClickSound();
 					InGameHUD.Instance.RefreshUI(SelectedUnits);
 				}
 				else
 				{
-					InGameHUD.Instance.ShowFeedbackText("Cannot buy potion: No friendly combat units nearby!", new Color(1.0f, 0.2f, 0.2f));
+					InGameHUD.Instance.ShowFeedbackText("Cannot buy item: No friendly combat units nearby!", new Color(1.0f, 0.2f, 0.2f));
 					UIManager.Instance?.PlayWarningSound();
 				}
 			}
 		}
 		else
 		{
-			InGameHUD.Instance?.ShowFeedbackText("Cannot buy potion: Insufficient gold!", new Color(1.0f, 0.2f, 0.2f));
+			InGameHUD.Instance?.ShowFeedbackText("Cannot buy item: Insufficient gold!", new Color(1.0f, 0.2f, 0.2f));
 			UIManager.Instance?.PlayWarningSound();
 		}
 	}
 
-	public void UseHealingPotion(Unit3D unit)
+	public void UseItem(Unit3D unit, string itemId)
 	{
-		if (_inputService.UseHealingPotion(unit.Entity, out float healedAmount))
+		string itemName = itemId;
+		if (ItemRegistry.TryGetValue(itemId, out var itemMeta) && !string.IsNullOrEmpty(itemMeta.Name))
 		{
-			InGameHUD.Instance?.ShowFeedbackText($"{unit.UnitId.ToUpper()} used Healing Potion (+{healedAmount:F0} HP)!", new Color(0.3f, 0.9f, 0.4f));
+			itemName = itemMeta.Name;
+		}
+
+		if (_inputService.UseItem(unit.Entity, itemId, out float healedAmount))
+		{
+			InGameHUD.Instance?.ShowFeedbackText($"{unit.UnitId.ToUpper()} used {itemName} (+{healedAmount:F0} HP)!", new Color(0.3f, 0.9f, 0.4f));
 			SpawnHolyLightEffect(unit.GlobalPosition);
 			FlashHealUnit(unit);
 			_fxService.SpawnHealNumber(this, unit.GlobalPosition, healedAmount);

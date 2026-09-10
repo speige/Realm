@@ -868,20 +868,33 @@ public partial class CommandPanel
 					Callback = () => GameHost.Instance?.EnterCommandTargeting("rally")
 				});
 
-				items.Add(new CommandCardItem
+				if (GameHost.ItemRegistry.Count > 0)
 				{
-					Id = "buy_potion",
-					IconPath = "res://Assets/UI/alliance_flag.png",
-					Tooltip = "[I] Buy Potion (Cost: 50 Gold) — Buy a Healing Potion for a nearby combat unit",
-					Hotkey = Key.I,
-					Callback = () => {
-						var selected = GameHost.Instance?.SelectedUnits;
-						if (selected != null && selected.Count == 1)
+					foreach (var itemMeta in GameHost.ItemRegistry.Values)
+					{
+						string itemId = itemMeta.ItemId;
+						string itemName = !string.IsNullOrEmpty(itemMeta.Name) ? itemMeta.Name : itemId;
+						float itemCost = itemMeta.CostGold;
+						string itemIcon = !string.IsNullOrEmpty(itemMeta.IconPath) ? itemMeta.IconPath : "res://Assets/UI/alliance_flag.png";
+						string itemDesc = !string.IsNullOrEmpty(itemMeta.Description) ? itemMeta.Description : $"Buy {itemName} for a nearby combat unit";
+
+						string capturedItemId = itemId;
+						items.Add(new CommandCardItem
 						{
-							GameHost.Instance.BuyHealingPotion(selected[0].Entity);
-						}
+							Id = "buy_" + itemId,
+							IconPath = itemIcon,
+							Tooltip = $"[I] Buy {itemName} (Cost: {itemCost:F0} Gold) — {itemDesc}",
+							Hotkey = Key.None,
+							Callback = () => {
+								var selected = GameHost.Instance?.SelectedUnits;
+								if (selected != null && selected.Count == 1)
+								{
+									GameHost.Instance.BuyItem(capturedItemId, selected[0].Entity);
+								}
+							}
+						});
 					}
-				});
+				}
 
 				items.Add(new CommandCardItem
 				{
