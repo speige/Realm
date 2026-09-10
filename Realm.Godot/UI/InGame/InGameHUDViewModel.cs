@@ -525,9 +525,9 @@ public class InGameHUDViewModel
 
 			IsConnectionLost = GameHost.Instance.IsConnectionLost;
 			CycleSelectionIndex = GameHost.Instance.CycleSelectionIndex;
-			FireballCooldown = GameHost.Instance.FireballCooldown;
-			LightningCooldown = GameHost.Instance.LightningCooldown;
-			HolyLightCooldown = GameHost.Instance.HolyLightCooldown;
+			FireballCooldown = GameHost.Instance.GetPlayerSpellCooldown("fireball");
+			LightningCooldown = GameHost.Instance.GetPlayerSpellCooldown("lightning");
+			HolyLightCooldown = GameHost.Instance.GetPlayerSpellCooldown("holylight");
 		}
 
 		int idleCount = 0;

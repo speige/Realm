@@ -727,30 +727,22 @@ internal class InputService
 
 			if (EcsWorld.Has<Realm.Ecs.Components.Core.SpellCooldowns>(casterEntity))
 			{
-				ref var scd = ref EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(casterEntity);
-				if (spellId == "fireball") { if (scd.FireballCooldown > 0f) return false; scd.FireballCooldown = cooldownMax; }
-				else if (spellId == "lightning") { if (scd.LightningCooldown > 0f) return false; scd.LightningCooldown = cooldownMax; }
-				else if (spellId == "holylight") { if (scd.HolyLightCooldown > 0f) return false; scd.HolyLightCooldown = cooldownMax; }
+				var scd = EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(casterEntity).Value;
+				if (scd != null)
+				{
+					if (scd.TryGetValue(spellId, out float currentCd) && currentCd > 0f) return false;
+					scd[spellId] = cooldownMax;
+				}
 			}
 		}
 
 		if (EcsWorld.IsAlive(playerEntity) && EcsWorld.Has<Realm.Ecs.Components.Core.SpellCooldowns>(playerEntity))
 		{
-			ref var cd = ref EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(playerEntity);
-			if (spellId == "fireball")
+			var cd = EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(playerEntity).Value;
+			if (cd != null)
 			{
-				if (cd.FireballCooldown > 0f) return false;
-				cd.FireballCooldown = cooldownMax;
-			}
-			else if (spellId == "lightning")
-			{
-				if (cd.LightningCooldown > 0f) return false;
-				cd.LightningCooldown = cooldownMax;
-			}
-			else if (spellId == "holylight")
-			{
-				if (cd.HolyLightCooldown > 0f) return false;
-				cd.HolyLightCooldown = cooldownMax;
+				if (cd.TryGetValue(spellId, out float currentCd) && currentCd > 0f) return false;
+				cd[spellId] = cooldownMax;
 			}
 		}
 

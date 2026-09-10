@@ -1,3 +1,4 @@
+using System;
 using Arch.Core;
 using Godot;
 using MemoryPack;
@@ -159,17 +160,20 @@ public partial class GameHost
 			}
 			var casterEnt = caster != null ? ((IEcsEntityWrapper)caster).Entity : Entity.Null;
 			OnSpellCast?.Invoke(caster, spellId, new System.Numerics.Vector3(position.X, position.Y, position.Z));
-			if (spellId == "fireball")
+
+			var def = GetAbilityDefinition(spellId);
+			if (def != null)
 			{
-				_simulationService.DealSpellDamageAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), 4.0f, 50f, casterEnt);
-			}
-			else if (spellId == "lightning")
-			{
-				_simulationService.DealSpellDamageAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), 2.0f, 80f, casterEnt);
-			}
-			else if (spellId == "holylight")
-			{
-				_simulationService.HealAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), 4.0f, 50f);
+				if (def.Damage > 0f)
+				{
+					float aoe = def.AreaOfEffectRadius > 0f ? def.AreaOfEffectRadius : 4.0f;
+					_simulationService.DealSpellDamageAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), aoe, def.Damage, casterEnt);
+				}
+				else if (def.Healing > 0f)
+				{
+					float aoe = def.AreaOfEffectRadius > 0f ? def.AreaOfEffectRadius : 4.0f;
+					_simulationService.HealAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), aoe, def.Healing);
+				}
 			}
 			InGameHUD.Instance?.RefreshUI(SelectedUnits);
 			if (LobbyManager.Instance != null)
@@ -229,20 +233,24 @@ public partial class GameHost
 	[Rpc(MultiplayerApi.RpcMode.Authority, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
 	public void PlaySpellEffect(string spellId, Vector3 position)
 	{
-		if (spellId == "fireball")
+		var def = GetAbilityDefinition(spellId);
+		if (def != null)
 		{
-			SpawnFireblastEffect(position);
-			SpawnTargetIndicator(position, new Color(0.9f, 0.3f, 0.1f));
-		}
-		else if (spellId == "lightning")
-		{
-			SpawnLightningEffect(position);
-			SpawnTargetIndicator(position, new Color(0.2f, 0.5f, 1f));
-		}
-		else if (spellId == "holylight")
-		{
-			SpawnHolyLightEffect(position);
-			SpawnTargetIndicator(position, new Color(0.2f, 0.9f, 0.3f));
+			if (def.Healing > 0f)
+			{
+				SpawnHolyLightEffect(position);
+				SpawnTargetIndicator(position, new Color(0.2f, 0.9f, 0.3f));
+			}
+			else if (def.VisualEffect != null && def.VisualEffect.Equals("lightning", StringComparison.OrdinalIgnoreCase))
+			{
+				SpawnLightningEffect(position);
+				SpawnTargetIndicator(position, new Color(0.2f, 0.5f, 1f));
+			}
+			else
+			{
+				SpawnFireblastEffect(position);
+				SpawnTargetIndicator(position, new Color(0.9f, 0.3f, 0.1f));
+			}
 		}
 	}
 

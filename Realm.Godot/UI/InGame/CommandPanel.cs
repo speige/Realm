@@ -206,18 +206,17 @@ public partial class CommandPanel
 
 				if (world.Has<Realm.Ecs.Components.Core.SpellCooldowns>(caster))
 				{
-					var scd = world.Get<Realm.Ecs.Components.Core.SpellCooldowns>(caster);
-					if (item.AbilityId == "fireball") cdRemaining = Math.Max(cdRemaining, scd.FireballCooldown);
-					else if (item.AbilityId == "lightning") cdRemaining = Math.Max(cdRemaining, scd.LightningCooldown);
-					else if (item.AbilityId == "holylight") cdRemaining = Math.Max(cdRemaining, scd.HolyLightCooldown);
+					var scd = world.Get<Realm.Ecs.Components.Core.SpellCooldowns>(caster).Value;
+					if (scd != null && scd.TryGetValue(item.AbilityId, out float val))
+					{
+						cdRemaining = Math.Max(cdRemaining, val);
+					}
 				}
 			}
 
 			if (cdRemaining <= 0f && GameHost.Instance != null)
 			{
-				if (item.AbilityId == "fireball") cdRemaining = GameHost.Instance.FireballCooldown;
-				else if (item.AbilityId == "lightning") cdRemaining = GameHost.Instance.LightningCooldown;
-				else if (item.AbilityId == "holylight") cdRemaining = GameHost.Instance.HolyLightCooldown;
+				cdRemaining = GameHost.Instance.GetPlayerSpellCooldown(item.AbilityId);
 			}
 		}
 
@@ -1133,17 +1132,13 @@ public partial class CommandPanel
 					}
 					if (world.Has<Realm.Ecs.Components.Core.SpellCooldowns>(casterEntity))
 					{
-						var scd = world.Get<Realm.Ecs.Components.Core.SpellCooldowns>(casterEntity);
-						if (abilityId == "fireball" && scd.FireballCooldown > 0f) return true;
-						if (abilityId == "lightning" && scd.LightningCooldown > 0f) return true;
-						if (abilityId == "holylight" && scd.HolyLightCooldown > 0f) return true;
+						var scd = world.Get<Realm.Ecs.Components.Core.SpellCooldowns>(casterEntity).Value;
+						if (scd != null && scd.TryGetValue(abilityId, out float cd) && cd > 0f) return true;
 					}
 				}
-				if (GameHost.Instance != null)
+				if (GameHost.Instance != null && GameHost.Instance.GetPlayerSpellCooldown(abilityId) > 0f)
 				{
-					if (abilityId == "fireball" && GameHost.Instance.FireballCooldown > 0f) return true;
-					if (abilityId == "lightning" && GameHost.Instance.LightningCooldown > 0f) return true;
-					if (abilityId == "holylight" && GameHost.Instance.HolyLightCooldown > 0f) return true;
+					return true;
 				}
 				return false;
 			}

@@ -632,18 +632,43 @@ internal class SimulationService
 		}
 	}
 
+	private readonly List<string> _tickExpiredSpellCooldowns = new();
+	private readonly List<string> _tickSpellCooldownKeys = new();
+
 	private void SpellCooldownQueryAction(Entity entity, ref SpellCooldowns spellCooldowns)
 	{
+		var dict = spellCooldowns.Value;
+		if (dict == null) return;
+
 		if (GameHost.Instance != null && GameHost.Instance.UnlimitedPowerEnabled)
 		{
-			spellCooldowns.FireballCooldown = 0f;
-			spellCooldowns.LightningCooldown = 0f;
-			spellCooldowns.HolyLightCooldown = 0f;
+			dict.Clear();
 			return;
 		}
-		if (spellCooldowns.FireballCooldown > 0f) spellCooldowns.FireballCooldown = Math.Max(0f, spellCooldowns.FireballCooldown - _fDelta);
-		if (spellCooldowns.LightningCooldown > 0f) spellCooldowns.LightningCooldown = Math.Max(0f, spellCooldowns.LightningCooldown - _fDelta);
-		if (spellCooldowns.HolyLightCooldown > 0f) spellCooldowns.HolyLightCooldown = Math.Max(0f, spellCooldowns.HolyLightCooldown - _fDelta);
+
+		_tickSpellCooldownKeys.Clear();
+		_tickExpiredSpellCooldowns.Clear();
+		foreach (var key in dict.Keys)
+		{
+			_tickSpellCooldownKeys.Add(key);
+		}
+		for (int i = 0; i < _tickSpellCooldownKeys.Count; i++)
+		{
+			string key = _tickSpellCooldownKeys[i];
+			float newTime = dict[key] - _fDelta;
+			if (newTime <= 0f)
+			{
+				_tickExpiredSpellCooldowns.Add(key);
+			}
+			else
+			{
+				dict[key] = newTime;
+			}
+		}
+		for (int i = 0; i < _tickExpiredSpellCooldowns.Count; i++)
+		{
+			dict.Remove(_tickExpiredSpellCooldowns[i]);
+		}
 	}
 
 	private void ProdQueryAction(Entity entity, ref Realm.Ecs.Components.Core.ProductionQueue prod)

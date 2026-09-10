@@ -172,7 +172,7 @@ public partial class GameHost
 			{
 				LoadMapFromFile(absolutePath, terrainOnly: false, clearUnits: true, ensureGlbOptimized: false);
 				MapEditorHUD.Instance?.UpdateMapNameHeader();
-				MapEditorHUD.Instance?.ShowFeedback(TranslationServer.Translate("Map saved & round-trip verified!"));
+				MapEditorHUD.Instance?.ShowFeedback(TranslationServer.Translate("Map saved"));
 			}
 			else
 			{

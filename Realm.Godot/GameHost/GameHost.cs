@@ -1670,29 +1670,43 @@ public partial class GameHost : Node3D, IGameAPI
 
 	public const float TimeOfDayCycleDuration = 90f;
 
-	public const float FireballCooldownMax = 12f;
-	public const float LightningCooldownMax = 18f;
-	public const float HolyLightCooldownMax = 15f;
+	public float GetPlayerSpellCooldown(string abilityId)
+	{
+		if (EcsWorld == null || _playerEntity == Entity.Null || !EcsWorld.IsAlive(_playerEntity)) return 0f;
+		if (EcsWorld.Has<SpellCooldowns>(_playerEntity))
+		{
+			var scd = EcsWorld.Get<SpellCooldowns>(_playerEntity).Value;
+			if (scd != null && scd.TryGetValue(abilityId, out float val)) return val;
+		}
+		return 0f;
+	}
+
+	public void SetPlayerSpellCooldown(string abilityId, float cooldown)
+	{
+		if (EcsWorld == null || _playerEntity == Entity.Null || !EcsWorld.IsAlive(_playerEntity)) return;
+		if (EcsWorld.Has<SpellCooldowns>(_playerEntity))
+		{
+			var scd = EcsWorld.Get<SpellCooldowns>(_playerEntity).Value;
+			if (scd != null) scd[abilityId] = cooldown;
+		}
+	}
 
 	public float FireballCooldown
 	{
-		get => EcsWorld?.GetFieldOrDefault<SpellCooldowns, float>(_playerEntity, c => c.FireballCooldown) ?? 0f;
-		set => EcsWorld?.Mutate<SpellCooldowns>(_playerEntity, (ref SpellCooldowns c) =>
-			EcsWorld.Set(_playerEntity, new SpellCooldowns(value, c.LightningCooldown, c.HolyLightCooldown)));
+		get => GetPlayerSpellCooldown("fireball");
+		set => SetPlayerSpellCooldown("fireball", value);
 	}
 
 	public float LightningCooldown
 	{
-		get => EcsWorld?.GetFieldOrDefault<SpellCooldowns, float>(_playerEntity, c => c.LightningCooldown) ?? 0f;
-		set => EcsWorld?.Mutate<SpellCooldowns>(_playerEntity, (ref SpellCooldowns c) =>
-			EcsWorld.Set(_playerEntity, new SpellCooldowns(c.FireballCooldown, value, c.HolyLightCooldown)));
+		get => GetPlayerSpellCooldown("lightning");
+		set => SetPlayerSpellCooldown("lightning", value);
 	}
 
 	public float HolyLightCooldown
 	{
-		get => EcsWorld?.GetFieldOrDefault<SpellCooldowns, float>(_playerEntity, c => c.HolyLightCooldown) ?? 0f;
-		set => EcsWorld?.Mutate<SpellCooldowns>(_playerEntity, (ref SpellCooldowns c) =>
-			EcsWorld.Set(_playerEntity, new SpellCooldowns(c.FireballCooldown, c.LightningCooldown, value)));
+		get => GetPlayerSpellCooldown("holylight");
+		set => SetPlayerSpellCooldown("holylight", value);
 	}
 
 
@@ -1841,7 +1855,7 @@ public partial class GameHost : Node3D, IGameAPI
 	private void SetupPlayerEntityComponents(Entity playerEntity)
 	{
 		EcsWorld.Add(playerEntity, new PlayerPopulation(0, 0));
-		EcsWorld.Add(playerEntity, new SpellCooldowns(0f, 0f, 0f));
+		EcsWorld.Add(playerEntity, new SpellCooldowns(new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase)));
 		EcsWorld.Add(playerEntity, new PlayerUpgrades(false, false, false));
 	}
 
@@ -2546,23 +2560,37 @@ public class {mapName} : IMapScript
 	void IGameAPI.CastAbility(IUnit unit, string abilityId, System.Numerics.Vector3 targetPosition)
 	{
 		var godotPos = new Godot.Vector3(targetPosition.X, targetPosition.Y, targetPosition.Z);
-		if (abilityId == "fireball")
+		var def = GetAbilityDefinition(abilityId);
+		var casterEnt = unit is IEcsEntityWrapper w ? w.Entity : Entity.Null;
+
+		if (def != null)
 		{
-			SpawnFireblastEffect(godotPos);
-			SpawnTargetIndicator(godotPos, new Color(0.9f, 0.3f, 0.1f));
-			_simulationService.DealSpellDamageAOE(targetPosition, 4.0f, 50f, unit is IEcsEntityWrapper w ? w.Entity : Entity.Null);
-		}
-		else if (abilityId == "lightning")
-		{
-			SpawnLightningEffect(godotPos);
-			SpawnTargetIndicator(godotPos, new Color(0.2f, 0.5f, 1f));
-			_simulationService.DealSpellDamageAOE(targetPosition, 2.0f, 80f, unit is IEcsEntityWrapper w ? w.Entity : Entity.Null);
-		}
-		else if (abilityId == "holylight")
-		{
-			SpawnHolyLightEffect(godotPos);
-			SpawnTargetIndicator(godotPos, new Color(0.2f, 0.9f, 0.3f));
-			_simulationService.HealAOE(targetPosition, 4.0f, 50f);
+			if (def.Damage > 0f)
+			{
+				float aoe = def.AreaOfEffectRadius > 0f ? def.AreaOfEffectRadius : 4.0f;
+				if (def.VisualEffect != null && def.VisualEffect.Equals("lightning", StringComparison.OrdinalIgnoreCase))
+				{
+					SpawnLightningEffect(godotPos);
+					SpawnTargetIndicator(godotPos, new Color(0.2f, 0.5f, 1f));
+				}
+				else
+				{
+					SpawnFireblastEffect(godotPos);
+					SpawnTargetIndicator(godotPos, new Color(0.9f, 0.3f, 0.1f));
+				}
+				_simulationService.DealSpellDamageAOE(targetPosition, aoe, def.Damage, casterEnt);
+			}
+			else if (def.Healing > 0f)
+			{
+				float aoe = def.AreaOfEffectRadius > 0f ? def.AreaOfEffectRadius : 4.0f;
+				SpawnHolyLightEffect(godotPos);
+				SpawnTargetIndicator(godotPos, new Color(0.2f, 0.9f, 0.3f));
+				_simulationService.HealAOE(targetPosition, aoe, def.Healing);
+			}
+			else
+			{
+				OnSpellCast?.Invoke(unit, abilityId, targetPosition);
+			}
 		}
 		else
 		{
@@ -2584,10 +2612,11 @@ public class {mapName} : IMapScript
 			}
 			if (EcsWorld.Has<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity))
 			{
-				var cds = EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity);
-				if (abilityId == "fireball") return cds.FireballCooldown;
-				if (abilityId == "lightning") return cds.LightningCooldown;
-				if (abilityId == "holylight") return cds.HolyLightCooldown;
+				var scds = EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity).Value;
+				if (scds != null && scds.TryGetValue(abilityId, out var val))
+				{
+					return val;
+				}
 			}
 		}
 		return 0f;
@@ -2604,24 +2633,20 @@ public class {mapName} : IMapScript
 			}
 			else
 			{
-				dict = new System.Collections.Generic.Dictionary<string, float>();
+				dict = new System.Collections.Generic.Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
 				EcsWorld.Add(wrapper.Entity, new Realm.Ecs.Components.Core.Cooldowns(dict));
 			}
 			dict[abilityId] = cooldown;
 
-			if (abilityId == "fireball" || abilityId == "lightning" || abilityId == "holylight")
+			if (EcsWorld.Has<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity))
 			{
-				float fb = abilityId == "fireball" ? cooldown : (EcsWorld.Has<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity) ? EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity).FireballCooldown : 0f);
-				float lt = abilityId == "lightning" ? cooldown : (EcsWorld.Has<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity) ? EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity).LightningCooldown : 0f);
-				float hl = abilityId == "holylight" ? cooldown : (EcsWorld.Has<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity) ? EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity).HolyLightCooldown : 0f);
-				if (EcsWorld.Has<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity))
-				{
-					EcsWorld.Set(wrapper.Entity, new Realm.Ecs.Components.Core.SpellCooldowns(fb, lt, hl));
-				}
-				else
-				{
-					EcsWorld.Add(wrapper.Entity, new Realm.Ecs.Components.Core.SpellCooldowns(fb, lt, hl));
-				}
+				var scd = EcsWorld.Get<Realm.Ecs.Components.Core.SpellCooldowns>(wrapper.Entity).Value;
+				if (scd != null) scd[abilityId] = cooldown;
+			}
+			else
+			{
+				var scdDict = new System.Collections.Generic.Dictionary<string, float>(StringComparer.OrdinalIgnoreCase) { [abilityId] = cooldown };
+				EcsWorld.Add(wrapper.Entity, new Realm.Ecs.Components.Core.SpellCooldowns(scdDict));
 			}
 		}
 	}
@@ -5200,15 +5225,16 @@ public class {mapName} : IMapScript
 			var godotPos = new Vector3(req.Position.X, req.Position.Y, req.Position.Z);
 			var godotTarget = new Vector3(req.TargetPosition.X, req.TargetPosition.Y, req.TargetPosition.Z);
 
-			if (req.EffectTypeId == "fireball" || req.EffectTypeId == "fireblast")
+			var def = GetAbilityDefinition(req.EffectTypeId);
+			if (req.EffectTypeId == "fireblast" || (def != null && def.Damage > 0f && (def.VisualEffect == null || !def.VisualEffect.Equals("lightning", StringComparison.OrdinalIgnoreCase))))
 			{
 				SpawnFireblastEffect(godotPos);
 			}
-			else if (req.EffectTypeId == "lightning")
+			else if (def != null && def.Damage > 0f && def.VisualEffect != null && def.VisualEffect.Equals("lightning", StringComparison.OrdinalIgnoreCase))
 			{
 				SpawnLightningEffect(godotPos);
 			}
-			else if (req.EffectTypeId == "holylight")
+			else if (req.EffectTypeId == "holylight" || (def != null && def.Healing > 0f))
 			{
 				SpawnHolyLightEffect(godotPos);
 			}

@@ -2938,25 +2938,32 @@ public partial class GameHost
 
 	private void ExecuteSpellCast(string spellId, Vector3 position)
 	{
+		var def = GetAbilityDefinition(spellId);
+
 		if (_multiplayerActive && !Multiplayer.IsServer())
 		{
-			if (spellId == "fireball")
+			if (def != null && def.Cooldown > 0f)
 			{
-				FireballCooldown = FireballCooldownMax;
-				SpawnFireblastEffect(position);
-				SpawnTargetIndicator(position, new Color(0.9f, 0.3f, 0.1f));
+				SetPlayerSpellCooldown(spellId, def.Cooldown);
 			}
-			else if (spellId == "lightning")
+
+			if (def != null)
 			{
-				LightningCooldown = LightningCooldownMax;
-				SpawnLightningEffect(position);
-				SpawnTargetIndicator(position, new Color(0.2f, 0.5f, 1f));
-			}
-			else if (spellId == "holylight")
-			{
-				HolyLightCooldown = HolyLightCooldownMax;
-				SpawnHolyLightEffect(position);
-				SpawnTargetIndicator(position, new Color(0.2f, 0.9f, 0.3f));
+				if (def.Healing > 0f)
+				{
+					SpawnHolyLightEffect(position);
+					SpawnTargetIndicator(position, new Color(0.2f, 0.9f, 0.3f));
+				}
+				else if (def.VisualEffect != null && def.VisualEffect.Equals("lightning", StringComparison.OrdinalIgnoreCase))
+				{
+					SpawnLightningEffect(position);
+					SpawnTargetIndicator(position, new Color(0.2f, 0.5f, 1f));
+				}
+				else
+				{
+					SpawnFireblastEffect(position);
+					SpawnTargetIndicator(position, new Color(0.9f, 0.3f, 0.1f));
+				}
 			}
 
 			var targetIds = new List<int>();
@@ -2981,74 +2988,50 @@ public partial class GameHost
 
 		Entity casterEntity = focusedUnit != null && EcsWorld.IsAlive(focusedUnit.Entity) ? focusedUnit.Entity : Entity.Null;
 
-		if (spellId == "fireball")
+		float cd = GetPlayerSpellCooldown(spellId);
+		if (cd > 0f)
 		{
-			if (FireballCooldown > 0)
-			{
-				InGameHUD.Instance?.ShowFeedbackText($"Fireball on cooldown: {FireballCooldown:F1}s remaining", new Color(0.9f, 0.4f, 0.1f));
-				return;
-			}
-
-			if (_inputService.TryExecuteSpellCast(_playerEntity, casterEntity, spellId, out float maxCd))
-			{
-				SpawnFireblastEffect(position);
-				SpawnTargetIndicator(position, new Color(0.9f, 0.3f, 0.1f));
-				
-				if (InGameHUD.Instance != null)
-				{
-					InGameHUD.Instance.ShowFeedbackText("Cast: Fireball Spell", new Color(0.9f, 0.3f, 0.1f));
-					UIManager.Instance.PlayClickSound();
-				}
-
-				_simulationService.DealSpellDamageAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), 4.0f, 50f, SelectedUnits.Count > 0 ? SelectedUnits[0].Entity : Entity.Null);
-				InGameHUD.Instance?.RefreshUI(SelectedUnits);
-			}
+			string displayName = def?.DisplayName ?? spellId;
+			InGameHUD.Instance?.ShowFeedbackText($"{displayName} on cooldown: {cd:F1}s remaining", new Color(0.9f, 0.4f, 0.1f));
+			return;
 		}
-		else if (spellId == "lightning")
+
+		if (_inputService.TryExecuteSpellCast(_playerEntity, casterEntity, spellId, out float maxCd))
 		{
-			if (LightningCooldown > 0)
+			string displayName = def?.DisplayName ?? spellId;
+			if (InGameHUD.Instance != null)
 			{
-				InGameHUD.Instance?.ShowFeedbackText($"Lightning on cooldown: {LightningCooldown:F1}s remaining", new Color(0.2f, 0.6f, 1f));
-				return;
+				InGameHUD.Instance.ShowFeedbackText($"Cast: {displayName}", new Color(0.9f, 0.3f, 0.1f));
+				UIManager.Instance.PlayClickSound();
 			}
 
-			if (_inputService.TryExecuteSpellCast(_playerEntity, casterEntity, spellId, out float maxCd))
+			if (def != null)
 			{
-				SpawnLightningEffect(position);
-				SpawnTargetIndicator(position, new Color(0.2f, 0.5f, 1f));
-
-				if (InGameHUD.Instance != null)
+				if (def.Damage > 0f)
 				{
-					InGameHUD.Instance.ShowFeedbackText("Cast: Lightning Bolt", new Color(0.2f, 0.6f, 1f));
-					UIManager.Instance.PlayClickSound();
+					float aoe = def.AreaOfEffectRadius > 0f ? def.AreaOfEffectRadius : 4.0f;
+					if (def.VisualEffect != null && def.VisualEffect.Equals("lightning", StringComparison.OrdinalIgnoreCase))
+					{
+						SpawnLightningEffect(position);
+						SpawnTargetIndicator(position, new Color(0.2f, 0.5f, 1f));
+					}
+					else
+					{
+						SpawnFireblastEffect(position);
+						SpawnTargetIndicator(position, new Color(0.9f, 0.3f, 0.1f));
+					}
+					_simulationService.DealSpellDamageAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), aoe, def.Damage, SelectedUnits.Count > 0 ? SelectedUnits[0].Entity : Entity.Null);
 				}
-
-				_simulationService.DealSpellDamageAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), 2.0f, 80f, SelectedUnits.Count > 0 ? SelectedUnits[0].Entity : Entity.Null);
-				InGameHUD.Instance?.RefreshUI(SelectedUnits);
-			}
-		}
-		else if (spellId == "holylight")
-		{
-			if (HolyLightCooldown > 0)
-			{
-				InGameHUD.Instance?.ShowFeedbackText($"Holy Light on cooldown: {HolyLightCooldown:F1}s remaining", new Color(0.2f, 0.9f, 0.3f));
-				return;
-			}
-
-			if (_inputService.TryExecuteSpellCast(_playerEntity, casterEntity, spellId, out float maxCd))
-			{
-				SpawnHolyLightEffect(position);
-				SpawnTargetIndicator(position, new Color(0.2f, 0.9f, 0.3f));
-
-				if (InGameHUD.Instance != null)
+				else if (def.Healing > 0f)
 				{
-					InGameHUD.Instance.ShowFeedbackText("Cast: Holy Light", new Color(0.2f, 0.9f, 0.3f));
-					UIManager.Instance.PlayClickSound();
+					float aoe = def.AreaOfEffectRadius > 0f ? def.AreaOfEffectRadius : 4.0f;
+					SpawnHolyLightEffect(position);
+					SpawnTargetIndicator(position, new Color(0.2f, 0.9f, 0.3f));
+					_simulationService.HealAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), aoe, def.Healing);
 				}
-
-				_simulationService.HealAOE(new System.Numerics.Vector3(position.X, position.Y, position.Z), 4.0f, 50f);
-				InGameHUD.Instance?.RefreshUI(SelectedUnits);
 			}
+
+			InGameHUD.Instance?.RefreshUI(SelectedUnits);
 		}
 	}
 

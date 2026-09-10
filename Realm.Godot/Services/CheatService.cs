@@ -197,7 +197,7 @@ public class CheatService
 					GameHost.Instance.HolyLightCooldown = 0f;
 					if (playerEntity != Entity.Null && EcsWorld.IsAlive(playerEntity) && EcsWorld.Has<SpellCooldowns>(playerEntity))
 					{
-						EcsWorld.Set(playerEntity, new SpellCooldowns(0f, 0f, 0f));
+						EcsWorld.Get<SpellCooldowns>(playerEntity).Value?.Clear();
 					}
 				}
 			}
