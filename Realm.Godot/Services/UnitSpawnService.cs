@@ -108,16 +108,11 @@ internal class UnitSpawnService
 
 	public string GetEnemyUnitName(string unitTypeId, string defaultName)
 	{
-		return unitTypeId switch
+		if (GameHost.TryGetUnitOrBuildingMetadata(unitTypeId, out var meta) && !string.IsNullOrEmpty(meta.Name))
 		{
-			"worker" => "Orc Worker",
-			"soldier" => "Orc Raider",
-			"archer" => "Dark Archer",
-			"priest" => "Orc Shaman",
-			"castle" => "Orc Stronghold",
-			"tower" => "Orc Totem Tower",
-			_ => defaultName
-		};
+			return meta.Name;
+		}
+		return defaultName;
 	}
 
 	public Entity CreateEcsUnitEntity(string id, string name, float hp, float damage, float range, float armor, float speed, float scanRadius, bool isHero, float attackCooldown, int pathingFlags, Vector3 pos, Realm.Ecs.Common.PlayerEntity owner, Entity playerEntity, bool hasShieldsUpgrade, bool hasWeaponsUpgrade, string[]? targets = null)
@@ -152,22 +147,9 @@ internal class UnitSpawnService
 			EcsWorld.Add(entity, new Realm.Ecs.Components.Meta.Experience(0f));
 		}
 
-		bool isPlayer = owner.Value == playerEntity;
-		if (isPlayer)
-		{
-			if (hasShieldsUpgrade)
-			{
-				armor += 2f;
-			}
-			if (hasWeaponsUpgrade && (damage > 0 || id == "priest") && id != "castle" && id != "tower")
-			{
-				damage += 3f;
-			}
-		}
-
 		EcsWorld.Add(entity, new Health(hp, hp));
 
-		if (damage > 0 || id == "priest")
+		if (damage > 0)
 		{
 			EcsWorld.Add(entity, new Attack(damage, range, attackCooldown));
 		}
@@ -194,10 +176,6 @@ internal class UnitSpawnService
 		else
 		{
 			EcsWorld.Add(entity, new Building());
-			if (id.IndexOf("tower", StringComparison.OrdinalIgnoreCase) >= 0)
-			{
-				EcsWorld.Add(entity, new TowerUpgradeLevel(1));
-			}
 		}
 
 		return entity;

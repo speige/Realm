@@ -62,14 +62,7 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 		{
 			if (!_world.IsAlive(_entity)) return;
 			var nameComp = new Name(value);
-			if (_world.Has<Name>(_entity))
-			{
-				_world.Set(_entity, nameComp);
-			}
-			else
-			{
-				_world.Add(_entity, nameComp);
-			}
+			_world.SetOrAdd(_entity, nameComp);
 		}
 	}
 
@@ -87,16 +80,10 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 		set
 		{
 			if (!_world.IsAlive(_entity)) return;
-			if (_world.Has<UnitOwnerPlayer>(_entity))
-				_world.Set(_entity, new UnitOwnerPlayer(value));
-			else
-				_world.Add(_entity, new UnitOwnerPlayer(value));
+			_world.SetOrAdd(_entity, new UnitOwnerPlayer(value));
 
 			bool isEnemy = value != 0;
-			if (_world.Has<UnitFaction>(_entity))
-				_world.Set(_entity, new UnitFaction(isEnemy));
-			else
-				_world.Add(_entity, new UnitFaction(isEnemy));
+			_world.SetOrAdd(_entity, new UnitFaction(isEnemy));
 
 			if (_world.Has<Owner>(_entity) && GameHost.Instance != null)
 			{
@@ -125,10 +112,7 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 		set
 		{
 			if (!_world.IsAlive(_entity)) return;
-			if (_world.Has<UnitFaction>(_entity))
-				_world.Set(_entity, new UnitFaction(value));
-			else
-				_world.Add(_entity, new UnitFaction(value));
+			_world.SetOrAdd(_entity, new UnitFaction(value));
 			if (_world.Has<Owner>(_entity))
 			{
 				var playerOwner = value
@@ -377,14 +361,7 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 		{
 			if (!_world.IsAlive(_entity)) return;
 			var levelComp = new Realm.Ecs.Components.Meta.Level(value);
-			if (_world.Has<Realm.Ecs.Components.Meta.Level>(_entity))
-			{
-				_world.Set(_entity, levelComp);
-			}
-			else
-			{
-				_world.Add(_entity, levelComp);
-			}
+			_world.SetOrAdd(_entity, levelComp);
 		}
 	}
 
@@ -403,14 +380,7 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 		{
 			if (!_world.IsAlive(_entity)) return;
 			var expComp = new Realm.Ecs.Components.Meta.Experience(value);
-			if (_world.Has<Realm.Ecs.Components.Meta.Experience>(_entity))
-			{
-				_world.Set(_entity, expComp);
-			}
-			else
-			{
-				_world.Add(_entity, expComp);
-			}
+			_world.SetOrAdd(_entity, expComp);
 		}
 	}
 
@@ -465,14 +435,7 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 			_world.Remove<Realm.Ecs.Components.Combat.AttackTarget>(_entity);
 		}
 		var mv = new MoveTo(destination);
-		if (_world.Has<MoveTo>(_entity))
-		{
-			_world.Set(_entity, mv);
-		}
-		else
-		{
-			_world.Add(_entity, mv);
-		}
+		_world.SetOrAdd(_entity, mv);
 	}
 
 	public void AttackMove(System.Numerics.Vector3 destination)
@@ -487,23 +450,9 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 			_world.Remove<Realm.Ecs.Components.Combat.AttackTarget>(_entity);
 		}
 		var am = new Realm.Ecs.Components.Movement.AttackMove(destination);
-		if (_world.Has<Realm.Ecs.Components.Movement.AttackMove>(_entity))
-		{
-			_world.Set(_entity, am);
-		}
-		else
-		{
-			_world.Add(_entity, am);
-		}
+		_world.SetOrAdd(_entity, am);
 		var mv = new MoveTo(destination);
-		if (_world.Has<MoveTo>(_entity))
-		{
-			_world.Set(_entity, mv);
-		}
-		else
-		{
-			_world.Add(_entity, mv);
-		}
+		_world.SetOrAdd(_entity, mv);
 	}
 
 	public void Attack(IUnit target)
@@ -512,14 +461,7 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 		if (target is IEcsEntityWrapper wrapper && _world.IsAlive(wrapper.Entity))
 		{
 			var at = new AttackTarget(wrapper.Entity);
-			if (_world.Has<AttackTarget>(_entity))
-			{
-				_world.Set(_entity, at);
-			}
-			else
-			{
-				_world.Add(_entity, at);
-			}
+			_world.SetOrAdd(_entity, at);
 		}
 	}
 
@@ -532,14 +474,7 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 			if (GodotObject.IsInstanceValid(propNode))
 			{
 				var gatherer = new Gatherer(resourceNode.ResourceType, propNode.Entity);
-				if (_world.Has<Gatherer>(_entity))
-				{
-					_world.Set(_entity, gatherer);
-				}
-				else
-				{
-					_world.Add(_entity, gatherer);
-				}
+				_world.SetOrAdd(_entity, gatherer);
 			}
 		}
 	}
@@ -549,14 +484,7 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 		if (!_world.IsAlive(_entity)) return;
 
 		var newPosComp = new Position(position);
-		if (_world.Has<Position>(_entity))
-		{
-			_world.Set(_entity, newPosComp);
-		}
-		else
-		{
-			_world.Add(_entity, newPosComp);
-		}
+		_world.SetOrAdd(_entity, newPosComp);
 
 		if (GameHost.TryGetUnit3D(_entity, out var unit3D))
 		{
@@ -583,14 +511,7 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 			if (!_world.IsAlive(_entity)) return;
 			float max = MaxMana;
 			var val = Math.Max(0f, value);
-			if (_world.Has<Realm.Ecs.Components.Core.Mana>(_entity))
-			{
-				_world.Set(_entity, new Realm.Ecs.Components.Core.Mana(val, max));
-			}
-			else
-			{
-				_world.Add(_entity, new Realm.Ecs.Components.Core.Mana(val, max));
-			}
+			_world.SetOrAdd(_entity, new Realm.Ecs.Components.Core.Mana(val, max));
 		}
 	}
 
@@ -610,14 +531,7 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 			if (!_world.IsAlive(_entity)) return;
 			float current = Mana;
 			var val = Math.Max(0f, value);
-			if (_world.Has<Realm.Ecs.Components.Core.Mana>(_entity))
-			{
-				_world.Set(_entity, new Realm.Ecs.Components.Core.Mana(current, val));
-			}
-			else
-			{
-				_world.Add(_entity, new Realm.Ecs.Components.Core.Mana(current, val));
-			}
+			_world.SetOrAdd(_entity, new Realm.Ecs.Components.Core.Mana(current, val));
 		}
 	}
 
@@ -642,14 +556,7 @@ public class Unit_WasmRuntime : IUnit, IEcsEntityWrapper
 		set
 		{
 			if (!_world.IsAlive(_entity)) return;
-			if (_world.Has<ModelScale>(_entity))
-			{
-				_world.Set(_entity, new ModelScale(value));
-			}
-			else
-			{
-				_world.Add(_entity, new ModelScale(value));
-			}
+			_world.SetOrAdd(_entity, new ModelScale(value));
 			if (GameHost.TryGetUnit3D(_entity, out var u3d))
 			{
 				if (GodotObject.IsInstanceValid(u3d))

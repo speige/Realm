@@ -109,8 +109,10 @@ public static class ModelShaderManager
 
 		double totalLinearLuminance = 0.0;
 		long validPixelCount = 0;
+		int step = (w * h > 262144) ? 4 : 1;
+		int stride = channels * step;
 
-		for (int i = 0; i < data.Length; i += channels)
+		for (int i = 0; i < data.Length; i += stride)
 		{
 			byte r = data[i];
 			byte g = data[i + 1];
@@ -138,7 +140,7 @@ public static class ModelShaderManager
 
 		if (validPixelCount == 0)
 		{
-			for (int i = 0; i < data.Length; i += channels)
+			for (int i = 0; i < data.Length; i += stride)
 			{
 				byte r = data[i];
 				byte g = data[i + 1];
@@ -258,8 +260,11 @@ public static class ModelShaderManager
 
 		long lowCount = 0;
 		long highCount = 0;
+		int step = totalPixels > 262144 ? 4 : 1;
+		int stride = channels * step;
+		long sampledPixels = 0;
 
-		for (int i = 0; i < data.Length; i += channels)
+		for (int i = 0; i < data.Length; i += stride)
 		{
 			byte r = data[i];
 			if (r <= 32)
@@ -270,10 +275,13 @@ public static class ModelShaderManager
 			{
 				highCount++;
 			}
+			sampledPixels++;
 		}
 
-		double lowRatio = (double)lowCount / totalPixels;
-		double highRatio = (double)highCount / totalPixels;
+		if (sampledPixels == 0) sampledPixels = 1;
+
+		double lowRatio = (double)lowCount / sampledPixels;
+		double highRatio = (double)highCount / sampledPixels;
 
 		bool isValidMask = lowRatio >= 0.05 && highRatio >= 0.005;
 		_playerMaskCheckCache[ormId] = isValidMask;

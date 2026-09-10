@@ -56,20 +56,8 @@ public partial class InGameHUD : Control
 		}
 	}
 
-	private Button _btnBuildCastle;
-	private Button _btnBuildTower;
 	private Button _btnCancelBuild;
 
-	private Button _btnTrainSoldier;
-	private Button _btnTrainArcher;
-	private Button _btnTrainPriest;
-	private Button _btnTrainWorker;
-	private Button _btnUpgradeWeapons;
-	private Button _btnUpgradeShields;
-	private Button _btnUpgradeHarvesting;
-	private Button _btnUsePotion;
-
-	private Button _btnUpgradeTower;
 	private Button _btnSetRally;
 
 	private VBoxContainer _productionBox;
@@ -700,7 +688,7 @@ public partial class InGameHUD : Control
 		
 		_portraitPanelController = new PortraitPanel(
 			_portraitFrame, _selectionFrame, _unitsContainer, _unitButtons, _statsContainer,
-				_statsLabel, _itemsBox, _btnUsePotion,
+				_statsLabel, _itemsBox,
 			_productionBox, _productionTitle, _productionProgress, _productionQueueLabel, _queueSlotsContainer,
 			_armyCompositionLabel, GetNode<Label>("BottomConsole/HBox/PortraitFrame/VBox/UnitName"), 
 				GetNodeOrNull<TextureRect>("BottomConsole/HBox/PortraitFrame/VBox/PortraitTexture") != null ? GetNode<TextureRect>("BottomConsole/HBox/PortraitFrame/VBox/PortraitTexture") : null
@@ -988,17 +976,6 @@ public partial class InGameHUD : Control
 		SetupItemIcon(itemShield, "res://Assets/UI/battle_shield.png", "Battle Shield\n+3 Armor Block (Equipped)");
 		itemsHBox.AddChild(itemShield);
 
-		_btnUsePotion = new Button();
-		_btnUsePotion.Name = "BtnUsePotion";
-		_btnUsePotion.Flat = false;
-		_btnUsePotion.ExpandIcon = true;
-		_btnUsePotion.Icon = GD.Load<Texture2D>("res://Assets/UI/alliance_flag.png");
-		_btnUsePotion.CustomMinimumSize = new Vector2(60, 60);
-		_btnUsePotion.FocusMode = FocusModeEnum.None;
-		_btnUsePotion.ClipContents = true;
-		_btnUsePotion.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-		_btnUsePotion.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-		_btnUsePotion.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
 
 		var potHotkeyLabel = new Label();
 		potHotkeyLabel.Name = "HotkeyLabel";
@@ -1011,9 +988,6 @@ public partial class InGameHUD : Control
 		potHotkeyLabel.OffsetLeft = 4;
 		potHotkeyLabel.OffsetTop = 3;
 		potHotkeyLabel.MouseFilter = MouseFilterEnum.Ignore;
-		_btnUsePotion.AddChild(potHotkeyLabel);
-
-		itemsHBox.AddChild(_btnUsePotion);
 
 		_productionBox = new VBoxContainer();
 		_productionBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
@@ -1605,28 +1579,10 @@ public partial class InGameHUD : Control
 			("S",   "Stop all selected units"),
 			("H",   "Hold Position"),
 			("B",   "Open Build submenu"),
-			("C",   "Build Castle (in build submenu)"),
-			("T",   "Build Tower (in build submenu)"),
 			("", ""),
-			("Castle selected:", ""),
-			("F",   "Train Soldier"),
-			("R",   "Train Archer"),
-			("P",   "Train Priest"),
-			("V",   "Train Worker"),
+			("Building selected:", ""),
 			("Y",   "Set Rally Point"),
-			("I",   "Buy Healing Potion"),
-			("W",   "Upgrade Weapons"),
-			("G",   "Upgrade Armor"),
-			("T",   "Upgrade Harvesting"),
 			("", ""),
-			("Tower selected:", ""),
-			("U",   "Upgrade Tower"),
-			("Q",   "Cast Fireball"),
-			("E",   "Cast Lightning"),
-			("", ""),
-			("Priest selected:", ""),
-			("W",   "Cast Holy Light"),
-			("I",   "Use Healing Potion"),
 			("", ""),
 			("Camera:", ""),
 			("WASD / Edge","Pan camera"),
@@ -1923,26 +1879,7 @@ public partial class InGameHUD : Control
 		if (_commandPanelController == null) return false;
 		return _commandPanelController.HandleHotkey(keycode);
 	}
-
-	public void UpgradeSelectedTower()
-	{
-		var selectedUnits = GameHost.Instance?.SelectedUnits;
-		if (selectedUnits != null && selectedUnits.Count > 0)
-		{
-			int idx = GameHost.Instance != null ? GameHost.Instance.CycleSelectionIndex : 0;
-			if (idx >= 0 && idx < selectedUnits.Count)
-			{
-				var tower = selectedUnits[idx];
-				if (!tower.IsEnemy && tower.UnitId == "tower")
-				{
-					GameHost.Instance?.UpgradeTower(tower);
-				}
-			}
-		}
-	}
-
-
-
+	
 	private void SetupCommandCard()
 	{
 		SetupHUDButton(_btnMove, "res://Assets/UI/move_speed.png", TranslationServer.Translate("[M] Move / Right-Click Ground"), () => GameHost.Instance?.EnterCommandTargeting("move"));
@@ -1960,36 +1897,11 @@ public partial class InGameHUD : Control
 		SetupHUDButton(_btnPatrol, "res://Assets/UI/patrol.jpg", TranslationServer.Translate("[P] Patrol — Unit patrols between current position and target, engaging enemies"), () => GameHost.Instance?.EnterCommandTargeting("patrol"));
 		SetupHUDButton(_btnBuild, "res://Assets/UI/golden_hammers.png", TranslationServer.Translate("[B] Build Structure"), () => EnterBuildSubMenu());
 
-		_btnBuildCastle = new Button();
-		SetupHUDButton(_btnBuildCastle, "res://Assets/UI/moonlit_castle.png", TranslationServer.Translate("[C] Build Castle (Cost: 400 Gold, 300 Wood, 200 Stone)"), () => GameHost.Instance?.EnterBuildingPlacement("castle"));
-		_btnBuildTower = new Button();
-		SetupHUDButton(_btnBuildTower, "res://Assets/UI/unknown_unit_1.png", TranslationServer.Translate("[T] Build Spell Tower (Cost: 200 Gold, 150 Wood, 100 Stone)"), () => GameHost.Instance?.EnterBuildingPlacement("tower"));
 		_btnCancelBuild = new Button();
 		SetupHUDButton(_btnCancelBuild, "res://Assets/UI/cancel_button_2.png", TranslationServer.Translate("[Esc] Cancel"), () => ExitBuildSubMenu());
 
-		_btnTrainSoldier = new Button();
-		SetupHUDButton(_btnTrainSoldier, "res://Assets/UI/heavy_knight.png", TranslationServer.Translate("[F] Train Soldier (Cost: 100 Gold, 1 Pop) — Heavy armored melee fighter"), () => GameHost.Instance?.TrainUnitAtCastle("soldier"));
-		_btnTrainArcher = new Button();
-		SetupHUDButton(_btnTrainArcher, "res://Assets/UI/elf_warrior.png", TranslationServer.Translate("[R] Train Archer (Cost: 120 Gold, 40 Wood, 1 Pop) — Ranged elf with high range"), () => GameHost.Instance?.TrainUnitAtCastle("archer"));
-
-		_btnTrainPriest = new Button();
-		SetupHUDButton(_btnTrainPriest, "res://Assets/UI/alliance_flag.png", TranslationServer.Translate("[P] Train Priest (Cost: 140 Gold, 20 Wood, 1 Pop) — Healing support unit"), () => GameHost.Instance?.TrainUnitAtCastle("priest"));
-
-		_btnTrainWorker = new Button();
-		SetupHUDButton(_btnTrainWorker, "res://Assets/UI/unit_placeholder.png", TranslationServer.Translate("[V] Train Worker (Cost: 75 Gold, 1 Pop) — Dedicated gatherer and builder"), () => GameHost.Instance?.TrainUnitAtCastle("worker"));
-
 		_btnSetRally = new Button();
 		SetupHUDButton(_btnSetRally, "res://Assets/UI/alliance_flag.png", TranslationServer.Translate("[Y] Set Rally Point — Set location where new units will walk"), () => GameHost.Instance?.EnterCommandTargeting("rally"));
-		
-		_btnUpgradeWeapons = new Button();
-		SetupHUDButton(_btnUpgradeWeapons, "res://Assets/UI/battle_axe.png", TranslationServer.Translate("[W] Upgrade Weapons (Cost: 150 Gold, 100 Wood)\nPermanently increases unit damage by +3"), () => GameHost.Instance?.BuyWeaponsUpgrade());
-		_btnUpgradeShields = new Button();
-		SetupHUDButton(_btnUpgradeShields, "res://Assets/UI/battle_shield.png", TranslationServer.Translate("[G] Upgrade Armor (Cost: 150 Gold, 100 Stone)\nPermanently increases unit armor by +2"), () => GameHost.Instance?.BuyShieldsUpgrade());
-		_btnUpgradeHarvesting = new Button();
-		SetupHUDButton(_btnUpgradeHarvesting, "res://Assets/UI/gold_coin.png", TranslationServer.Translate("[T] Upgrade Harvesting (Cost: 150 Wood, 100 Stone)\nPermanently increases passive resource gathering rates by +50%"), () => GameHost.Instance?.BuyHarvestingUpgrade());
-
-		_btnUpgradeTower = new Button();
-		SetupHUDButton(_btnUpgradeTower, "res://Assets/UI/magic_upgrade_arrow.png", TranslationServer.Translate("[U] Upgrade Tower (Cost: 150 Gold, 100 Stone)"), () => UpgradeSelectedTower());
 	}
 
 	private void CreateSpectatorPerspectiveUI()
@@ -2187,5 +2099,58 @@ public partial class InGameHUD : Control
 	private void OnForceResumePressed()
 	{
 		GameHost.Instance?.RequestForceResume();
+	}
+
+	private string GetBuildOptionTooltip(string unitId, string hotkey)
+	{
+		string name = unitId.ToUpper();
+		float gold = 0, wood = 0, stone = 0;
+		if (GameHost.TryGetUnitOrBuildingMetadata(unitId, out var meta))
+		{
+			name = meta.Name;
+			gold = meta.CostGold;
+			wood = meta.CostWood;
+			stone = meta.CostStone;
+		}
+
+		string costStr = $"Cost: {gold} Gold";
+		if (wood > 0) costStr += $", {wood} Wood";
+		if (stone > 0) costStr += $", {stone} Stone";
+
+		string tooltipFormat = !string.IsNullOrEmpty(hotkey)
+			? "[{0}] Build {1} ({2})"
+			: "Build {0} ({1})";
+
+		return string.Format(TranslationServer.Translate(tooltipFormat), hotkey, name, costStr);
+	}
+
+	private string GetTrainOptionTooltip(string unitId, string hotkey)
+	{
+		string name = unitId.ToUpper();
+		float gold = 0, wood = 0, stone = 0;
+		int pop = 0;
+		string desc = "";
+		if (GameHost.TryGetUnitOrBuildingMetadata(unitId, out var meta))
+		{
+			name = meta.Name;
+			gold = meta.CostGold;
+			wood = meta.CostWood;
+			stone = meta.CostStone;
+			pop = meta.PopCost;
+			desc = meta.Description;
+		}
+
+		string costStr = $"Cost: {gold} Gold";
+		if (wood > 0) costStr += $", {wood} Wood";
+		if (stone > 0) costStr += $", {stone} Stone";
+		if (pop > 0) costStr += $", {pop} Pop";
+
+		string tooltipFormat = !string.IsNullOrEmpty(hotkey)
+			? (string.IsNullOrEmpty(desc) ? "[{0}] Train {1} ({2})" : "[{0}] Train {1} ({2}) — {3}")
+			: (string.IsNullOrEmpty(desc) ? "Train {0} ({1})" : "Train {0} ({1}) — {2}");
+
+		return string.IsNullOrEmpty(desc)
+			? string.Format(TranslationServer.Translate(tooltipFormat), hotkey, name, costStr)
+			: string.Format(TranslationServer.Translate(tooltipFormat), hotkey, name, costStr, desc);
 	}
 }

@@ -2091,55 +2091,6 @@ public partial class GameHost : Node3D, IGameAPI
 		return null;
 	}
 
-	void IGameAPI.UpgradeUnit(IUnit unit)
-	{
-		if (unit is IEcsEntityWrapper wrapper)
-		{
-			var entity = wrapper.Entity;
-			if (EcsWorld.IsAlive(entity) && GameHost.TryGetUnit3D(entity, out var tower))
-			{
-				if (GodotObject.IsInstanceValid(tower))
-				{
-					int currentLevel = 1;
-					if (EcsWorld.Has<TowerUpgradeLevel>(tower.Entity))
-					{
-						currentLevel = EcsWorld.Get<TowerUpgradeLevel>(tower.Entity).Value;
-					}
-
-					int newLevel = currentLevel + 1;
-					EcsWorld.Set(tower.Entity, new TowerUpgradeLevel(newLevel));
-					
-					string baseName = "Spell Tower";
-					if (EcsWorld.Has<Name>(tower.Entity))
-					{
-						var nameComp = EcsWorld.Get<Name>(tower.Entity);
-						if (nameComp.Value.Contains("Orc")) baseName = "Orc Totem Tower";
-					}
-					EcsWorld.Set(tower.Entity, new Name($"{baseName} (Lvl {newLevel})"));
-
-					if (EcsWorld.Has<Health>(tower.Entity))
-					{
-						var hp = EcsWorld.Get<Health>(tower.Entity);
-						EcsWorld.Set(tower.Entity, new Health(hp.Current + 250f, hp.Max + 250f));
-					}
-					if (EcsWorld.Has<Armor>(tower.Entity))
-					{
-						var arm = EcsWorld.Get<Armor>(tower.Entity);
-						EcsWorld.Set(tower.Entity, new Armor(arm.Value + 5f));
-					}
-					if (EcsWorld.Has<Attack>(tower.Entity))
-					{
-						var atk = EcsWorld.Get<Attack>(tower.Entity);
-						EcsWorld.Set(tower.Entity, new Attack(atk.Damage + 10f, atk.Range, atk.Cooldown));
-					}
-					
-					float newScale = 1.0f + newLevel * 0.2f;
-					tower.Scale = new Godot.Vector3(newScale, newScale, newScale);
-				}
-			}
-		}
-	}
-
 	void IGameAPI.SpawnTargetIndicator(System.Numerics.Vector3 position, System.Numerics.Vector3 color)
 	{
 		SpawnTargetIndicator(new Godot.Vector3(position.X, position.Y, position.Z), new Godot.Color(color.X, color.Y, color.Z));
@@ -3240,14 +3191,7 @@ public class {mapName} : IMapScript
 	{
 		if (unit is IEcsEntityWrapper wrapper && EcsWorld.IsAlive(wrapper.Entity))
 		{
-			if (EcsWorld.Has<Realm.Ecs.Components.Meta.Level>(wrapper.Entity))
-			{
-				EcsWorld.Set(wrapper.Entity, new Realm.Ecs.Components.Meta.Level(level));
-			}
-			else
-			{
-				EcsWorld.Add(wrapper.Entity, new Realm.Ecs.Components.Meta.Level(level));
-			}
+			EcsWorld.SetOrAdd(wrapper.Entity, new Realm.Ecs.Components.Meta.Level(level));
 		}
 	}
 
@@ -4596,16 +4540,10 @@ public class {mapName} : IMapScript
 				}
 
 				var gatherer = new Gatherer(resType, prop.Entity);
-				if (EcsWorld.Has<Gatherer>(unit.Entity))
-					EcsWorld.Set(unit.Entity, gatherer);
-				else
-					EcsWorld.Add(unit.Entity, gatherer);
+				EcsWorld.SetOrAdd(unit.Entity, gatherer);
 
 				var moveTo = new MoveTo(new System.Numerics.Vector3(prop.GlobalPosition.X, prop.GlobalPosition.Y, prop.GlobalPosition.Z));
-				if (EcsWorld.Has<MoveTo>(unit.Entity))
-					EcsWorld.Set(unit.Entity, moveTo);
-				else
-					EcsWorld.Add(unit.Entity, moveTo);
+				EcsWorld.SetOrAdd(unit.Entity, moveTo);
 			}
 		}
 	}
@@ -4639,20 +4577,11 @@ public class {mapName} : IMapScript
 	{
 		int playerIndex = player >= 0 ? player : 0;
 		bool actualIsEnemy = player >= 0 ? NetworkService.ArePlayerIndicesEnemies(LocalPlayerIndex, playerIndex) : isEnemy;
-		if (EcsWorld.Has<UnitFaction>(entity))
-			EcsWorld.Set(entity, new UnitFaction(actualIsEnemy));
-		else
-			EcsWorld.Add(entity, new UnitFaction(actualIsEnemy));
+		EcsWorld.SetOrAdd(entity, new UnitFaction(actualIsEnemy));
 
-		if (EcsWorld.Has<UnitOwnerPlayer>(entity))
-			EcsWorld.Set(entity, new UnitOwnerPlayer(playerIndex));
-		else
-			EcsWorld.Add(entity, new UnitOwnerPlayer(playerIndex));
+		EcsWorld.SetOrAdd(entity, new UnitOwnerPlayer(playerIndex));
 
-		if (EcsWorld.Has<DefinitionId>(entity))
-			EcsWorld.Set(entity, new DefinitionId(id));
-		else
-			EcsWorld.Add(entity, new DefinitionId(id));
+		EcsWorld.SetOrAdd(entity, new DefinitionId(id));
 
 		var unit3D = new Unit3D();
 		unit3D.Entity = entity;
@@ -4689,18 +4618,12 @@ public class {mapName} : IMapScript
 		if (isBuilding)
 		{
 			var spawnOffset = new System.Numerics.Vector3(0f, 0f, 8f);
-			if (EcsWorld.Has<BuildingSpawnOffset>(entity))
-				EcsWorld.Set(entity, new BuildingSpawnOffset(spawnOffset));
-			else
-				EcsWorld.Add(entity, new BuildingSpawnOffset(spawnOffset));
+			EcsWorld.SetOrAdd(entity, new BuildingSpawnOffset(spawnOffset));
 
 			float autoDetectedRadius = GetOrCalculateObstacleRadius(id, unit3D, isBuilding);
 			string unitAssetKey = GetModelAssetKey(unit3D);
 			float baseRadius = autoDetectedRadius * GetModelCollisionCircleRatio(unitAssetKey);
-			if (EcsWorld.Has<Realm.Ecs.Components.Core.CollisionRadius>(entity))
-				EcsWorld.Set(entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
-			else
-				EcsWorld.Add(entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
+			EcsWorld.SetOrAdd(entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
 
 			if (!IsMapEditorMode)
 			{

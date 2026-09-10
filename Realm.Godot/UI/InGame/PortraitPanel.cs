@@ -13,7 +13,6 @@ public class PortraitPanel
 	private HBoxContainer _statsContainer;
 	private Label _statsLabel;
 	private VBoxContainer _itemsBox;
-	private Button _btnUsePotion;
 	private VBoxContainer _productionBox;
 	private Label _productionTitle;
 	private ProgressBar _productionProgress;
@@ -29,7 +28,7 @@ public class PortraitPanel
 
 	public PortraitPanel(PanelContainer portraitFrame, PanelContainer selectionFrame, 
 		HBoxContainer unitsContainer, List<Button> unitButtons, HBoxContainer statsContainer,
-		Label statsLabel, VBoxContainer itemsBox, Button btnUsePotion,
+		Label statsLabel, VBoxContainer itemsBox,
 		VBoxContainer productionBox, Label productionTitle, ProgressBar productionProgress,
 		Label productionQueueLabel, HBoxContainer queueSlotsContainer, Label armyCompositionLabel,
 		Label unitNameLabel, TextureRect portraitTexture)
@@ -41,7 +40,6 @@ public class PortraitPanel
 		_statsContainer = statsContainer;
 		_statsLabel = statsLabel;
 		_itemsBox = itemsBox;
-		_btnUsePotion = btnUsePotion;
 		_productionBox = productionBox;
 		_productionTitle = productionTitle;
 		_productionProgress = productionProgress;
@@ -152,9 +150,9 @@ public class PortraitPanel
 			string statsText = $"{TranslationServer.Translate("HP")}: {info.Health:F0} / {info.MaxHealth:F0}";
 			if (info.Damage > 0)
 			{
-				string label = (info.UnitId == "priest") ? TranslationServer.Translate("HEAL") : TranslationServer.Translate("ATK");
+				string label = TranslationServer.Translate("ATK");
 				statsText += $"   {label}: {info.Damage:F0}   {TranslationServer.Translate("RNG")}: {info.Range:F0}";
-				if (info.UnitId != "priest" && info.Dps > 0)
+				if (info.Dps > 0)
 				{
 					statsText += $"   {TranslationServer.Translate("DPS")}: {info.Dps:F1}";
 				}
@@ -218,20 +216,6 @@ public class PortraitPanel
 						_lastProductionQueue.Clear();
 						_lastProductionQueue.AddRange(info.ProductionQueue);
 						PopulateQueueSlots(info.Entity, info.ProductionQueue);
-					}
-				}
-				else
-				{
-					if (info.UnitId == "castle")
-					{
-						_productionTitle.Text = TranslationServer.Translate("PRODUCTION IDLE");
-						_productionProgress.Visible = false;
-						_productionQueueLabel.Text = TranslationServer.Translate("Queue empty — [F] Soldier  [R] Archer  [P] Priest");
-						if (_lastProductionQueue.Count > 0)
-						{
-							_lastProductionQueue.Clear();
-							ClearQueueSlots();
-						}
 					}
 				}
 			}
@@ -367,15 +351,7 @@ public class PortraitPanel
 
 	private string GetUnitIcon(string unitId)
 	{
-		return unitId switch
-		{
-			"soldier" => "res://Assets/UI/heavy_knight.png",
-			"archer" => "res://Assets/UI/elf_warrior.png",
-			"priest" => "res://Assets/UI/alliance_flag.png",
-			"castle" => "res://Assets/UI/moonlit_castle.png",
-			"tower" => "res://Assets/UI/unknown_unit_1.png",
-			_ => "res://Assets/UI/unit_placeholder.png"
-		};
+		return "res://Assets/UI/unit_placeholder.png";
 	}
 
 	private void PopulateQueueSlots(Entity castleEntity, List<string> unitIds)

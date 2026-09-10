@@ -313,10 +313,7 @@ internal class CombatAndDamageService
 		{
 			if (EcsWorld.IsAlive(attacker))
 			{
-				if (EcsWorld.Has<AttackTarget>(attacker))
-					EcsWorld.Set(attacker, target);
-				else
-					EcsWorld.Add(attacker, target);
+				EcsWorld.SetOrAdd(attacker, target);
 			}
 		}
 	}
@@ -546,10 +543,7 @@ internal class CombatAndDamageService
 				if (!needsRetarget) continue;
 
 				var moveTo = new MoveTo(targetPos);
-				if (EcsWorld.Has<MoveTo>(attacker))
-					EcsWorld.Set(attacker, moveTo);
-				else
-					EcsWorld.Add(attacker, moveTo);
+				EcsWorld.SetOrAdd(attacker, moveTo);
 			}
 		}
 
@@ -926,8 +920,7 @@ internal class CombatAndDamageService
 		{
 			if (EcsWorld.IsAlive(priest))
 			{
-				if (EcsWorld.Has<HealingTarget>(priest)) EcsWorld.Set(priest, target);
-				else EcsWorld.Add(priest, target);
+				EcsWorld.SetOrAdd(priest, target);
 			}
 		}
 
@@ -961,8 +954,7 @@ internal class CombatAndDamageService
 				if (!needsRetarget) continue;
 
 				var moveTo = new MoveTo(targetPos);
-				if (EcsWorld.Has<MoveTo>(priest)) EcsWorld.Set(priest, moveTo);
-				else EcsWorld.Add(priest, moveTo);
+				EcsWorld.SetOrAdd(priest, moveTo);
 			}
 		}
 

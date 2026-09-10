@@ -1,4 +1,5 @@
 using Arch.Core;
+using Realm.Ecs.Common;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Services;
 using System;
@@ -36,14 +37,7 @@ public class SpectatorService
 		var worldEntity = FindWorldEntity();
 		if (worldEntity != Entity.Null && EcsWorld.IsAlive(worldEntity))
 		{
-			if (EcsWorld.Has<SpectatorPerspective>(worldEntity))
-			{
-				EcsWorld.Set(worldEntity, new SpectatorPerspective(value));
-			}
-			else
-			{
-				EcsWorld.Add(worldEntity, new SpectatorPerspective(value));
-			}
+			EcsWorld.SetOrAdd(worldEntity, new SpectatorPerspective(value));
 		}
 	}
 }

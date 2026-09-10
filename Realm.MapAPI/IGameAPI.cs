@@ -117,12 +117,6 @@ public interface IGameAPI
     IUnit? GetCastle(bool isEnemy);
 
     /// <summary>
-    /// Upgrades the specified unit to its next level if supported.
-    /// </summary>
-    /// <param name="unit">The unit to upgrade.</param>
-    void UpgradeUnit(IUnit unit);
-
-    /// <summary>
     /// Spawns a temporary visual target indicator ring at the specified position with the given color.
     /// </summary>
     /// <param name="position">The coordinates in 3D world space.</param>

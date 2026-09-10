@@ -16,16 +16,9 @@ public class WorldInitService
 		_ecsWorldAccessor = ecsWorldAccessor;
 	}
 
-	private void AddOrSet<T>(Entity entity, T component)
+	private void AddOrSet<T>(Entity entity, T component) where T : struct
 	{
-		if (EcsWorld.Has<T>(entity))
-		{
-			EcsWorld.Set(entity, component);
-		}
-		else
-		{
-			EcsWorld.Add(entity, component);
-		}
+		EcsWorld.SetOrAdd(entity, component);
 	}
 
 	public Entity SetupWorldEntityComponents(

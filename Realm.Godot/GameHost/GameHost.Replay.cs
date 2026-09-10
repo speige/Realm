@@ -95,23 +95,9 @@ public partial class GameHost
 				EcsWorld.Set(unit.Entity, new Position(new System.Numerics.Vector3(unit.GlobalPosition.X, unit.GlobalPosition.Y, unit.GlobalPosition.Z)));
 			}
 
-			if (EcsWorld.Has<Velocity>(unit.Entity))
-			{
-				EcsWorld.Set(unit.Entity, new Velocity(new System.Numerics.Vector3(unit.Velocity.X, unit.Velocity.Y, unit.Velocity.Z)));
-			}
-			else
-			{
-				EcsWorld.Add(unit.Entity, new Velocity(new System.Numerics.Vector3(unit.Velocity.X, unit.Velocity.Y, unit.Velocity.Z)));
-			}
+			EcsWorld.SetOrAdd(unit.Entity, new Velocity(new System.Numerics.Vector3(unit.Velocity.X, unit.Velocity.Y, unit.Velocity.Z)));
 
-			if (EcsWorld.Has<RotationY>(unit.Entity))
-			{
-				EcsWorld.Set(unit.Entity, new RotationY(unit.GlobalRotation.Y));
-			}
-			else
-			{
-				EcsWorld.Add(unit.Entity, new RotationY(unit.GlobalRotation.Y));
-			}
+			EcsWorld.SetOrAdd(unit.Entity, new RotationY(unit.GlobalRotation.Y));
 		}
 
 		_replayService.RecordGameplayTick();

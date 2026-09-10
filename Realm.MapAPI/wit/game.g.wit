@@ -195,7 +195,6 @@ interface game-api {
     unit-teleport: func(id: s32, position-x: f32, position-y: f32, position-z: f32);
     unit-unit-id: func(id: s32) -> string;
     unit-xp-bounty: func(id: s32) -> f32;
-    upgrade-unit: func(unit-id: s32);
     write-saved-data: func(file-name: string, content: string);
 }
 

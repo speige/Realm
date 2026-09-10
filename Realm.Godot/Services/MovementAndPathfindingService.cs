@@ -1,4 +1,5 @@
 using Arch.Core;
+using Realm.Ecs.Common;
 using DotRecast.Core.Numerics;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Movement;
@@ -328,14 +329,7 @@ internal class MovementAndPathfindingService
 		if (pf.CurrentWaypointIndex >= pf.WaypointCount)
 		{
 			_tickArrivedUnits.Add(entity);
-			if (EcsWorld.Has<Velocity>(entity))
-			{
-				EcsWorld.Set(entity, new Velocity(System.Numerics.Vector3.Zero));
-			}
-			else
-			{
-				EcsWorld.Add(entity, new Velocity(System.Numerics.Vector3.Zero));
-			}
+			EcsWorld.SetOrAdd(entity, new Velocity(System.Numerics.Vector3.Zero));
 		}
 		else
 		{
@@ -565,14 +559,7 @@ internal class MovementAndPathfindingService
 			float followFactor = Math.Clamp(VerticalFollowRate * _fDelta, 0f, 1f);
 			nextPos.Y = pos.Value.Y + (desiredY - pos.Value.Y) * followFactor;
 			pos.Value = nextPos;
-			if (EcsWorld.Has<Velocity>(entity))
-			{
-				EcsWorld.Set(entity, new Velocity(velocity));
-			}
-			else
-			{
-				EcsWorld.Add(entity, new Velocity(velocity));
-			}
+			EcsWorld.SetOrAdd(entity, new Velocity(velocity));
 		}
 
 		if (hasPf)

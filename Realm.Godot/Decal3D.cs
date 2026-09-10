@@ -1,4 +1,5 @@
 using Arch.Core;
+using Realm.Ecs.Common;
 using Godot;
 using Realm.Ecs.Components.Core;
 using System;
@@ -53,10 +54,7 @@ public partial class Decal3D : Decal
 			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity))
 			{
 				var world = GameHost.Instance.EcsWorld;
-				if (world.Has<DecalIdentity>(Entity))
-					world.Set(Entity, new DecalIdentity(value));
-				else
-					world.Add(Entity, new DecalIdentity(value));
+				world.SetOrAdd(Entity, new DecalIdentity(value));
 			}
 		}
 	}

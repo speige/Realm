@@ -83,6 +83,25 @@ internal static class WorldExtensions
         if (world.IsAlive(entity) && world.Has<TComponent>(entity))
             world.Set(entity, newValue);
     }
+
+    /// <summary>
+    ///     Sets the component if present or adds it if absent on <paramref name="entity"/>
+    ///     when the entity is alive.
+    /// </summary>
+    public static void SetOrAdd<TComponent>(
+        this World world,
+        Entity entity,
+        TComponent component)
+        where TComponent : struct
+    {
+        if (!world.IsAlive(entity))
+            return;
+
+        if (world.Has<TComponent>(entity))
+            world.Set(entity, component);
+        else
+            world.Add(entity, component);
+    }
 }
 
 /// <summary>

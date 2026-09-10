@@ -323,14 +323,7 @@ public class NetworkService
 						Velocity = snap.Velocity.ToNumerics(),
 						RotationY = snap.RotationY
 					};
-					if (EcsWorld.Has<InterpolationTarget>(localEntity))
-					{
-						EcsWorld.Set(localEntity, target);
-					}
-					else
-					{
-						EcsWorld.Add(localEntity, target);
-					}
+					EcsWorld.SetOrAdd(localEntity, target);
 					GD.Print($"[CLIENT_SNAPSHOT_APPLIED] Sequence={snapshot.Sequence} Unit={snap.EntityId} ServerPos={snap.Position.ToGodot()}");
 				}
 			}
@@ -528,8 +521,7 @@ public class NetworkService
 				var targetPos = new System.Numerics.Vector3(cmd.TargetPosition.X, cmd.TargetPosition.Y, cmd.TargetPosition.Z);
 				var scattered = targetPos + right * offsetX + moveDir * offsetZ;
 				var moveTo = new MoveTo(scattered);
-				if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
-				else EcsWorld.Add(entity, moveTo);
+				EcsWorld.SetOrAdd(entity, moveTo);
 				unitIndex++;
 			}
 		}
@@ -556,8 +548,7 @@ public class NetworkService
 							ClearUnitOrders(entity);
 						}
 						var attackTarget = new AttackTarget(targetEntity);
-						if (EcsWorld.Has<AttackTarget>(entity)) EcsWorld.Set(entity, attackTarget);
-						else EcsWorld.Add(entity, attackTarget);
+						EcsWorld.SetOrAdd(entity, attackTarget);
 					}
 				}
 			}
@@ -587,14 +578,12 @@ public class NetworkService
 						if (EcsWorld.Has<DefinitionId>(entity) && EcsWorld.Get<DefinitionId>(entity).Value == "priest")
 						{
 							var healTarget = new HealingTarget(targetEntity);
-							if (EcsWorld.Has<HealingTarget>(entity)) EcsWorld.Set(entity, healTarget);
-							else EcsWorld.Add(entity, healTarget);
+							EcsWorld.SetOrAdd(entity, healTarget);
 						}
 						else if (EcsWorld.Has<Movable>(entity))
 						{
 							var follow = new Realm.Ecs.Components.Movement.Follow(targetEntity);
-							if (EcsWorld.Has<Realm.Ecs.Components.Movement.Follow>(entity)) EcsWorld.Set(entity, follow);
-							else EcsWorld.Add(entity, follow);
+							EcsWorld.SetOrAdd(entity, follow);
 						}
 					}
 				}
@@ -633,11 +622,9 @@ public class NetworkService
 								ClearUnitOrders(entity);
 							}
 							var gatherer = new Gatherer(resType, prop.Entity);
-							if (EcsWorld.Has<Gatherer>(entity)) EcsWorld.Set(entity, gatherer);
-							else EcsWorld.Add(entity, gatherer);
+							EcsWorld.SetOrAdd(entity, gatherer);
 							var moveTo = new MoveTo(new System.Numerics.Vector3(prop.GlobalPosition.X, prop.GlobalPosition.Y, prop.GlobalPosition.Z));
-							if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
-							else EcsWorld.Add(entity, moveTo);
+							EcsWorld.SetOrAdd(entity, moveTo);
 						}
 					}
 				}
@@ -737,11 +724,9 @@ public class NetworkService
 							ClearUnitOrders(entity);
 						}
 						var patrol = new Patrol(patrolA, patrolB);
-						if (EcsWorld.Has<Patrol>(entity)) EcsWorld.Set(entity, patrol);
-						else EcsWorld.Add(entity, patrol);
+						EcsWorld.SetOrAdd(entity, patrol);
 						var moveTo = new MoveTo(patrolB);
-						if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
-						else EcsWorld.Add(entity, moveTo);
+						EcsWorld.SetOrAdd(entity, moveTo);
 					}
 					unitIndex++;
 				}
@@ -827,8 +812,7 @@ public class NetworkService
 					{
 						ClearUnitOrders(entity);
 						var moveTo = new MoveTo(scattered);
-						if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
-						else EcsWorld.Add(entity, moveTo);
+						EcsWorld.SetOrAdd(entity, moveTo);
 					}
 				}
 				unitIndex++;

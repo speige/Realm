@@ -3252,8 +3252,7 @@ public partial class GameHost
 								else if (!EcsWorld.Has<BuildTask>(unit.Entity))
 								{
 									var moveTo = new MoveTo(buildingPos);
-									if (EcsWorld.Has<MoveTo>(unit.Entity)) EcsWorld.Set(unit.Entity, moveTo);
-									else EcsWorld.Add(unit.Entity, moveTo);
+									EcsWorld.SetOrAdd(unit.Entity, moveTo);
 								}
 							}
 						}
@@ -3641,51 +3640,6 @@ public partial class GameHost
 		}
 	}
 
-	public void UpgradeTower(Unit3D tower)
-	{
-		float costGold = 150f;
-		float costStone = 100f;
-
-		if (InGameHUD.Instance != null)
-		{
-			int currentLevel = 1;
-			if (EcsWorld.Has<TowerUpgradeLevel>(tower.Entity))
-			{
-				currentLevel = EcsWorld.Get<TowerUpgradeLevel>(tower.Entity).Value;
-			}
-			
-			if (currentLevel >= 3)
-			{
-				InGameHUD.Instance.ShowFeedbackText("Tower is already at maximum upgrade level (Level 3)!", new Color(1.0f, 0.3f, 0.3f));
-				UIManager.Instance?.PlayWarningSound();
-				return;
-			}
-
-			if (InGameHUD.Instance.Gold >= costGold && InGameHUD.Instance.Stone >= costStone)
-			{
-				if (_inputService.TryUpgradeTower(tower.Entity, out int newLevel, out string _))
-				{
-					InGameHUD.Instance.Gold -= costGold;
-					InGameHUD.Instance.Stone -= costStone;
-
-					float newScale = 1.0f + newLevel * 0.2f;
-					tower.Scale = new Vector3(newScale, newScale, newScale);
-					SpawnTargetIndicator(tower.GlobalPosition, new Color(0.1f, 0.8f, 0.9f));
-					
-					InGameHUD.Instance.ShowFeedbackText($"Tower Upgraded to Level {newLevel}!", new Color(0.2f, 0.8f, 1.0f));
-					UIManager.Instance?.PlayClickSound();
-					
-					InGameHUD.Instance.RefreshUI(SelectedUnits);
-				}
-			}
-			else
-			{
-				InGameHUD.Instance.ShowFeedbackText("Cannot upgrade: Insufficient resources!", new Color(1.0f, 0.2f, 0.2f));
-				UIManager.Instance?.PlayWarningSound();
-			}
-		}
-	}
-
 	public void SaveCameraLocation(int slotIndex)
 	{
 		if (slotIndex < 1 || slotIndex > 4) return;
@@ -3993,11 +3947,9 @@ public partial class GameHost
 					var cState = EcsWorld.Get<ConstructionState>(targetBuilding.Entity);
 					var buildTask = new BuildTask(targetBuilding.Entity, cState.TotalBuildTime);
 					buildTask.Progress = cState.Progress;
-					if (EcsWorld.Has<BuildTask>(unit.Entity)) EcsWorld.Set(unit.Entity, buildTask);
-					else EcsWorld.Add(unit.Entity, buildTask);
+					EcsWorld.SetOrAdd(unit.Entity, buildTask);
 
-					if (EcsWorld.Has<MoveTo>(unit.Entity)) EcsWorld.Set(unit.Entity, new MoveTo(bPos));
-					else EcsWorld.Add(unit.Entity, new MoveTo(bPos));
+					EcsWorld.SetOrAdd(unit.Entity, new MoveTo(bPos));
 				}
 			}
 		}

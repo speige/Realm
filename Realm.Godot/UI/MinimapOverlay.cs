@@ -75,52 +75,22 @@ public partial class MinimapOverlay : Control
 			Vector2 drawPos = new Vector2(xRatio * size.X, yRatio * size.Y);
 
 
-			Color color = new Color(0.2f, 0.6f, 1.0f); // Default blue
+			Color color = unit.IsEnemy ? new Color(0.9f, 0.1f, 0.1f) : new Color(0.2f, 0.6f, 1.0f);
 			float iconSize = 5.0f;
 
-			if (unit.IsEnemy)
+			if (unit.IsBuilding)
 			{
-				if (unit.IsBuilding)
-				{
-					iconSize = 8.0f;
-					color = new Color(0.9f, 0.1f, 0.1f); // Red Enemy Building
-					var rect = new Rect2(drawPos - new Vector2(iconSize / 2f, iconSize / 2f), new Vector2(iconSize, iconSize));
-					DrawRect(rect, color, true);
-					DrawRect(rect, new Color(0f, 0f, 0f, 0.6f), false, 1.0f); // dark outline
-				}
-				else
-				{
-					color = new Color(0.9f, 0.3f, 0.1f); // Orange-Red Enemy Unit
-					DrawCircle(drawPos, iconSize, color);
-					DrawCircle(drawPos, iconSize, new Color(0f, 0f, 0f, 0.6f), false, 1.0f); // dark outline
-				}
+				iconSize = 8.0f;
+				var rect = new Rect2(drawPos - new Vector2(iconSize / 2f, iconSize / 2f), new Vector2(iconSize, iconSize));
+				DrawRect(rect, color, true);
+				DrawRect(rect, new Color(0f, 0f, 0f, 0.6f), false, 1.0f); // dark outline
 			}
 			else
 			{
-				if (unit.IsBuilding)
-				{
-					iconSize = 8.0f;
-					if (unit.UnitId == "castle")
-						color = new Color(0.9f, 0.7f, 0.1f); // Gold Castle
-					else
-						color = new Color(0.1f, 0.8f, 0.8f); // Cyan Spell Tower
-
-					var rect = new Rect2(drawPos - new Vector2(iconSize / 2f, iconSize / 2f), new Vector2(iconSize, iconSize));
-					DrawRect(rect, color, true);
-					DrawRect(rect, new Color(0f, 0f, 0f, 0.6f), false, 1.0f); // dark outline
-				}
-				else
-				{
-					if (unit.UnitId == "archer")
-						color = new Color(0.2f, 0.8f, 0.3f); // Green Elf Archer
-					else
-						color = new Color(0.2f, 0.5f, 0.9f); // Blue Soldier
-
-					DrawCircle(drawPos, iconSize, color);
-					DrawCircle(drawPos, iconSize, new Color(0f, 0f, 0f, 0.6f), false, 1.0f); // dark outline
-				}
+				color = new Color(0.9f, 0.3f, 0.1f);
+				DrawCircle(drawPos, iconSize, color);
+				DrawCircle(drawPos, iconSize, new Color(0f, 0f, 0f, 0.6f), false, 1.0f); // dark outline
 			}
-
 
 			if (unit.IsSelected)
 			{

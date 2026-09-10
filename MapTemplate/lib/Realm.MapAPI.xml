@@ -225,12 +225,6 @@
             <param name="isEnemy">True to get the enemy castle, false for the player castle.</param>
             <returns>The castle unit, or null if it has been destroyed.</returns>
         </member>
-        <member name="M:Realm.MapAPI.IGameAPI.UpgradeUnit(Realm.MapAPI.IUnit)">
-            <summary>
-            Upgrades the specified unit to its next level if supported.
-            </summary>
-            <param name="unit">The unit to upgrade.</param>
-        </member>
         <member name="M:Realm.MapAPI.IGameAPI.SpawnTargetIndicator(System.Numerics.Vector3,System.Numerics.Vector3)">
             <summary>
             Spawns a temporary visual target indicator ring at the specified position with the given color.

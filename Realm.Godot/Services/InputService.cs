@@ -159,10 +159,7 @@ internal class InputService
 				var scattered = targetPos + right * offsetX + moveDir * offsetZ;
 
 				var moveTo = new MoveTo(scattered);
-				if (EcsWorld.Has<MoveTo>(entity))
-					EcsWorld.Set(entity, moveTo);
-				else
-					EcsWorld.Add(entity, moveTo);
+				EcsWorld.SetOrAdd(entity, moveTo);
 
 				unitIndex++;
 			}
@@ -281,10 +278,7 @@ internal class InputService
 					ClearUnitOrders(entity);
 				}
 				var attackTarget = new AttackTarget(targetEntity);
-				if (EcsWorld.Has<AttackTarget>(entity))
-					EcsWorld.Set(entity, attackTarget);
-				else
-					EcsWorld.Add(entity, attackTarget);
+				EcsWorld.SetOrAdd(entity, attackTarget);
 			}
 		}
 	}
@@ -313,16 +307,12 @@ internal class InputService
 				if (EcsWorld.Has<DefinitionId>(entity) && EcsWorld.Get<DefinitionId>(entity).Value == "priest")
 				{
 					var healTarget = new HealingTarget(targetEntity);
-					if (EcsWorld.Has<HealingTarget>(entity)) EcsWorld.Set(entity, healTarget);
-					else EcsWorld.Add(entity, healTarget);
+					EcsWorld.SetOrAdd(entity, healTarget);
 				}
 				else if (EcsWorld.Has<Realm.Ecs.Components.Tags.Movable>(entity))
 				{
 					var follow = new Follow(targetEntity);
-					if (EcsWorld.Has<Follow>(entity))
-						EcsWorld.Set(entity, follow);
-					else
-						EcsWorld.Add(entity, follow);
+					EcsWorld.SetOrAdd(entity, follow);
 				}
 			}
 		}
@@ -364,12 +354,10 @@ internal class InputService
 					var patrolA = new System.Numerics.Vector3(unitPos.X, unitPos.Y, unitPos.Z);
 
 					var patrol = new Patrol(patrolA, scattered);
-					if (EcsWorld.Has<Patrol>(entity)) EcsWorld.Set(entity, patrol);
-					else EcsWorld.Add(entity, patrol);
+					EcsWorld.SetOrAdd(entity, patrol);
 
 					var moveTo = new MoveTo(scattered);
-					if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
-					else EcsWorld.Add(entity, moveTo);
+					EcsWorld.SetOrAdd(entity, moveTo);
 				}
 			}
 			unitIndex++;
@@ -397,16 +385,10 @@ internal class InputService
 				}
 
 				var attackMove = new AttackMove(targetPos);
-				if (EcsWorld.Has<AttackMove>(entity))
-					EcsWorld.Set(entity, attackMove);
-				else
-					EcsWorld.Add(entity, attackMove);
+				EcsWorld.SetOrAdd(entity, attackMove);
 
 				var moveTo = new MoveTo(targetPos);
-				if (EcsWorld.Has<MoveTo>(entity))
-					EcsWorld.Set(entity, moveTo);
-				else
-					EcsWorld.Add(entity, moveTo);
+				EcsWorld.SetOrAdd(entity, moveTo);
 			}
 		}
 	}
@@ -944,56 +926,8 @@ internal class InputService
 		else
 		{
 			var rp = new RallyPoint(position);
-			if (EcsWorld.Has<RallyPoint>(buildingEntity))
-				EcsWorld.Set(buildingEntity, rp);
-			else
-				EcsWorld.Add(buildingEntity, rp);
+			EcsWorld.SetOrAdd(buildingEntity, rp);
 		}
-	}
-
-	public bool TryUpgradeTower(Entity towerEntity, out int newLevel, out string newName)
-	{
-		newLevel = 1;
-		newName = "";
-		if (!EcsWorld.IsAlive(towerEntity)) return false;
-
-		int currentLevel = 1;
-		if (EcsWorld.Has<TowerUpgradeLevel>(towerEntity))
-		{
-			currentLevel = EcsWorld.Get<TowerUpgradeLevel>(towerEntity).Value;
-		}
-
-		if (currentLevel >= 3) return false;
-
-		newLevel = currentLevel + 1;
-		EcsWorld.Set(towerEntity, new TowerUpgradeLevel(newLevel));
-
-		string baseName = "Spell Tower";
-		if (EcsWorld.Has<Name>(towerEntity))
-		{
-			var nameComp = EcsWorld.Get<Name>(towerEntity);
-			if (nameComp.Value.Contains("Orc")) baseName = "Orc Totem Tower";
-		}
-		newName = $"{baseName} (Lvl {newLevel})";
-		EcsWorld.Set(towerEntity, new Name(newName));
-
-		if (EcsWorld.Has<Health>(towerEntity))
-		{
-			var hp = EcsWorld.Get<Health>(towerEntity);
-			EcsWorld.Set(towerEntity, new Health(hp.Current + 250f, hp.Max + 250f));
-		}
-		if (EcsWorld.Has<Armor>(towerEntity))
-		{
-			var arm = EcsWorld.Get<Armor>(towerEntity);
-			EcsWorld.Set(towerEntity, new Armor(arm.Value + 5f));
-		}
-		if (EcsWorld.Has<Attack>(towerEntity))
-		{
-			var atk = EcsWorld.Get<Attack>(towerEntity);
-			EcsWorld.Set(towerEntity, new Attack(atk.Damage + 10f, atk.Range, atk.Cooldown));
-		}
-
-		return true;
 	}
 
 	public void SetEntityPosition(Entity entity, System.Numerics.Vector3 position)

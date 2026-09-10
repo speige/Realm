@@ -211,6 +211,7 @@ public partial class MapEditorHUD : Control
 	private ModelPickerDialog _modelPickerDialog;
 	private AbilityVfxDialog _abilityVfxDialog;
 	private AssetManagerDialog _assetManagerDialog;
+	private ObjectManagerDialog _objectManagerDialog;
 	private AssetBrowserDialog _assetBrowserDialog;
 	private NoiseTextureDialog _noiseTextureDialog;
 	private ConvertGlbDialog _convertGlbDialog;
@@ -226,6 +227,7 @@ public partial class MapEditorHUD : Control
 	private Button _btnEditVfx;
 	private Button _btnEditAttachments;
 	private Button _btnAssetsManager;
+	private Button _btnObjectManager;
 	private Button _btnImportAnimation;
 	private bool _isUpdatingInspectorUI;
 
@@ -668,6 +670,11 @@ public partial class MapEditorHUD : Control
 		_btnAssetsManager.Name = "BtnAssetsManager";
 		SetupOptionButton(_btnAssetsManager, "\uf1b2 ASSETS", () => _assetManagerDialog?.OpenDialog(), 13, "Open Map Assets Manager & Importer");
 		_contentFile.AddChild(_btnAssetsManager);
+
+		_btnObjectManager = new Button();
+		_btnObjectManager.Name = "BtnObjectManager";
+		SetupOptionButton(_btnObjectManager, "\uf0cb OBJECT MANAGER", () => OpenObjectManagerDialog(), 13, "Open Object Manager dialog to list and locate all placed objects");
+		_contentFile.AddChild(_btnObjectManager);
 
 		_btnImportAnimation = new Button();
 		_btnImportAnimation.Name = "BtnImportAnimation";
@@ -2701,6 +2708,15 @@ public partial class MapEditorHUD : Control
 		_lastTerrainSyncTime = GetMaxTerrainWriteTime(initTerrainPath);
 		_lastMetadataSyncTime = GetLastWriteTimeSafe(initMetadataPath);
 		_editorService?.StartWorkspaceWatcher(_tempWorkspacePath);
+
+		try
+		{
+			Realm.Godot.Animation.RealmDefaultAnimations.EnsureDefaultTemplateAnimations(_tempWorkspacePath);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapEditorHUD] Pre-warming default animations error: {ex.Message}");
+		}
 
 		var syncTimer = new Godot.Timer();
 		syncTimer.WaitTime = 1.0f;
@@ -7432,6 +7448,7 @@ public partial class MapEditorHUD : Control
 		_modelPickerDialog = new ModelPickerDialog(this);
 		_abilityVfxDialog = new AbilityVfxDialog(this);
 		_assetManagerDialog = new AssetManagerDialog(this);
+		_objectManagerDialog = new ObjectManagerDialog(this);
 		_assetBrowserDialog = new AssetBrowserDialog(this);
 		_noiseTextureDialog = new NoiseTextureDialog(this);
 		_convertGlbDialog = new ConvertGlbDialog(this);
@@ -8580,6 +8597,15 @@ public partial class MapEditorHUD : Control
 			_assetManagerDialog?.RefreshAssetListAndPreview(resultPath);
 		};
 		_convertGlbDialog?.OpenWithPreset(initialPath, initialSubCat, chainedCallback);
+	}
+
+	public void OpenObjectManagerDialog()
+	{
+		if (_objectManagerDialog == null)
+		{
+			_objectManagerDialog = new ObjectManagerDialog(this);
+		}
+		_objectManagerDialog.OpenDialog();
 	}
 
 	public void OpenEditorSettingsDialog()

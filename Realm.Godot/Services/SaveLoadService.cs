@@ -49,14 +49,7 @@ public class SaveLoadService
 
 			if (worldEntity != Entity.Null)
 			{
-				if (EcsWorld.Has<TerrainColorsState>(worldEntity))
-				{
-					EcsWorld.Set(worldEntity, new TerrainColorsState(htmlColors));
-				}
-				else
-				{
-					EcsWorld.Add(worldEntity, new TerrainColorsState(htmlColors));
-				}
+				EcsWorld.SetOrAdd(worldEntity, new TerrainColorsState(htmlColors));
 			}
 
 			foreach (var u in unitsData)
@@ -825,14 +818,7 @@ public class SaveLoadService
 
 			if (loadedColors != null)
 			{
-				if (EcsWorld.Has<TerrainColorsState>(worldEntity))
-				{
-					EcsWorld.Set(worldEntity, new TerrainColorsState(loadedColors));
-				}
-				else
-				{
-					EcsWorld.Add(worldEntity, new TerrainColorsState(loadedColors));
-				}
+				EcsWorld.SetOrAdd(worldEntity, new TerrainColorsState(loadedColors));
 			}
 
 			bool isBlock = true;
@@ -845,14 +831,7 @@ public class SaveLoadService
 
 			WaterType currentWaterMode = EcsWorld.Has<EditorState>(worldEntity) ? EcsWorld.Get<EditorState>(worldEntity).WaterMode : WaterType.None;
 			var newEditorState = new EditorState(isBlock, step, left, right, top, bottom, skybox, false, MirrorMode.None, currentWaterMode);
-			if (EcsWorld.Has<EditorState>(worldEntity))
-			{
-				EcsWorld.Set(worldEntity, newEditorState);
-			}
-			else
-			{
-				EcsWorld.Add(worldEntity, newEditorState);
-			}
+			EcsWorld.SetOrAdd(worldEntity, newEditorState);
 
 			if (!terrainOnly)
 			{

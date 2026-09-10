@@ -534,10 +534,7 @@ public partial class GameHost
 		CarveObstacle(targetPos, bldRadius);
 
 		var buildTask = new BuildTask(bldEntity, buildTime);
-		if (EcsWorld.Has<BuildTask>(workerEntity))
-			EcsWorld.Set(workerEntity, buildTask);
-		else
-			EcsWorld.Add(workerEntity, buildTask);
+		EcsWorld.SetOrAdd(workerEntity, buildTask);
 
 		var buildingPos = new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z);
 		if (!EcsWorld.Has<MoveTo>(workerEntity))
@@ -791,8 +788,7 @@ if (_warnedNonFinitePositions.Add(entity))
 		if (commandType == "move")
 		{
 			var moveTo = new MoveTo(targetPos);
-			if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
-			else EcsWorld.Add(entity, moveTo);
+			EcsWorld.SetOrAdd(entity, moveTo);
 			return true;
 		}
 		else if (commandType == "attack")
@@ -800,8 +796,7 @@ if (_warnedNonFinitePositions.Add(entity))
 			if (targetEntity != Entity.Null && EcsWorld.IsAlive(targetEntity))
 			{
 				var attackTarget = new AttackTarget(targetEntity);
-				if (EcsWorld.Has<AttackTarget>(entity)) EcsWorld.Set(entity, attackTarget);
-				else EcsWorld.Add(entity, attackTarget);
+				EcsWorld.SetOrAdd(entity, attackTarget);
 				return true;
 			}
 			return false;
@@ -809,12 +804,10 @@ if (_warnedNonFinitePositions.Add(entity))
 		else if (commandType == "attackmove")
 		{
 			var attackMove = new AttackMove(targetPos);
-			if (EcsWorld.Has<AttackMove>(entity)) EcsWorld.Set(entity, attackMove);
-			else EcsWorld.Add(entity, attackMove);
+			EcsWorld.SetOrAdd(entity, attackMove);
 
 			var moveTo = new MoveTo(targetPos);
-			if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
-			else EcsWorld.Add(entity, moveTo);
+			EcsWorld.SetOrAdd(entity, moveTo);
 			return true;
 		}
 		else if (commandType == "follow")
@@ -824,14 +817,12 @@ if (_warnedNonFinitePositions.Add(entity))
 				if (EcsWorld.Has<DefinitionId>(entity) && EcsWorld.Get<DefinitionId>(entity).Value == "priest")
 				{
 					var healTarget = new HealingTarget(targetEntity);
-					if (EcsWorld.Has<HealingTarget>(entity)) EcsWorld.Set(entity, healTarget);
-					else EcsWorld.Add(entity, healTarget);
+					EcsWorld.SetOrAdd(entity, healTarget);
 				}
 				else
 				{
 					var follow = new Follow(targetEntity);
-					if (EcsWorld.Has<Follow>(entity)) EcsWorld.Set(entity, follow);
-					else EcsWorld.Add(entity, follow);
+					EcsWorld.SetOrAdd(entity, follow);
 				}
 				return true;
 			}
@@ -841,12 +832,10 @@ if (_warnedNonFinitePositions.Add(entity))
 		{
 			var unitPos = EcsWorld.Has<Position>(entity) ? EcsWorld.Get<Position>(entity).Value : System.Numerics.Vector3.Zero;
 			var patrol = new Patrol(unitPos, targetPos);
-			if (EcsWorld.Has<Patrol>(entity)) EcsWorld.Set(entity, patrol);
-			else EcsWorld.Add(entity, patrol);
+			EcsWorld.SetOrAdd(entity, patrol);
 
 			var moveTo = new MoveTo(targetPos);
-			if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
-			else EcsWorld.Add(entity, moveTo);
+			EcsWorld.SetOrAdd(entity, moveTo);
 			return true;
 		}
 		else if (commandType == "gather")
@@ -867,12 +856,10 @@ if (_warnedNonFinitePositions.Add(entity))
 				if (resType != null)
 				{
 					var gatherer = new Gatherer(resType, targetEntity);
-					if (EcsWorld.Has<Gatherer>(entity)) EcsWorld.Set(entity, gatherer);
-					else EcsWorld.Add(entity, gatherer);
+					EcsWorld.SetOrAdd(entity, gatherer);
 
 					var moveTo = new MoveTo(targetPos);
-					if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
-					else EcsWorld.Add(entity, moveTo);
+					EcsWorld.SetOrAdd(entity, moveTo);
 					return true;
 				}
 			}
@@ -887,12 +874,10 @@ if (_warnedNonFinitePositions.Add(entity))
 				{
 					Progress = cState.Progress
 				};
-				if (EcsWorld.Has<BuildTask>(entity)) EcsWorld.Set(entity, newTask);
-				else EcsWorld.Add(entity, newTask);
+				EcsWorld.SetOrAdd(entity, newTask);
 
 				var moveTo = new MoveTo(new System.Numerics.Vector3(targetPos.X, targetPos.Y, targetPos.Z));
-				if (EcsWorld.Has<MoveTo>(entity)) EcsWorld.Set(entity, moveTo);
-				else EcsWorld.Add(entity, moveTo);
+				EcsWorld.SetOrAdd(entity, moveTo);
 				return true;
 			}
 			else if (!string.IsNullOrEmpty(commandType) && UnitRegistry.ContainsKey(commandType))

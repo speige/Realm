@@ -649,7 +649,7 @@ public partial class CommandPanel
 		{
 			if (isBuildSubMenuOpen)
 			{
-				string[] options = hasMetadata && meta.BuildOptions != null ? meta.BuildOptions : new[] { "castle", "tower" };
+				string[] options = hasMetadata && meta.BuildOptions != null ? meta.BuildOptions : new string[0];
 				foreach (var opt in options)
 				{
 					items.Add(CreateBuildOptionItem(opt));
@@ -933,43 +933,6 @@ public partial class CommandPanel
 					items.Add(CreateAbilityItem(ab, focusedUnit.Entity));
 				}
 			}
-			else if (focusedUnit.IsBuilding
-				&& GameHost.Instance?.EcsWorld != null
-				&& GameHost.Instance.EcsWorld.IsAlive(focusedUnit.Entity)
-				&& GameHost.Instance.EcsWorld.Has<Realm.Ecs.Components.Core.TowerUpgradeLevel>(focusedUnit.Entity))
-			{
-				items.Add(new CommandCardItem
-				{
-					Id = "upgrade_tower",
-					IconPath = "res://Assets/UI/magic_upgrade_arrow.png",
-					Tooltip = "[U] Upgrade Tower (Cost: 150 Gold, 100 Stone)",
-					Hotkey = Key.U,
-					Callback = () => InGameHUD.Instance?.UpgradeSelectedTower(),
-					IsDisabled = () => {
-						if (GameHost.Instance == null) return false;
-						bool isMaxed = false;
-						if (GameHost.Instance.EcsWorld.IsAlive(focusedUnit.Entity) && GameHost.Instance.EcsWorld.Has<Realm.Ecs.Components.Core.TowerUpgradeLevel>(focusedUnit.Entity))
-						{
-							isMaxed = GameHost.Instance.EcsWorld.Get<Realm.Ecs.Components.Core.TowerUpgradeLevel>(focusedUnit.Entity).Value >= 3;
-						}
-						return isMaxed;
-					},
-					GetButtonText = () => {
-						if (GameHost.Instance == null) return "";
-						bool isMaxed = false;
-						if (GameHost.Instance.EcsWorld.IsAlive(focusedUnit.Entity) && GameHost.Instance.EcsWorld.Has<Realm.Ecs.Components.Core.TowerUpgradeLevel>(focusedUnit.Entity))
-						{
-							isMaxed = GameHost.Instance.EcsWorld.Get<Realm.Ecs.Components.Core.TowerUpgradeLevel>(focusedUnit.Entity).Value >= 3;
-						}
-						return isMaxed ? TranslationServer.Translate("MAXED") : "";
-					}
-				});
-
-				foreach (var ab in focusedUnit.Abilities)
-				{
-					items.Add(CreateAbilityItem(ab, focusedUnit.Entity));
-				}
-			}
 			else
 			{
 				if (hasMetadata && meta.BuildOptions != null)
@@ -991,16 +954,11 @@ public partial class CommandPanel
 
 	private CommandCardItem CreateBuildOptionItem(string unitId)
 	{
-		var hotkey = unitId switch
-		{
-			"castle" => Key.C,
-			"tower" => Key.T,
-			_ => Key.None
-		};
+		var hotkey = Key.None;
 		
 		string name = unitId.ToUpper();
 		float gold = 0, wood = 0, stone = 0;
-		if (GameHost.UnitRegistry.TryGetValue(unitId, out var structureMeta))
+		if (GameHost.TryGetUnitOrBuildingMetadata(unitId, out var structureMeta))
 		{
 			name = structureMeta.Name;
 			gold = structureMeta.CostGold;
@@ -1027,20 +985,13 @@ public partial class CommandPanel
 
 	private CommandCardItem CreateTrainOptionItem(string unitId)
 	{
-		var hotkey = unitId switch
-		{
-			"soldier" => Key.F,
-			"archer" => Key.R,
-			"priest" => Key.P,
-			"worker" => Key.V,
-			_ => Key.None
-		};
+		var hotkey = Key.None;
 
 		string name = unitId.ToUpper();
 		float gold = 0, wood = 0, stone = 0;
 		int pop = 0;
 		string desc = "";
-		if (GameHost.UnitRegistry.TryGetValue(unitId, out var meta))
+		if (GameHost.TryGetUnitOrBuildingMetadata(unitId, out var meta))
 		{
 			name = meta.Name;
 			gold = meta.CostGold;
@@ -1162,15 +1113,7 @@ public partial class CommandPanel
 
 	private string GetUnitIcon(string unitId)
 	{
-		return unitId switch
-		{
-			"soldier" => "res://Assets/UI/heavy_knight.png",
-			"archer" => "res://Assets/UI/elf_warrior.png",
-			"priest" => "res://Assets/UI/alliance_flag.png",
-			"castle" => "res://Assets/UI/moonlit_castle.png",
-			"tower" => "res://Assets/UI/unknown_unit_1.png",
-			_ => "res://Assets/UI/unit_placeholder.png"
-		};
+		return "res://Assets/UI/unit_placeholder.png";
 	}
 
 	private void SetupHUDButton(Button btn, string iconPath, string tooltip, Action onClick)

@@ -58,6 +58,7 @@ internal class SimulationService
 	private readonly List<Entity> _tickEntitiesToStopGathering = new();
 	private readonly List<SpawningRequest> _tickSpawningRequests = new();
 	private bool _tickNeedsUiRefresh = false;
+	private readonly Dictionary<int, Realm.Ecs.AI.BotController> _botControllers = new();
 
 	private readonly QueryDescription _buffQuery = Realm.Ecs.Common.QueryCache.AllBuffsNoneDeadQuery;
 	private readonly QueryDescription _buffStateQuery = Realm.Ecs.Common.QueryCache.AllBuffStateNoneDeadQuery;
@@ -239,7 +240,44 @@ internal class SimulationService
 			}
 		}
 
+		TickBotControllers(fDelta);
+
 		ApplyDeferredTickCommands();
+	}
+
+	private void TickBotControllers(float fDelta)
+	{
+		if (EcsWorld == null) return;
+
+		for (int pIdx = 0; pIdx < 8; pIdx++)
+		{
+			bool isBot = false;
+			if (pIdx > 0 && GameHost.Instance != null && ((Realm.MapAPI.IGameAPI)GameHost.Instance).IsPlayerComputer(pIdx))
+			{
+				isBot = true;
+			}
+
+			if (isBot)
+			{
+				if (!_botControllers.TryGetValue(pIdx, out var bot))
+				{
+					bot = new Realm.Ecs.AI.BotController();
+					string mapName = GameHost.Instance?.ActiveMapName ?? "";
+					string botPath = System.IO.Path.Combine(Godot.OS.GetUserDataDir(), $"{mapName}_bot.json");
+					if (System.IO.File.Exists(botPath))
+					{
+						try
+						{
+							var profile = Realm.Ecs.AI.Policy.BotProfile.FromJson(System.IO.File.ReadAllText(botPath));
+							bot.LoadProfile(profile);
+						}
+						catch { }
+					}
+					_botControllers[pIdx] = bot;
+				}
+				bot.Tick(EcsWorld, pIdx, fDelta);
+			}
+		}
 	}
 
 	public void TickEditorPhysics(float fDelta)
@@ -291,10 +329,7 @@ internal class SimulationService
 
 				var dest = newPatrol.GoingToB ? newPatrol.PointB : newPatrol.PointA;
 				var moveTo = new MoveTo(dest);
-				if (EcsWorld.Has<MoveTo>(entity))
-					EcsWorld.Set(entity, moveTo);
-				else
-					EcsWorld.Add(entity, moveTo);
+				EcsWorld.SetOrAdd(entity, moveTo);
 			}
 		}
 	}
@@ -335,10 +370,7 @@ internal class SimulationService
 			if (EcsWorld.IsAlive(follower))
 			{
 				var moveTo = new MoveTo(targetPos);
-				if (EcsWorld.Has<MoveTo>(follower))
-					EcsWorld.Set(follower, moveTo);
-				else
-					EcsWorld.Add(follower, moveTo);
+				EcsWorld.SetOrAdd(follower, moveTo);
 			}
 		}
 	}
@@ -810,14 +842,7 @@ internal class SimulationService
 		}
 
 		EcsWorld.Set(entity, new Position(finalPos));
-		if (EcsWorld.Has<Velocity>(entity))
-		{
-			EcsWorld.Set(entity, new Velocity(finalVel));
-		}
-		else
-		{
-			EcsWorld.Add(entity, new Velocity(finalVel));
-		}
+		EcsWorld.SetOrAdd(entity, new Velocity(finalVel));
 	}
 
 	private int GetTimeOfDayIndex()

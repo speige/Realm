@@ -1,4 +1,5 @@
 using Arch.Core;
+using Realm.Ecs.Common;
 using Godot;
 using Realm.Ecs.Components.Core;
 using Realm.Ecs.Components.Resources;
@@ -30,10 +31,7 @@ public partial class Prop3D : StaticBody3D
 			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity))
 			{
 				var world = GameHost.Instance.EcsWorld;
-				if (world.Has<PropIdentity>(Entity))
-					world.Set(Entity, new PropIdentity(value));
-				else
-					world.Add(Entity, new PropIdentity(value));
+				world.SetOrAdd(Entity, new PropIdentity(value));
 			}
 		}
 	}

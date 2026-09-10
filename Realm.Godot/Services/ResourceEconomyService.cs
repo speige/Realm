@@ -152,8 +152,7 @@ internal class ResourceEconomyService
 				if (dest.HasValue)
 				{
 					var moveTo = new MoveTo(dest.Value);
-					if (EcsWorld.Has<MoveTo>(worker)) EcsWorld.Set(worker, moveTo);
-					else EcsWorld.Add(worker, moveTo);
+					EcsWorld.SetOrAdd(worker, moveTo);
 				}
 			}
 		}

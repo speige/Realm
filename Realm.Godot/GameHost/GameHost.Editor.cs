@@ -818,14 +818,7 @@ public partial class GameHost
 			{
 				float autoDetected = GetOrCalculateObstacleRadius(unit.UnitId, unit, unit.IsBuilding);
 				float baseRadius = autoDetected * circleRatio;
-				if (EcsWorld.Has<Realm.Ecs.Components.Core.CollisionRadius>(unit.Entity))
-				{
-					EcsWorld.Set(unit.Entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
-				}
-				else
-				{
-					EcsWorld.Add(unit.Entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
-				}
+				EcsWorld.SetOrAdd(unit.Entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
 			}
 
 			if (unit.IsPreview) return;
@@ -855,14 +848,7 @@ public partial class GameHost
 			{
 				float autoDetected = GetOrCalculateObstacleRadius(prop.PropId, prop);
 				float baseRadius = autoDetected * circleRatio;
-				if (EcsWorld.Has<Realm.Ecs.Components.Core.CollisionRadius>(prop.Entity))
-				{
-					EcsWorld.Set(prop.Entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
-				}
-				else
-				{
-					EcsWorld.Add(prop.Entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
-				}
+				EcsWorld.SetOrAdd(prop.Entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
 			}
 
 			if (prop.IsPreview) return;
@@ -1058,14 +1044,7 @@ public partial class GameHost
 				{
 					float autoDetected = GetOrCalculateObstacleRadius(prop.PropId, prop);
 					float baseRadius = autoDetected * ratio;
-					if (EcsWorld.Has<Realm.Ecs.Components.Core.CollisionRadius>(prop.Entity))
-					{
-						EcsWorld.Set(prop.Entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
-					}
-					else
-					{
-						EcsWorld.Add(prop.Entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
-					}
+					EcsWorld.SetOrAdd(prop.Entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
 				}
 			}
 		}
@@ -1079,14 +1058,7 @@ public partial class GameHost
 				{
 					float autoDetected = GetOrCalculateObstacleRadius(unit.UnitId, unit);
 					float baseRadius = autoDetected * ratio;
-					if (EcsWorld.Has<Realm.Ecs.Components.Core.CollisionRadius>(unit.Entity))
-					{
-						EcsWorld.Set(unit.Entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
-					}
-					else
-					{
-						EcsWorld.Add(unit.Entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
-					}
+					EcsWorld.SetOrAdd(unit.Entity, new Realm.Ecs.Components.Core.CollisionRadius(baseRadius));
 				}
 			}
 		}
@@ -2359,32 +2331,11 @@ public partial class GameHost
 		unit3D.RotationDegrees = new Vector3(0.0f, rotationY, 0.0f);
 		unit3D.Scale = Vector3.One * (scale <= 0.001f ? 1.0f : scale);
 
-		if (EcsWorld.Has<CollisionScale>(entity))
-		{
-			EcsWorld.Set(entity, new CollisionScale(scale));
-		}
-		else
-		{
-			EcsWorld.Add(entity, new CollisionScale(scale));
-		}
+		EcsWorld.SetOrAdd(entity, new CollisionScale(scale));
 
-		if (EcsWorld.Has<RotationY>(entity))
-		{
-			EcsWorld.Set(entity, new RotationY(rotationY));
-		}
-		else
-		{
-			EcsWorld.Add(entity, new RotationY(rotationY));
-		}
+		EcsWorld.SetOrAdd(entity, new RotationY(rotationY));
 
-		if (EcsWorld.Has<ModelScale>(entity))
-		{
-			EcsWorld.Set(entity, new ModelScale(scale));
-		}
-		else
-		{
-			EcsWorld.Add(entity, new ModelScale(scale));
-		}
+		EcsWorld.SetOrAdd(entity, new ModelScale(scale));
 
 		return unit3D;
 	}
@@ -3417,28 +3368,13 @@ public partial class GameHost
 			var playerOwner = GetPlayerEntityForPlayerIndex(playerIndex).AsPlayerEntity(EcsWorld);
 			EcsWorld.Set(unit.Entity, new Owner(playerOwner));
 			
-			if (EcsWorld.Has<UnitOwnerPlayer>(unit.Entity))
-				EcsWorld.Set(unit.Entity, new UnitOwnerPlayer(playerIndex));
-			else
-				EcsWorld.Add(unit.Entity, new UnitOwnerPlayer(playerIndex));
+			EcsWorld.SetOrAdd(unit.Entity, new UnitOwnerPlayer(playerIndex));
 
-			if (EcsWorld.Has<UnitFaction>(unit.Entity))
-				EcsWorld.Set(unit.Entity, new UnitFaction(isEnemy));
-			else
-				EcsWorld.Add(unit.Entity, new UnitFaction(isEnemy));
+			EcsWorld.SetOrAdd(unit.Entity, new UnitFaction(isEnemy));
 
-			if (UnitRegistry.TryGetValue(unit.UnitId, out var meta))
+			if (TryGetUnitOrBuildingMetadata(unit.UnitId, out var meta))
 			{
 				string name = meta.Name;
-				if (isEnemy)
-				{
-					if (unit.UnitId == "worker") name = "Orc Worker";
-					else if (unit.UnitId == "soldier") name = "Orc Raider";
-					else if (unit.UnitId == "archer") name = "Dark Archer";
-					else if (unit.UnitId == "priest") name = "Orc Shaman";
-					else if (unit.UnitId == "castle") name = "Orc Stronghold";
-					else if (unit.UnitId == "tower") name = "Orc Totem Tower";
-				}
 				EcsWorld.Set(unit.Entity, new Name(name));
 			}
 			unit.Player = playerIndex;

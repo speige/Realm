@@ -1,4 +1,5 @@
 using System;
+using Realm.Ecs.Common;
 using System.Collections.Generic;
 using Arch.Core;
 using Godot;
@@ -26,10 +27,7 @@ public partial class Unit3D : Prop3D
 			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity))
 			{
 				var world = GameHost.Instance.EcsWorld;
-				if (world.Has<DefinitionId>(Entity))
-					world.Set(Entity, new DefinitionId(value));
-				else
-					world.Add(Entity, new DefinitionId(value));
+				world.SetOrAdd(Entity, new DefinitionId(value));
 			}
 		}
 	}
@@ -120,10 +118,7 @@ public partial class Unit3D : Prop3D
 			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity))
 			{
 				var world = GameHost.Instance.EcsWorld;
-				if (world.Has<UnitOwnerPlayer>(Entity))
-					world.Set(Entity, new UnitOwnerPlayer(value));
-				else
-					world.Add(Entity, new UnitOwnerPlayer(value));
+				world.SetOrAdd(Entity, new UnitOwnerPlayer(value));
 			}
 			UpdatePlayerColorVisual();
 		}
@@ -197,10 +192,7 @@ public partial class Unit3D : Prop3D
 			if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(Entity))
 			{
 				var world = GameHost.Instance.EcsWorld;
-				if (world.Has<UnitFaction>(Entity))
-					world.Set(Entity, new UnitFaction(value));
-				else
-					world.Add(Entity, new UnitFaction(value));
+				world.SetOrAdd(Entity, new UnitFaction(value));
 			}
 		}
 	}
