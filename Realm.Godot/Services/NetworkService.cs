@@ -919,6 +919,12 @@ public class NetworkService
 							res.Value[stoneResourceId] += (int)regMeta.CostStone;
 							EcsWorld.Set(ownerEntity, res);
 						}
+
+						if (regMeta.PopCost > 0 && EcsWorld.IsAlive(ownerEntity) && EcsWorld.Has<PlayerPopulation>(ownerEntity))
+						{
+							ref var pop = ref EcsWorld.Get<PlayerPopulation>(ownerEntity);
+							pop.Current = System.Math.Max(0, pop.Current - regMeta.PopCost);
+						}
 					}
 				}
 			}

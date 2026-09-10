@@ -3741,12 +3741,27 @@ public partial class GameHost
 	{
 		if (EcsWorld.IsAlive(castleEntity))
 		{
+			string? peekCancelledId = null;
+			int popCost = 0;
+			if (EcsWorld.Has<Realm.Ecs.Components.Core.ProductionQueue>(castleEntity))
+			{
+				var prod = EcsWorld.Get<Realm.Ecs.Components.Core.ProductionQueue>(castleEntity);
+				if (index >= 0 && index < prod.UnitIds.Count)
+				{
+					peekCancelledId = prod.UnitIds[index];
+					if (UnitRegistry.TryGetValue(peekCancelledId, out var metaPeek))
+					{
+						popCost = metaPeek.PopCost;
+					}
+				}
+			}
+
 			if (_multiplayerActive && !IsServerActive())
 			{
 				QueueClientCommand("cancel_train", new List<int> { GetServerEntityId(castleEntity) }, Vector3.Zero, index, "");
 				if (EcsWorld.Has<Realm.Ecs.Components.Core.ProductionQueue>(castleEntity))
 				{
-					if (_inputService.CancelQueuedUnitAt(castleEntity, index, out string? cancelledId, out string? nextUnitId))
+					if (_inputService.CancelQueuedUnitAt(castleEntity, index, out string? cancelledId, out string? nextUnitId, popCost))
 					{
 						if (cancelledId != null)
 						{
@@ -3767,7 +3782,7 @@ public partial class GameHost
 			}
 			else if (EcsWorld.Has<Realm.Ecs.Components.Core.ProductionQueue>(castleEntity))
 			{
-				if (_inputService.CancelQueuedUnitAt(castleEntity, index, out string? cancelledId, out string? nextUnitId))
+				if (_inputService.CancelQueuedUnitAt(castleEntity, index, out string? cancelledId, out string? nextUnitId, popCost))
 				{
 					if (cancelledId != null)
 					{

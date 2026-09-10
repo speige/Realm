@@ -861,7 +861,7 @@ internal class InputService
 		return ref EcsWorld.Get<ProductionQueue>(castleEntity);
 	}
 
-	public bool CancelQueuedUnitAt(Entity castleEntity, int index, out string? cancelledUnitId, out string? nextUnitId)
+	public bool CancelQueuedUnitAt(Entity castleEntity, int index, out string? cancelledUnitId, out string? nextUnitId, int popCost = 0)
 	{
 		cancelledUnitId = null;
 		nextUnitId = null;
@@ -882,6 +882,16 @@ internal class InputService
 			if (prod.UnitIds.Count > 0)
 			{
 				nextUnitId = prod.UnitIds[0];
+			}
+		}
+
+		if (popCost > 0 && EcsWorld.Has<Owner>(castleEntity))
+		{
+			var ownerPlayerEntity = EcsWorld.Get<Owner>(castleEntity).PlayerEntity.Value;
+			if (EcsWorld.IsAlive(ownerPlayerEntity) && EcsWorld.Has<PlayerPopulation>(ownerPlayerEntity))
+			{
+				ref var pop = ref EcsWorld.Get<PlayerPopulation>(ownerPlayerEntity);
+				pop.Current = Math.Max(0, pop.Current - popCost);
 			}
 		}
 

@@ -419,9 +419,19 @@ public class PortraitPanel
 
 		for (int i = 0; i < unitIds.Count; i++)
 		{
+			string unitId = unitIds[i];
+			string unitDisplayName = unitId.ToUpper();
+			if (GameHost.UnitRegistry.TryGetValue(unitId, out var uMeta) && !string.IsNullOrEmpty(uMeta.Name))
+			{
+				unitDisplayName = uMeta.Name;
+			}
+			unitDisplayName = TranslationServer.Translate(unitDisplayName);
+
 			var slot = new PanelContainer();
 			slot.CustomMinimumSize = new Vector2(32, 32);
-			
+			slot.MouseFilter = Control.MouseFilterEnum.Stop;
+			slot.TooltipText = $"{unitDisplayName}\n" + TranslationServer.Translate("Click to cancel & refund");
+
 			var border = new StyleBoxFlat();
 			border.BgColor = new Color(0, 0, 0, 0.4f);
 			border.BorderColor = UIStyle.ColorBronze;
@@ -430,12 +440,14 @@ public class PortraitPanel
 
 			var icon = new TextureRect();
 			icon.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
-			icon.Texture = RtexIconLoader.Load(GetUnitIcon(unitIds[i]));
+			icon.Texture = RtexIconLoader.Load(GetUnitIcon(unitId));
+			icon.MouseFilter = Control.MouseFilterEnum.Pass;
 			slot.AddChild(icon);
 
 			var btnCancel = new Button();
 			btnCancel.Text = "×";
 			btnCancel.FocusMode = Control.FocusModeEnum.None;
+			btnCancel.MouseFilter = Control.MouseFilterEnum.Ignore;
 			btnCancel.AddThemeFontSizeOverride("font_size", 9);
 			btnCancel.AddThemeColorOverride("font_color", new Color(0.9f, 0.2f, 0.2f));
 			btnCancel.AddThemeColorOverride("font_outline_color", Colors.Black);
@@ -451,11 +463,15 @@ public class PortraitPanel
 			btnCancel.AddThemeStyleboxOverride("focus", styleEmpty);
 
 			int idx = i;
-			btnCancel.Pressed += () =>
+			slot.GuiInput += (InputEvent e) =>
 			{
-				if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(castleEntity))
+				if (e is InputEventMouseButton mouseEvent && mouseEvent.Pressed &&
+					(mouseEvent.ButtonIndex == MouseButton.Left || mouseEvent.ButtonIndex == MouseButton.Right))
 				{
-					GameHost.Instance.CancelQueuedUnitAt(castleEntity, idx);
+					if (GameHost.Instance != null && GameHost.Instance.EcsWorld.IsAlive(castleEntity))
+					{
+						GameHost.Instance.CancelQueuedUnitAt(castleEntity, idx);
+					}
 				}
 			};
 
