@@ -506,8 +506,8 @@ public partial class CameraControl : Camera3D
 
 			if (isAltHeld)
 			{
-				_targetYaw = (_targetYaw + deltaMouse.X * 0.3f + 360.0f) % 360.0f;
-				_targetPitch = Mathf.Clamp(_targetPitch - deltaMouse.Y * 0.3f, -85.0f, -15.0f);
+				_targetYaw = (_targetYaw - deltaMouse.X * 0.3f + 360.0f) % 360.0f;
+				_targetPitch = Mathf.Clamp(_targetPitch + deltaMouse.Y * 0.3f, -85.0f, -15.0f);
 				if (_isAltRightDragging)
 				{
 					GetViewport().SetInputAsHandled();
