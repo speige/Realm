@@ -1735,9 +1735,14 @@ public partial class InGameHUD : Control
 		_viewModel.SummaryTableRows.Clear();
 	}
 
-	public void SetSummaryTableRow(string playerName, string damage, string income, string score)
+	public void SetSummaryTableHeaders(string[] headers)
 	{
-		_viewModel.SummaryTableRows[playerName] = (damage, income, score);
+		_viewModel.SummaryTableHeaders = headers;
+	}
+
+	public void SetSummaryTableRow(string rowKey, string[] cellValues)
+	{
+		_viewModel.SummaryTableRows[rowKey] = cellValues;
 	}
 
 

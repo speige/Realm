@@ -18,9 +18,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using Wasmtime;
 using Realm.MapAPI;
@@ -149,10 +151,17 @@ public partial class WasmRuntime : IWasmRuntime, IDisposable
         return memory.ReadString(address, length, Encoding.UTF8);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void WriteInt32(Memory memory, int address, int value)
     {
         Span<byte> span = memory.GetSpan(address, 4);
-        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(span, value);
+        BinaryPrimitives.WriteInt32LittleEndian(span, value);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int ReadInt32(Memory memory, int address)
+    {
+        return BinaryPrimitives.ReadInt32LittleEndian(memory.GetSpan(address, 4));
     }
 
     private void WriteGuestString(Caller caller, int retAreaAddress, string value)
@@ -178,11 +187,26 @@ public partial class WasmRuntime : IWasmRuntime, IDisposable
         Span<byte> destSpan = memory.GetSpan(ptr, size);
         for (int i = 0; i < list.Count; i++)
         {
-            System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(destSpan.Slice(i * 4, 4), list[i]);
+            BinaryPrimitives.WriteInt32LittleEndian(destSpan.Slice(i * 4, 4), list[i]);
         }
 
         WriteInt32(memory, retAreaAddress, ptr);
         WriteInt32(memory, retAreaAddress + 4, list.Count);
+    }
+
+    private string[] ReadGuestStringList(Caller caller, int address, int count)
+    {
+        var memory = caller.GetMemory("memory");
+        if (memory == null || count <= 0) return Array.Empty<string>();
+
+        var result = new string[count];
+        for (int i = 0; i < count; i++)
+        {
+            int strPtr = ReadInt32(memory, address + i * 8);
+            int strLen = ReadInt32(memory, address + i * 8 + 4);
+            result[i] = memory.ReadString(strPtr, strLen, Encoding.UTF8);
+        }
+        return result;
     }
 
     public void Initialize(IGameAPI api)

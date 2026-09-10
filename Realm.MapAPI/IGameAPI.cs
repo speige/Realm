@@ -314,13 +314,19 @@ public interface IGameAPI
     void ShowSummaryTable(string title, bool visible);
 
     /// <summary>
+    /// Configures custom column header labels for the stats summary table.
+    /// Headers[0] labels the row identifier/player column. Subsequent elements label the metric columns.
+    /// Headers must be passed already localized by the caller.
+    /// </summary>
+    /// <param name="columnHeaders">Array of header titles to display at the top of the table.</param>
+    void SetSummaryTableHeaders(params string[] columnHeaders);
+
+    /// <summary>
     /// Sets or updates a row in the stats summary table.
     /// </summary>
-    /// <param name="playerName">Name or label of the player for this row.</param>
-    /// <param name="damage">Total damage metric string.</param>
-    /// <param name="income">Total income metric string.</param>
-    /// <param name="score">Overall score metric string.</param>
-    void SetSummaryTableRow(string playerName, string damage, string income, string score);
+    /// <param name="rowKey">Unique row identifier or player label (corresponds to Headers[0]).</param>
+    /// <param name="cellValues">Metric values corresponding to Headers[1..N].</param>
+    void SetSummaryTableRow(string rowKey, params string[] cellValues);
 
     /// <summary>
     /// Clears all rows from the active stats summary table.

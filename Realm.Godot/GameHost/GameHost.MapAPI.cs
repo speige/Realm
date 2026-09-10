@@ -155,9 +155,14 @@ public partial class GameHost
 		Callable.From(() => InGameHUD.Instance?.ShowSummaryTable(title, visible)).CallDeferred();
 	}
 
-	void IGameAPI.SetSummaryTableRow(string playerName, string damage, string income, string score)
+	void IGameAPI.SetSummaryTableHeaders(params string[] columnHeaders)
 	{
-		Callable.From(() => InGameHUD.Instance?.SetSummaryTableRow(playerName, damage, income, score)).CallDeferred();
+		Callable.From(() => InGameHUD.Instance?.SetSummaryTableHeaders(columnHeaders)).CallDeferred();
+	}
+
+	void IGameAPI.SetSummaryTableRow(string rowKey, params string[] cellValues)
+	{
+		Callable.From(() => InGameHUD.Instance?.SetSummaryTableRow(rowKey, cellValues)).CallDeferred();
 	}
 
 	void IGameAPI.ClearSummaryTable()

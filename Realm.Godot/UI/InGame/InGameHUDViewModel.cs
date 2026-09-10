@@ -338,6 +338,15 @@ public class InGameHUDViewModel
 		}
 	}
 
+	private static ref SummaryTableState EnsureSummaryTableState(World world, Entity entity)
+	{
+		if (!world.Has<SummaryTableState>(entity))
+		{
+			world.Add(entity, new SummaryTableState(false, "Stats", Array.Empty<string>(), new Dictionary<string, string[]>()));
+		}
+		return ref world.Get<SummaryTableState>(entity);
+	}
+
 	public bool SummaryTableVisible
 	{
 		get
@@ -359,15 +368,8 @@ public class InGameHUDViewModel
 				var world = GameHost.Instance.EcsWorld;
 				if (world.IsAlive(GameHost.Instance.WorldEntity))
 				{
-					if (!world.Has<SummaryTableState>(GameHost.Instance.WorldEntity))
-					{
-						world.Add(GameHost.Instance.WorldEntity, new SummaryTableState(value, "Stats", new Dictionary<string, (string Damage, string Income, string Score)>()));
-					}
-					else
-					{
-						ref var st = ref world.Get<SummaryTableState>(GameHost.Instance.WorldEntity);
-						st.Visible = value;
-					}
+					ref var st = ref EnsureSummaryTableState(world, GameHost.Instance.WorldEntity);
+					st.Visible = value;
 				}
 			}
 		}
@@ -392,16 +394,16 @@ public class InGameHUDViewModel
 			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
 			{
 				var world = GameHost.Instance.EcsWorld;
-				if (world.IsAlive(GameHost.Instance.WorldEntity) && world.Has<SummaryTableState>(GameHost.Instance.WorldEntity))
+				if (world.IsAlive(GameHost.Instance.WorldEntity))
 				{
-					ref var st = ref world.Get<SummaryTableState>(GameHost.Instance.WorldEntity);
+					ref var st = ref EnsureSummaryTableState(world, GameHost.Instance.WorldEntity);
 					st.Title = value;
 				}
 			}
 		}
 	}
 
-	public Dictionary<string, (string Damage, string Income, string Score)> SummaryTableRows
+	public string[] SummaryTableHeaders
 	{
 		get
 		{
@@ -410,13 +412,42 @@ public class InGameHUDViewModel
 				var world = GameHost.Instance.EcsWorld;
 				if (world.IsAlive(GameHost.Instance.WorldEntity) && world.Has<SummaryTableState>(GameHost.Instance.WorldEntity))
 				{
-					return world.Get<SummaryTableState>(GameHost.Instance.WorldEntity).Rows;
+					return world.Get<SummaryTableState>(GameHost.Instance.WorldEntity).Headers ?? Array.Empty<string>();
+				}
+			}
+			return Array.Empty<string>();
+		}
+		set
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.IsAlive(GameHost.Instance.WorldEntity))
+				{
+					ref var st = ref EnsureSummaryTableState(world, GameHost.Instance.WorldEntity);
+					st.Headers = value;
+				}
+			}
+		}
+	}
+
+	public Dictionary<string, string[]> SummaryTableRows
+	{
+		get
+		{
+			if (GameHost.Instance != null && GameHost.Instance.EcsWorld != null && GameHost.Instance.WorldEntity != Entity.Null)
+			{
+				var world = GameHost.Instance.EcsWorld;
+				if (world.IsAlive(GameHost.Instance.WorldEntity))
+				{
+					ref var st = ref EnsureSummaryTableState(world, GameHost.Instance.WorldEntity);
+					return st.Rows;
 				}
 			}
 			return _cachedEmptySummaryRows;
 		}
 	}
-	private static readonly Dictionary<string, (string Damage, string Income, string Score)> _cachedEmptySummaryRows = new();
+	private static readonly Dictionary<string, string[]> _cachedEmptySummaryRows = new();
 
 	public List<SelectedUnitInfo> SelectedUnits { get; } = new();
 	public Prop3D SelectedProp { get; set; }

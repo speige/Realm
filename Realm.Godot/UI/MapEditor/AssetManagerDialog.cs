@@ -3396,9 +3396,12 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				if (ext == ".cs" || ext == ".json" || ext == ".txt" || ext == ".xml" || ext == ".gdshader" || ext == ".csproj")
 				{
 					if (Path.GetFileName(file).Equals("metadata.json", StringComparison.OrdinalIgnoreCase)) continue;
+					if (Path.GetFileName(file).Equals("manifest.json", StringComparison.OrdinalIgnoreCase)) continue;
 					if (file.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar) ||
 						file.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar) ||
-						file.Contains(Path.DirectorySeparatorChar + ".godot" + Path.DirectorySeparatorChar)) continue;
+						file.Contains(Path.DirectorySeparatorChar + ".godot" + Path.DirectorySeparatorChar) ||
+						file.Contains(Path.DirectorySeparatorChar + ".vscode" + Path.DirectorySeparatorChar) ||
+						file.Contains(Path.DirectorySeparatorChar + ".git" + Path.DirectorySeparatorChar)) continue;
 
 					try
 					{
