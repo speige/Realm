@@ -322,6 +322,18 @@ public partial class CameraControl : Camera3D
 		}
 	}
 
+	private bool _isAltRightDragging = false;
+
+	public void ResetCamera()
+	{
+		if (IsLocked) return;
+		_targetYaw = 0.0f;
+		_targetPitch = -55.0f;
+		_targetHeight = 35.0f;
+		_isTopDown = false;
+		FollowTarget = null;
+	}
+
 	public void ToggleTopDown()
 	{
 		_isTopDown = !_isTopDown;
@@ -403,6 +415,7 @@ public partial class CameraControl : Camera3D
 		if (what == NotificationApplicationFocusOut)
 		{
 			_isDraggingMouse = false;
+			_isAltRightDragging = false;
 			if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
 			{
 				MapEditorHUD.Instance?.Set3DInteractionActive(false);
@@ -413,6 +426,16 @@ public partial class CameraControl : Camera3D
 	public override void _Input(InputEvent @event)
 	{
 		if (IsLocked || (InGameHUD.Instance != null && InGameHUD.Instance.IsChatActive) || SettingsMenu.IsOpen) return;
+
+		if (@event is InputEventKey keyEvent && keyEvent.Pressed && !keyEvent.Echo)
+		{
+			if (keyEvent.Keycode == Key.Home || (keyEvent.Keycode == Key.Space && keyEvent.ShiftPressed))
+			{
+				ResetCamera();
+				GetViewport().SetInputAsHandled();
+				return;
+			}
+		}
 
 		if (@event is InputEventMouseButton mouseBtn)
 		{
@@ -449,21 +472,48 @@ public partial class CameraControl : Camera3D
 						MapEditorHUD.Instance?.Set3DInteractionActive(true);
 					}
 				}
-			}
-			else if (mouseBtn.ButtonIndex == MouseButton.Middle)
-			{
-				_isDraggingMouse = false;
-				if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
+				else if (mouseBtn.ButtonIndex == MouseButton.Right && (mouseBtn.AltPressed || Input.IsKeyPressed(Key.Alt)))
 				{
-					MapEditorHUD.Instance?.Set3DInteractionActive(false);
+					_isAltRightDragging = true;
+					_lastMousePosition = mouseBtn.Position;
+					GetViewport().SetInputAsHandled();
+				}
+			}
+			else
+			{
+				if (mouseBtn.ButtonIndex == MouseButton.Middle)
+				{
+					_isDraggingMouse = false;
+					if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
+					{
+						MapEditorHUD.Instance?.Set3DInteractionActive(false);
+					}
+				}
+				else if (mouseBtn.ButtonIndex == MouseButton.Right && _isAltRightDragging)
+				{
+					_isAltRightDragging = false;
+					GetViewport().SetInputAsHandled();
 				}
 			}
 		}
-		else if (@event is InputEventMouseMotion mouseMotion && _isDraggingMouse)
+		else if (@event is InputEventMouseMotion mouseMotion && (_isDraggingMouse || _isAltRightDragging))
 		{
 			FollowTarget = null;
 			Vector2 deltaMouse = mouseMotion.Position - _lastMousePosition;
 			_lastMousePosition = mouseMotion.Position;
+
+			bool isAltHeld = mouseMotion.AltPressed || Input.IsKeyPressed(Key.Alt) || _isAltRightDragging;
+
+			if (isAltHeld)
+			{
+				_targetYaw = (_targetYaw + deltaMouse.X * 0.3f + 360.0f) % 360.0f;
+				_targetPitch = Mathf.Clamp(_targetPitch - deltaMouse.Y * 0.3f, -85.0f, -15.0f);
+				if (_isAltRightDragging)
+				{
+					GetViewport().SetInputAsHandled();
+				}
+				return;
+			}
 
 			if (Input.IsKeyPressed(Key.Shift) && GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
 			{
