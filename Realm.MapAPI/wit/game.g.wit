@@ -108,7 +108,8 @@ interface game-api {
     set-players-allied: func(player-index: s32, other-player-index: s32, allied: bool);
     set-resource-node-resource-amount: func(id: s32, val: f32);
     set-stone: func(val: f32);
-    set-summary-table-row: func(player-name: string, damage: string, income: string, score: string);
+    set-summary-table-headers: func(column-headers: list<string>);
+    set-summary-table-row: func(row-key: string, cell-values: list<string>);
     set-time-of-day: func(time: f32);
     set-unit-armor: func(id: s32, val: f32);
     set-unit-color: func(unit-id: s32, color-x: f32, color-y: f32, color-z: f32);

@@ -1,4 +1,4 @@
-package custom:game;
+﻿package custom:game;
 
 interface game-api {
     add-buff: func(unit-id: s32, buff-id: string, duration: f32);
@@ -10,8 +10,8 @@ interface game-api {
     cancel-timer: func(timer-handle: s32);
     cast-ability: func(unit-id: s32, ability-id: string, target-position-x: f32, target-position-y: f32, target-position-z: f32);
     clear-leaderboard: func();
-    clear-summary-table: func();
     clear-selection: func();
+    clear-summary-table: func();
     count-units-owned-by-player: func(player-index: s32) -> s32;
     create-floating-text: func(text: string, position-x: f32, position-y: f32, position-z: f32, color-x: f32, color-y: f32, color-z: f32, duration: f32);
     define-zone: func(min-x: f32, min-z: f32, max-x: f32, max-z: f32) -> s32;
@@ -108,7 +108,8 @@ interface game-api {
     set-players-allied: func(player-index: s32, other-player-index: s32, allied: bool);
     set-resource-node-resource-amount: func(id: s32, val: f32);
     set-stone: func(val: f32);
-    set-summary-table-row: func(player-name: string, damage: string, income: string, score: string);
+    set-summary-table-headers: func(column-headers: list<string>);
+    set-summary-table-row: func(row-key: string, cell-values: list<string>);
     set-time-of-day: func(time: f32);
     set-unit-armor: func(id: s32, val: f32);
     set-unit-color: func(unit-id: s32, color-x: f32, color-y: f32, color-z: f32);

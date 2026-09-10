@@ -43,7 +43,7 @@ public partial class RichTooltip : PanelContainer
 		label.FitContent = true;
 		label.AutowrapMode = TextServer.AutowrapMode.WordSmart;
 		label.CustomMinimumSize = new Vector2(260, 0);
-		label.Text = ConvertToBbCode(text);
+		label.Text = (string.IsNullOrEmpty(text) || text.IndexOf('<') < 0) ? (text ?? "") : ConvertToBbCode(text);
 		margin.AddChild(label);
 
 		return panel;
@@ -52,6 +52,7 @@ public partial class RichTooltip : PanelContainer
 	public static string ConvertToBbCode(string text)
 	{
 		if (string.IsNullOrEmpty(text)) return "";
+		if (text.IndexOf('<') < 0) return text;
 
 		string converted = ColorOpenRegex().Replace(text, "[color=$1]");
 		converted = ColorCloseRegex().Replace(converted, "[/color]");

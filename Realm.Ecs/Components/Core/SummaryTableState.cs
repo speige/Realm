@@ -7,12 +7,14 @@ namespace Realm.Ecs.Components.Core
 	{
 		public bool Visible;
 		public string Title;
-		public Dictionary<string, (string Damage, string Income, string Score)> Rows;
+		public string[] Headers;
+		public Dictionary<string, string[]> Rows;
 
-		public SummaryTableState(bool visible, string title, Dictionary<string, (string Damage, string Income, string Score)> rows)
+		public SummaryTableState(bool visible, string title, string[] headers, Dictionary<string, string[]> rows)
 		{
 			Visible = visible;
 			Title = title;
+			Headers = headers;
 			Rows = rows;
 		}
 	}

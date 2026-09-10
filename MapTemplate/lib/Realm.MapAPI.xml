@@ -422,14 +422,20 @@
             <param name="title">Header title of the summary table.</param>
             <param name="visible">True to display the table, false to hide it.</param>
         </member>
-        <member name="M:Realm.MapAPI.IGameAPI.SetSummaryTableRow(System.String,System.String,System.String,System.String)">
+        <member name="M:Realm.MapAPI.IGameAPI.SetSummaryTableHeaders(System.String[])">
+            <summary>
+            Configures custom column header labels for the stats summary table.
+            Headers[0] labels the row identifier/player column. Subsequent elements label the metric columns.
+            Headers must be passed already localized by the caller.
+            </summary>
+            <param name="columnHeaders">Array of header titles to display at the top of the table.</param>
+        </member>
+        <member name="M:Realm.MapAPI.IGameAPI.SetSummaryTableRow(System.String,System.String[])">
             <summary>
             Sets or updates a row in the stats summary table.
             </summary>
-            <param name="playerName">Name or label of the player for this row.</param>
-            <param name="damage">Total damage metric string.</param>
-            <param name="income">Total income metric string.</param>
-            <param name="score">Overall score metric string.</param>
+            <param name="rowKey">Unique row identifier or player label (corresponds to Headers[0]).</param>
+            <param name="cellValues">Metric values corresponding to Headers[1..N].</param>
         </member>
         <member name="M:Realm.MapAPI.IGameAPI.ClearSummaryTable">
             <summary>

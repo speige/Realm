@@ -17,6 +17,7 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
         DirectFloat,
         BoolParam,
         StringParam,
+        StringListParam,
         Vector3Param,
         Vector3NullableParam,
         EntityParam,
@@ -523,11 +524,12 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
         }
 
         bool hasStringParam = method.Parameters.Any(p => p.Type.SpecialType == SpecialType.System_String);
+        bool hasStringListParam = method.Parameters.Any(p => ClassifyParam(p.Type) == PrmKind.StringListParam);
         bool hasVector3Param = method.Parameters.Any(p => p.Type.ToDisplayString() == "System.Numerics.Vector3");
         bool hasVector3NullableParam = method.Parameters.Any(p => IsNullableVector3(p.Type));
         bool hasUnitParam = method.Parameters.Any(p => IsEntityInterface(p.Type, out _));
         bool needsRetArea = retKind == RetKind.StringReturn;
-        bool needsCaller = hasStringParam || needsRetArea;
+        bool needsCaller = hasStringParam || hasStringListParam || needsRetArea;
 
         var lambdaParams = new List<string>();
         if (needsCaller) lambdaParams.Add("Caller caller");
@@ -537,6 +539,7 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
             switch (p.Kind)
             {
                 case PrmKind.StringParam: lambdaParams.Add($"int {p.Name}Ptr"); lambdaParams.Add($"int {p.Name}Len"); break;
+                case PrmKind.StringListParam: lambdaParams.Add($"int {p.Name}Ptr"); lambdaParams.Add($"int {p.Name}Len"); break;
                 case PrmKind.DirectFloat: lambdaParams.Add($"float {p.Name}"); break;
                 case PrmKind.DirectInt:
                 case PrmKind.BoolParam: lambdaParams.Add($"int {p.Name}"); break;
@@ -557,6 +560,8 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
         foreach (var p in paramInfos)
             if (p.Kind == PrmKind.StringParam)
                 sb.AppendLine($"                string {p.Name} = ReadGuestString(caller, {p.Name}Ptr, {p.Name}Len);");
+            else if (p.Kind == PrmKind.StringListParam)
+                sb.AppendLine($"                string[] {p.Name} = ReadGuestStringList(caller, {p.Name}Ptr, {p.Name}Len);");
         foreach (var p in paramInfos)
             if (p.Kind == PrmKind.Vector3Param)
             {
@@ -764,13 +769,14 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
         }
 
         bool hasStringParam = method.Parameters.Any(p => p.Type.SpecialType == SpecialType.System_String);
+        bool hasStringListParam = method.Parameters.Any(p => ClassifyParam(p.Type) == PrmKind.StringListParam);
         bool hasVector3Param = method.Parameters.Any(p => p.Type.ToDisplayString() == "System.Numerics.Vector3");
         bool hasVector3NullableParam = method.Parameters.Any(p => IsNullableVector3(p.Type));
         bool hasUnitParam = method.Parameters.Any(p => IsEntityInterface(p.Type, out _));
         bool needsRetArea = !isVector3Ret && (retKind == RetKind.StringReturn || retKind == RetKind.EntityListReturn);
-        bool needsCaller = hasStringParam || needsRetArea;
+        bool needsCaller = hasStringParam || hasStringListParam || needsRetArea;
 
-        bool useExpressionBody = !isVector3Ret && !hasStringParam && !hasVector3Param && !hasVector3NullableParam && !hasUnitParam && !needsRetArea && retKind != RetKind.EntityReturn && retKind != RetKind.EntityNullableReturn;
+        bool useExpressionBody = !isVector3Ret && !hasStringParam && !hasStringListParam && !hasVector3Param && !hasVector3NullableParam && !hasUnitParam && !needsRetArea && retKind != RetKind.EntityReturn && retKind != RetKind.EntityNullableReturn;
 
         var lambdaParams = BuildLambdaParams(paramInfos, needsCaller, needsRetArea);
 
@@ -854,6 +860,7 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
                 case PrmKind.DirectFloat: parts.Add($"float {p.Name}"); break;
                 case PrmKind.BoolParam: parts.Add($"int {p.Name}"); break;
                 case PrmKind.StringParam: parts.Add($"int {p.Name}Ptr, int {p.Name}Len"); break;
+                case PrmKind.StringListParam: parts.Add($"int {p.Name}Ptr, int {p.Name}Len"); break;
                 case PrmKind.Vector3Param: parts.Add($"float {p.Name}X, float {p.Name}Y, float {p.Name}Z"); break;
                 case PrmKind.EntityParam: parts.Add($"int {p.Name}Id"); break;
                 case PrmKind.Vector3NullableParam: parts.Add($"float {p.Name}R, float {p.Name}G, float {p.Name}B, int {p.Name}HasColor"); break;
@@ -905,6 +912,8 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
         foreach (var p in paramInfos)
             if (p.Kind == PrmKind.StringParam)
                 sb.AppendLine($"            string {p.Name} = ReadGuestString(caller, {p.Name}Ptr, {p.Name}Len);");
+            else if (p.Kind == PrmKind.StringListParam)
+                sb.AppendLine($"            string[] {p.Name} = ReadGuestStringList(caller, {p.Name}Ptr, {p.Name}Len);");
 
         var processedVec3 = new HashSet<string>();
         foreach (var p in paramInfos)
@@ -1066,6 +1075,9 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
         if (type.SpecialType == SpecialType.System_Single) return PrmKind.DirectFloat;
         if (type.SpecialType == SpecialType.System_Boolean) return PrmKind.BoolParam;
         if (type.SpecialType == SpecialType.System_String) return PrmKind.StringParam;
+
+        if (IsCollection(type, out var elemType) && elemType.SpecialType == SpecialType.System_String)
+            return PrmKind.StringListParam;
 
         string displayName = type.ToDisplayString();
 
@@ -1390,6 +1402,7 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
             PrmKind.DirectFloat => $"{ToKebabCase(name)}: f32",
             PrmKind.BoolParam => $"{ToKebabCase(name)}: bool",
             PrmKind.StringParam => $"{ToKebabCase(name)}: string",
+            PrmKind.StringListParam => $"{ToKebabCase(name)}: list<string>",
             PrmKind.Vector3Param => $"{ToKebabCase(name)}-x: f32, {ToKebabCase(name)}-y: f32, {ToKebabCase(name)}-z: f32",
             PrmKind.EntityParam => $"{ToKebabCase(name)}-id: s32",
             PrmKind.Vector3NullableParam => $"{ToKebabCase(name)}-r: f32, {ToKebabCase(name)}-g: f32, {ToKebabCase(name)}-b: f32, {ToKebabCase(name)}-has-color: bool",
@@ -1915,6 +1928,10 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
                     callArgs.Add($"{p.Name} ?? \"\"");
                 else
                     callArgs.Add(p.Name);
+            }
+            else if (ClassifyParam(p.Type) == PrmKind.StringListParam)
+            {
+                callArgs.Add($"{p.Name}?.ToList() ?? new List<string>()");
             }
             else
             {
