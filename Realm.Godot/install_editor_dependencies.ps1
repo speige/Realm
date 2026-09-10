@@ -25,7 +25,7 @@ if (Test-Path $oldExtDest) {
     Remove-Item -Path $oldExtDest -Recurse -Force
 }
 
-$wasiVersion = "30"
+$wasiVersion = "34"
 $wasiSdkBaseDir = Join-Path $appDataDir "wasi_sdk"
 $wasiTargetDir = Join-Path $wasiSdkBaseDir "wasi-sdk-$wasiVersion"
 $wasiClang = Join-Path $wasiTargetDir "bin\clang.exe"

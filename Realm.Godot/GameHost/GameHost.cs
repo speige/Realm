@@ -3599,101 +3599,98 @@ public class {mapName} : IMapScript
 		string normalizedRaw = mapName.Replace('\\', '/');
 		bool isCustomPath = normalizedRaw.StartsWith("user://") || normalizedRaw.StartsWith("res://") || System.IO.Path.IsPathRooted(normalizedRaw);
 
-		if (isCustomPath)
+		if (isCustomPath && string.IsNullOrEmpty(PendingMapScriptPath))
 		{
-			if (string.IsNullOrEmpty(PendingMapScriptPath))
+			string checkDir = normalizedRaw;
+			if (normalizedRaw.StartsWith("user://") || normalizedRaw.StartsWith("res://"))
 			{
-				string checkDir = normalizedRaw;
-				if (normalizedRaw.StartsWith("user://") || normalizedRaw.StartsWith("res://"))
+				checkDir = ProjectSettings.GlobalizePath(normalizedRaw);
+			}
+			if (System.IO.Directory.Exists(checkDir))
+			{
+				string binDir = System.IO.Path.Combine(checkDir, "bin");
+				if (System.IO.Directory.Exists(binDir))
 				{
-					checkDir = ProjectSettings.GlobalizePath(normalizedRaw);
-				}
-				if (System.IO.Directory.Exists(checkDir))
-				{
-					string binDir = System.IO.Path.Combine(checkDir, "bin");
-					if (System.IO.Directory.Exists(binDir))
-					{
-						var files = System.IO.Directory.GetFiles(binDir, "*.wasm", System.IO.SearchOption.AllDirectories)
-							.Where(f => !f.Contains("native") && !f.Contains("obj"))
-							.ToList();
+					var files = System.IO.Directory.GetFiles(binDir, "*.wasm", System.IO.SearchOption.AllDirectories)
+						.Where(f => !f.Contains("native") && !f.Contains("obj"))
+						.ToList();
 
-						PendingMapScriptPath = files.FirstOrDefault(f => f.Contains("publish") && System.IO.Path.GetFileName(f).Equals("MapScript.wasm", StringComparison.OrdinalIgnoreCase))
-							?? files.FirstOrDefault(f => f.Contains("publish"))
-							?? files.FirstOrDefault(f => System.IO.Path.GetFileName(f).Equals("MapScript.wasm", StringComparison.OrdinalIgnoreCase))
-							?? files.OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
-					}
-					if (string.IsNullOrEmpty(PendingMapScriptPath))
-					{
-						var allWasm = System.IO.Directory.GetFiles(checkDir, "*.wasm", System.IO.SearchOption.AllDirectories)
-							.Where(f => !f.Contains("native") && !f.Contains("obj"))
-							.OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f))
-							.FirstOrDefault();
-						PendingMapScriptPath = allWasm;
-					}
+					PendingMapScriptPath = files.FirstOrDefault(f => f.Contains("publish") && System.IO.Path.GetFileName(f).Equals("MapScript.wasm", StringComparison.OrdinalIgnoreCase))
+						?? files.FirstOrDefault(f => f.Contains("publish"))
+						?? files.FirstOrDefault(f => System.IO.Path.GetFileName(f).Equals("MapScript.wasm", StringComparison.OrdinalIgnoreCase))
+						?? files.OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f)).FirstOrDefault();
+				}
+				if (string.IsNullOrEmpty(PendingMapScriptPath))
+				{
+					var allWasm = System.IO.Directory.GetFiles(checkDir, "*.wasm", System.IO.SearchOption.AllDirectories)
+						.Where(f => !f.Contains("native") && !f.Contains("obj"))
+						.OrderByDescending(f => System.IO.File.GetLastWriteTimeUtc(f))
+						.FirstOrDefault();
+					PendingMapScriptPath = allWasm;
 				}
 			}
+		}
 
-			if (!string.IsNullOrEmpty(PendingMapScriptPath))
+		if (!string.IsNullOrEmpty(PendingMapScriptPath))
+		{
+			if (_mapScriptLoadContext != null)
 			{
-				if (_mapScriptLoadContext != null)
-				{
-					_mapScriptLoadContext.Unload();
-					_mapScriptLoadContext = null;
-				}
+				_mapScriptLoadContext.Unload();
+				_mapScriptLoadContext = null;
+			}
 
-				try
+			try
+			{
+				GD.Print($"[{DateTime.Now:HH:mm:ss}] GameHost LoadMapScript: PendingMapScriptPath={PendingMapScriptPath}");
+				if (PendingMapScriptPath.EndsWith(".wasm", StringComparison.OrdinalIgnoreCase))
 				{
-					GD.Print($"[{DateTime.Now:HH:mm:ss}] GameHost LoadMapScript: PendingMapScriptPath={PendingMapScriptPath}");
-					if (PendingMapScriptPath.EndsWith(".wasm", StringComparison.OrdinalIgnoreCase))
+					string mapNameOnly = System.IO.Path.GetFileNameWithoutExtension(PendingMapScriptPath);
+					if (mapNameOnly.Equals("MapScript", StringComparison.OrdinalIgnoreCase))
 					{
-						string mapNameOnly = System.IO.Path.GetFileNameWithoutExtension(PendingMapScriptPath);
-						if (mapNameOnly.Equals("MapScript", StringComparison.OrdinalIgnoreCase))
+						string parentDir = System.IO.Path.GetDirectoryName(PendingMapScriptPath);
+						while (!string.IsNullOrEmpty(parentDir))
 						{
-							string parentDir = System.IO.Path.GetDirectoryName(PendingMapScriptPath);
-							while (!string.IsNullOrEmpty(parentDir))
+							string folderName = System.IO.Path.GetFileName(parentDir);
+							if (!string.IsNullOrEmpty(folderName) && 
+								!folderName.Equals("bin", StringComparison.OrdinalIgnoreCase) && 
+								!folderName.Equals("Release", StringComparison.OrdinalIgnoreCase) && 
+								!folderName.Equals("net10.0", StringComparison.OrdinalIgnoreCase) && 
+								!folderName.Equals("wasi-wasm", StringComparison.OrdinalIgnoreCase) && 
+								!folderName.Equals("publish", StringComparison.OrdinalIgnoreCase))
 							{
-								string folderName = System.IO.Path.GetFileName(parentDir);
-								if (!string.IsNullOrEmpty(folderName) && 
-									!folderName.Equals("bin", StringComparison.OrdinalIgnoreCase) && 
-									!folderName.Equals("Release", StringComparison.OrdinalIgnoreCase) && 
-									!folderName.Equals("net10.0", StringComparison.OrdinalIgnoreCase) && 
-									!folderName.Equals("wasi-wasm", StringComparison.OrdinalIgnoreCase) && 
-									!folderName.Equals("publish", StringComparison.OrdinalIgnoreCase))
-								{
-									mapNameOnly = folderName;
-									break;
-								}
-								parentDir = System.IO.Path.GetDirectoryName(parentDir);
+								mapNameOnly = folderName;
+								break;
 							}
+							parentDir = System.IO.Path.GetDirectoryName(parentDir);
 						}
-						_activeMapScript = new Realm.Godot.WasmRuntime(PendingMapScriptPath, mapNameOnly);
 					}
-					else
-					{
-						_mapScriptLoadContext = new MapScriptLoadContext();
-						using var fs = new System.IO.FileStream(PendingMapScriptPath, System.IO.FileMode.Open, System.IO.FileAccess.Read);
-						var asm = _mapScriptLoadContext.LoadFromStream(fs);
+					_activeMapScript = new Realm.Godot.WasmRuntime(PendingMapScriptPath, mapNameOnly);
+				}
+				else
+				{
+					_mapScriptLoadContext = new MapScriptLoadContext();
+					using var fs = new System.IO.FileStream(PendingMapScriptPath, System.IO.FileMode.Open, System.IO.FileAccess.Read);
+					var asm = _mapScriptLoadContext.LoadFromStream(fs);
 
-						foreach (var t in asm.GetExportedTypes())
+					foreach (var t in asm.GetExportedTypes())
+					{
+						if (typeof(IMapScript).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract)
 						{
-							if (typeof(IMapScript).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract)
+							_activeMapScript = (IMapScript?)Activator.CreateInstance(t);
+							if (_activeMapScript != null)
 							{
-								_activeMapScript = (IMapScript?)Activator.CreateInstance(t);
-								if (_activeMapScript != null)
-								{
-									break;
-								}
+								break;
 							}
 						}
 					}
 				}
-				catch (Exception ex)
-				{
-					GD.PrintErr($"[{DateTime.Now:HH:mm:ss}] GameHost LoadMapScript failed: {ex}");
-					GD.PrintErr($"Failed to load pending map script from {PendingMapScriptPath}: {ex.Message}");
-				}
-				PendingMapScriptPath = null;
 			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"[{DateTime.Now:HH:mm:ss}] GameHost LoadMapScript failed: {ex}");
+				GD.PrintErr($"Failed to load pending map script from {PendingMapScriptPath}: {ex.Message}");
+			}
+			PendingMapScriptPath = null;
 		}
 		else
 		{

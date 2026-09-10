@@ -1,4 +1,12 @@
 <Project>
-  <!-- Override Mono WASM SDK target to allow Native AOT build -->
   <Target Name="PrepareInputsForWasmBuild" />
+  <Target Name="_InitializeWasiSdk" Condition="'$(_targetOS)' == 'wasi'">
+    <Error Text="Wasi SDK not found, not compiling to WebAssembly. To enable WebAssembly compilation, install Wasi SDK and ensure the WASI_SDK_PATH environment variable points to the directory containing share/wasi-sysroot" Condition="'$(WASI_SDK_PATH)' == ''" />
+    <PropertyGroup>
+      <_NativeWasmSdkBinPath>$([MSBuild]::NormalizeDirectory('$(WASI_SDK_PATH)', 'bin'))</_NativeWasmSdkBinPath>
+      <CppCompiler Condition="'$(CppCompiler)' == ''">&quot;$(_NativeWasmSdkBinPath)clang&quot;</CppCompiler>
+      <CppLinker Condition="'$(CppLinker)' == ''">$(CppCompiler)</CppLinker>
+    </PropertyGroup>
+  </Target>
 </Project>
+

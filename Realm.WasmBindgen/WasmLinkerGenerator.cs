@@ -344,14 +344,14 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
                 continue;
 
             if (member is IPropertySymbol property)
-                EmitPropertyBindings(sb, property, ref lastWasMultiLine, "((IGameAPI?)GameHost.Instance)", definedFunctions);
+                EmitPropertyBindings(sb, property, ref lastWasMultiLine, "(_cachedApi ?? (IGameAPI?)GameHost.Instance)", definedFunctions);
             else if (member is IMethodSymbol method)
             {
                 if (method.MethodKind != MethodKind.Ordinary)
                     continue;
                 if (propertyAccessorMethods.Contains(method.Name))
                     continue;
-                EmitMethodBinding(sb, method, ref lastWasMultiLine, "((IGameAPI?)GameHost.Instance)", gameApiSymbol, definedFunctions);
+                EmitMethodBinding(sb, method, ref lastWasMultiLine, "(_cachedApi ?? (IGameAPI?)GameHost.Instance)", gameApiSymbol, definedFunctions);
             }
         }
 
@@ -366,7 +366,7 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
                 string countName = $"{tKebab}-count";
                 if (definedFunctions.Add(countName))
                 {
-                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{countName}\", () => ((IGameAPI?)GameHost.Instance)?.{FindCollectionMember(gameApiSymbol, entityIface)}?.Count() ?? 0);");
+                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{countName}\", () => (_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{FindCollectionMember(gameApiSymbol, entityIface)}?.Count() ?? 0);");
                 }
             }
 
@@ -403,18 +403,18 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
         if (property.Type.ToDisplayString() == "System.Numerics.Vector3")
         {
             if (definedFunctions.Add($"{witBase}-x"))
-                sb.AppendLine($"        _linker.DefineFunction(mod, \"{witBase}-x\", (int id) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); return u != null ? u.{property.Name}.X : 0f; }});");
+                sb.AppendLine($"        _linker.DefineFunction(mod, \"{witBase}-x\", (int id) => {{ var u = (_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{resolver}(id); return u != null ? u.{property.Name}.X : 0f; }});");
             if (definedFunctions.Add($"{witBase}-y"))
-                sb.AppendLine($"        _linker.DefineFunction(mod, \"{witBase}-y\", (int id) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); return u != null ? u.{property.Name}.Y : 0f; }});");
+                sb.AppendLine($"        _linker.DefineFunction(mod, \"{witBase}-y\", (int id) => {{ var u = (_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{resolver}(id); return u != null ? u.{property.Name}.Y : 0f; }});");
             if (definedFunctions.Add($"{witBase}-z"))
-                sb.AppendLine($"        _linker.DefineFunction(mod, \"{witBase}-z\", (int id) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); return u != null ? u.{property.Name}.Z : 0f; }});");
+                sb.AppendLine($"        _linker.DefineFunction(mod, \"{witBase}-z\", (int id) => {{ var u = (_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{resolver}(id); return u != null ? u.{property.Name}.Z : 0f; }});");
 
             if (property.SetMethod != null)
             {
                 string setWitBase = "set-" + witBase;
                 if (definedFunctions.Add(setWitBase))
                 {
-                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, float valX, float valY, float valZ) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = new System.Numerics.Vector3(valX, valY, valZ); }});");
+                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, float valX, float valY, float valZ) => {{ var u = (_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = new System.Numerics.Vector3(valX, valY, valZ); }});");
                 }
             }
             return;
@@ -423,7 +423,7 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
         var retKind = ClassifyReturn(property.Type);
         if (retKind == RetKind.Unsupported) return;
 
-        string expr = $"((IGameAPI?)GameHost.Instance)?.{resolver}(id)?.{property.Name}";
+        string expr = $"(_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{resolver}(id)?.{property.Name}";
         string mapped;
         if (retKind == RetKind.EntityReturn || retKind == RetKind.EntityNullableReturn)
         {
@@ -436,7 +436,7 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
             else
             {
                 string colName = FindCollectionMember(gameApiSymbol, unwrapped);
-                mapped = $"({expr} != null) ? (((IGameAPI?)GameHost.Instance)?.{colName}.ToList().IndexOf({expr}) ?? -1) : -1";
+                mapped = $"({expr} != null) ? ((_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{colName}.ToList().IndexOf({expr}) ?? -1) : -1";
             }
         }
         else
@@ -471,17 +471,17 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
             if (definedFunctions.Add(setWitBase))
             {
                 if (property.Type.SpecialType == SpecialType.System_Boolean)
-                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, int val) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = val != 0; }});");
+                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, int val) => {{ var u = (_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = val != 0; }});");
                 else if (property.Type.SpecialType == SpecialType.System_Single)
-                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, float val) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = val; }});");
+                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, float val) => {{ var u = (_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = val; }});");
                 else if (property.Type.SpecialType == SpecialType.System_Int32)
-                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, int val) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = val; }});");
+                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, int val) => {{ var u = (_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = val; }});");
                 else if (property.Type.SpecialType == SpecialType.System_String)
-                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (Caller caller, int id, int valPtr, int valLen) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = ReadGuestString(caller, valPtr, valLen); }});");
+                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (Caller caller, int id, int valPtr, int valLen) => {{ var u = (_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = ReadGuestString(caller, valPtr, valLen); }});");
                 else if (IsEntityInterface(property.Type, out var unwrapped))
                 {
                     string resolverR = FindResolverMember(gameApiSymbol, unwrapped);
-                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, int val) => {{ var u = ((IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = ((IGameAPI?)GameHost.Instance)?.{resolverR}(val); }});");
+                    sb.AppendLine($"        _linker.DefineFunction(mod, \"{setWitBase}\", (int id, int val) => {{ var u = (_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{resolver}(id); if (u != null) u.{property.Name} = (_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{resolverR}(val); }});");
                 }
             }
         }
@@ -501,13 +501,13 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
         {
             sb.AppendLine($"        _linker.DefineFunction(mod, \"{witName}-count\", (int id) =>");
             sb.AppendLine("        {");
-            sb.AppendLine($"            var target = ((IGameAPI?)GameHost.Instance)?.{resolver}(id);");
+            sb.AppendLine($"            var target = (_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{resolver}(id);");
             sb.AppendLine($"            return target?.{method.Name}().Count() ?? 0;");
             sb.AppendLine("        });");
 
             sb.AppendLine($"        _linker.DefineFunction(mod, \"{witName}-get\", (Caller caller, int id, int index, int retArea) =>");
             sb.AppendLine("        {");
-            sb.AppendLine($"            var target = ((IGameAPI?)GameHost.Instance)?.{resolver}(id);");
+            sb.AppendLine($"            var target = (_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{resolver}(id);");
             sb.AppendLine($"            string s = target?.{method.Name}().ElementAtOrDefault(index) ?? \"\";");
             sb.AppendLine("            WriteGuestString(caller, retArea, s);");
             sb.AppendLine("        });");
@@ -553,7 +553,7 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
         if (lastWasMultiLine) sb.AppendLine();
         sb.AppendLine($"        _linker.DefineFunction(mod, \"{witName}\", ({string.Join(", ", lambdaParams)}) =>");
         sb.AppendLine("        {");
-        sb.AppendLine($"            var hostTarget = ((IGameAPI?)GameHost.Instance)?.{resolver}(id);");
+        sb.AppendLine($"            var hostTarget = (_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{resolver}(id);");
         sb.AppendLine("            if (hostTarget != null)");
         sb.AppendLine("            {");
 
@@ -572,7 +572,7 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
             {
                 IsEntityInterface(p.Type, out var unwrapped);
                 string res = FindResolverMember(gameApiSymbol, unwrapped);
-                sb.AppendLine($"                var {p.Name} = ((IGameAPI?)GameHost.Instance)?.{res}({p.Name}Id);");
+                sb.AppendLine($"                var {p.Name} = (_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{res}({p.Name}Id);");
             }
 
         var callArgs = new List<string>();
@@ -609,7 +609,7 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
                 else
                 {
                     string colName = FindCollectionMember(gameApiSymbol, unwrapped);
-                    exprMapped = $"({callExpr} != null) ? (((IGameAPI?)GameHost.Instance)?.{colName}.ToList().IndexOf({callExpr}) ?? -1) : -1";
+                    exprMapped = $"({callExpr} != null) ? ((_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{colName}.ToList().IndexOf({callExpr}) ?? -1) : -1";
                 }
             }
             else
@@ -732,7 +732,7 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
                 {
                     IsEntityInterface(p.Type, out var unwrapped);
                     string res = FindResolverMember(gameApiSymbol, unwrapped);
-                    sb.AppendLine($"            var {p.Name} = ((IGameAPI?)GameHost.Instance)?.{res}({p.Name}Id);");
+                    sb.AppendLine($"            var {p.Name} = (_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{res}({p.Name}Id);");
                 }
             
             string callExprCount = BuildCallExpressionFull(method, paramInfos, targetInstance);
@@ -756,7 +756,7 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
                 {
                     IsEntityInterface(p.Type, out var unwrapped);
                     string res = FindResolverMember(gameApiSymbol, unwrapped);
-                    sb.AppendLine($"            var {p.Name} = ((IGameAPI?)GameHost.Instance)?.{res}({p.Name}Id);");
+                    sb.AppendLine($"            var {p.Name} = (_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{res}({p.Name}Id);");
                 }
             
             string callExprGet = BuildCallExpressionFull(method, paramInfos, targetInstance);
@@ -827,7 +827,7 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
             {
                 IsEntityInterface(p.Type, out var unwrapped);
                 string res = FindResolverMember(gameApiSymbol, unwrapped);
-                sb.AppendLine($"            var {p.Name} = ((IGameAPI?)GameHost.Instance)?.{res}({p.Name}Id);");
+                sb.AppendLine($"            var {p.Name} = (_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{res}({p.Name}Id);");
             }
 
         var entityParams = paramInfos.FindAll(p => p.Kind == PrmKind.EntityParam);
@@ -937,7 +937,7 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
             {
                 IsEntityInterface(p.Type, out var unwrapped);
                 string res = FindResolverMember(gameApiSymbol, unwrapped);
-                sb.AppendLine($"            var {p.Name} = ((IGameAPI?)GameHost.Instance)?.{res}({p.Name}Id);");
+                sb.AppendLine($"            var {p.Name} = (_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{res}({p.Name}Id);");
             }
 
         var entityParams = paramInfos.FindAll(p => p.Kind == PrmKind.EntityParam);
@@ -973,7 +973,7 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
             else
             {
                 string colName = FindCollectionMember(gameApiSymbol, elemType);
-                sb.AppendLine($"            WriteGuestIntList(caller, retArea, items.Select(e => (((IGameAPI?)GameHost.Instance)?.{colName}.ToList().IndexOf(e) ?? -1)).ToList());");
+                sb.AppendLine($"            WriteGuestIntList(caller, retArea, items.Select(e => ((_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{colName}.ToList().IndexOf(e) ?? -1).ToList());");
             }
         }
         else if (retKind == RetKind.EntityReturn || retKind == RetKind.EntityNullableReturn)
@@ -991,7 +991,7 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
                 else
                 {
                     string colName = FindCollectionMember(gameApiSymbol, unwrapped);
-                    sb.AppendLine($"            return (result != null) ? (((IGameAPI?)GameHost.Instance)?.{colName}.ToList().IndexOf(result) ?? -1) : -1;");
+                    sb.AppendLine($"            return (result != null) ? ((_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{colName}.ToList().IndexOf(result) ?? -1) : -1;");
                 }
             }
             else
@@ -1007,7 +1007,7 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
                 else
                 {
                     string colName = FindCollectionMember(gameApiSymbol, unwrapped);
-                    sb.AppendLine($"                return (result != null) ? (((IGameAPI?)GameHost.Instance)?.{colName}.ToList().IndexOf(result) ?? -1) : -1;");
+                    sb.AppendLine($"                return (result != null) ? ((_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{colName}.ToList().IndexOf(result) ?? -1) : -1;");
                 }
                 sb.AppendLine("            }");
                 sb.AppendLine($"            return {(hasUniqueId ? "0" : "-1")};");
@@ -1054,7 +1054,7 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
             else
             {
                 string colName = FindCollectionMember(gameApiSymbol, unwrapped);
-                return $"({callExpr} != null) ? (((IGameAPI?)GameHost.Instance)?.{colName}.ToList().IndexOf({callExpr}) ?? -1) : -1";
+                return $"({callExpr} != null) ? ((_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{colName}.ToList().IndexOf({callExpr}) ?? -1) : -1";
             }
         }
 
@@ -1577,7 +1577,7 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
                         else
                         {
                             string col = FindCollectionMember(gameApiSymbol, unwrapped);
-                            invokeArgs.Add($"{p.Name} != null ? (((IGameAPI?)GameHost.Instance)?.{col}().ToList().IndexOf({p.Name}) ?? -1) : -1");
+                            invokeArgs.Add($"{p.Name} != null ? (((_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{col}().ToList().IndexOf({p.Name}) ?? -1) : -1");
                         }
                     }
                     else
@@ -1605,7 +1605,7 @@ public partial class WasmLinkerGenerator : IIncrementalGenerator
                         else
                         {
                             string col = FindCollectionMember(gameApiSymbol, unwrapped);
-                            invokeArgs.Add($"{p.Name} != null ? (((IGameAPI?)GameHost.Instance)?.{col}().ToList().IndexOf({p.Name}) ?? -1) : -1");
+                            invokeArgs.Add($"{p.Name} != null ? (((_cachedApi ?? (IGameAPI?)GameHost.Instance)?.{col}().ToList().IndexOf({p.Name}) ?? -1) : -1");
                         }
                     }
                     else

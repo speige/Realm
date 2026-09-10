@@ -230,13 +230,31 @@ public static partial class MapWorkspaceService
 
 		EnsureApiLib(directory);
 
-		string targetsTemplate = GetTemplatePath("Directory.Build.targets");
+		EnsureDirectoryBuildTargets(directory);
+	}
+
+	public static void EnsureDirectoryBuildTargets(string directory)
+	{
 		string targetsPath = Path.Combine(directory, "Directory.Build.targets");
-		if (File.Exists(targetsTemplate))
+		string targetsTemplate = GetTemplatePath("Directory.Build.targets");
+		if (!string.IsNullOrEmpty(targetsTemplate) && File.Exists(targetsTemplate))
 		{
 			try
 			{
 				File.Copy(targetsTemplate, targetsPath, true);
+				return;
+			}
+			catch
+			{
+			}
+		}
+
+		if (!File.Exists(targetsPath) || !File.ReadAllText(targetsPath).Contains("_InitializeWasiSdk"))
+		{
+			try
+			{
+				string fallbackContent = "<Project>\n  <Target Name=\"PrepareInputsForWasmBuild\" />\n  <Target Name=\"_InitializeWasiSdk\" Condition=\"'$(_targetOS)' == 'wasi'\">\n    <Error Text=\"Wasi SDK not found, not compiling to WebAssembly. To enable WebAssembly compilation, install Wasi SDK and ensure the WASI_SDK_PATH environment variable points to the directory containing share/wasi-sysroot\" Condition=\"'$(WASI_SDK_PATH)' == ''\" />\n    <PropertyGroup>\n      <_NativeWasmSdkBinPath>$([MSBuild]::NormalizeDirectory('$(WASI_SDK_PATH)', 'bin'))</_NativeWasmSdkBinPath>\n      <CppCompiler Condition=\"'$(CppCompiler)' == ''\">&quot;$(_NativeWasmSdkBinPath)clang&quot;</CppCompiler>\n      <CppLinker Condition=\"'$(CppLinker)' == ''\">$(CppCompiler)</CppLinker>\n    </PropertyGroup>\n  </Target>\n</Project>\n";
+				File.WriteAllText(targetsPath, fallbackContent);
 			}
 			catch
 			{
@@ -268,6 +286,28 @@ public static partial class MapWorkspaceService
 	[GeneratedRegex(@"<HintPath>[^<]*Realm\.MapAPI\.dll</HintPath>", RegexOptions.Singleline)]
 	private static partial Regex HintPathMapApiRegex();
 
+	[GeneratedRegex(@"<IlcLlvmTarget>\s*([^<\s]+)\s*</IlcLlvmTarget>", RegexOptions.IgnoreCase)]
+	private static partial Regex IlcLlvmTargetRegex();
+
+	[GeneratedRegex(@"<Target\s+Name=""ClearComponentWit""[^>]*>.*?</Target>", RegexOptions.Singleline)]
+	private static partial Regex ClearComponentWitTargetRegex();
+
+	public static string GetDefaultIlcLlvmTarget()
+	{
+		string templatePath = GetTemplatePath("MapScript.csproj");
+		if (!string.IsNullOrEmpty(templatePath) && File.Exists(templatePath))
+		{
+			string templateContent = File.ReadAllText(templatePath);
+			var match = IlcLlvmTargetRegex().Match(templateContent);
+			if (match.Success && !string.IsNullOrWhiteSpace(match.Groups[1].Value))
+			{
+				return match.Groups[1].Value.Trim();
+			}
+		}
+
+		return WasiSdkResolver.GetDefaultIlcLlvmTarget();
+	}
+
 	private static string NormalizeMapApiReference(string csprojContent)
 	{
 		csprojContent = ProjectReferenceMapApiRegex().Replace(csprojContent,
@@ -283,6 +323,45 @@ public static partial class MapWorkspaceService
 		{
 			csprojContent = csprojContent.Replace("</Project>",
 				"  <ItemGroup>\n    <TrimmerRootAssembly Include=\"$(MSBuildProjectName)\" />\n  </ItemGroup>\n</Project>");
+		}
+
+		string defaultTarget = GetDefaultIlcLlvmTarget();
+
+		if (IlcLlvmTargetRegex().IsMatch(csprojContent))
+		{
+			csprojContent = IlcLlvmTargetRegex().Replace(csprojContent,
+				$"<IlcLlvmTarget>{defaultTarget}</IlcLlvmTarget>");
+		}
+		else if (csprojContent.Contains("EnableAotLate", StringComparison.OrdinalIgnoreCase))
+		{
+			csprojContent = Regex.Replace(csprojContent, @"(<Target\s+Name=""EnableAotLate""[^>]*>\s*<PropertyGroup>)",
+				$"$1\n      <IlcLlvmTarget>{defaultTarget}</IlcLlvmTarget>", RegexOptions.IgnoreCase);
+		}
+		else
+		{
+			string aotTarget = $"  <Target Name=\"EnableAotLate\" BeforeTargets=\"ImportRuntimeIlcPackageTarget;IlcCompile;_ComputeAssembliesToCompileToNative\">\n    <PropertyGroup>\n      <PublishAot>true</PublishAot>\n      <IlcLlvmTarget>{defaultTarget}</IlcLlvmTarget>\n    </PropertyGroup>\n  </Target>\n";
+			int projectEnd = csprojContent.LastIndexOf("</Project>", StringComparison.OrdinalIgnoreCase);
+			csprojContent = projectEnd >= 0 ? csprojContent.Insert(projectEnd, aotTarget) : csprojContent + aotTarget;
+		}
+
+		string fixWasiLinkArgsTarget = "  <Target Name=\"FixWasiSdkLinkArgs\" BeforeTargets=\"LinkNative;LinkNativeLlvm\">\n    <PropertyGroup>\n      <IlcWasmGlobalBase>1048576</IlcWasmGlobalBase>\n    </PropertyGroup>\n    <ItemGroup>\n      <WasmComponentTypeWit Remove=\"@(WasmComponentTypeWit)\" />\n    </ItemGroup>\n  </Target>\n";
+
+		if (ClearComponentWitTargetRegex().IsMatch(csprojContent))
+		{
+			csprojContent = ClearComponentWitTargetRegex().Replace(csprojContent, fixWasiLinkArgsTarget.TrimEnd());
+		}
+		else if (csprojContent.Contains("FixWasiSdkLinkArgs", StringComparison.OrdinalIgnoreCase))
+		{
+			if (!csprojContent.Contains("IlcWasmGlobalBase", StringComparison.OrdinalIgnoreCase))
+			{
+				csprojContent = Regex.Replace(csprojContent, @"(<Target\s+Name=""FixWasiSdkLinkArgs""[^>]*>)",
+					"$1\n    <PropertyGroup>\n      <IlcWasmGlobalBase>1048576</IlcWasmGlobalBase>\n    </PropertyGroup>", RegexOptions.IgnoreCase);
+			}
+		}
+		else
+		{
+			int projectEnd = csprojContent.LastIndexOf("</Project>", StringComparison.OrdinalIgnoreCase);
+			csprojContent = projectEnd >= 0 ? csprojContent.Insert(projectEnd, fixWasiLinkArgsTarget) : csprojContent + fixWasiLinkArgsTarget;
 		}
 
 		return csprojContent;

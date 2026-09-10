@@ -16,7 +16,7 @@ public static class WasiSdkResolver
 			string appDataDir = Godot.OS.GetUserDataDir();
 			if (!string.IsNullOrWhiteSpace(appDataDir))
 			{
-				string versionedPath = Path.Combine(appDataDir, "wasi_sdk", "wasi-sdk-30");
+				string versionedPath = Path.Combine(appDataDir, "wasi_sdk", "wasi-sdk-34");
 				if (IsValidWasiSdkDirectory(versionedPath))
 				{
 					return NormalizeDirectoryPath(versionedPath);
@@ -25,7 +25,7 @@ public static class WasiSdkResolver
 				string wasiSdkParentDir = Path.Combine(appDataDir, "wasi_sdk");
 				if (Directory.Exists(wasiSdkParentDir))
 				{
-					foreach (string candidate in Directory.GetDirectories(wasiSdkParentDir, "wasi-sdk-*"))
+					foreach (string candidate in System.Linq.Enumerable.OrderByDescending(Directory.GetDirectories(wasiSdkParentDir, "wasi-sdk-*"), d => d))
 					{
 						if (IsValidWasiSdkDirectory(candidate))
 						{
@@ -42,7 +42,7 @@ public static class WasiSdkResolver
 		try
 		{
 			string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-			string appDataFallback = Path.Combine(appData, "Godot", "app_userdata", "Realm.Godot", "wasi_sdk", "wasi-sdk-30");
+			string appDataFallback = Path.Combine(appData, "Godot", "app_userdata", "Realm.Godot", "wasi_sdk", "wasi-sdk-34");
 			if (IsValidWasiSdkDirectory(appDataFallback))
 			{
 				return NormalizeDirectoryPath(appDataFallback);
@@ -51,7 +51,7 @@ public static class WasiSdkResolver
 			string fallbackSdkParent = Path.Combine(appData, "Godot", "app_userdata", "Realm.Godot", "wasi_sdk");
 			if (Directory.Exists(fallbackSdkParent))
 			{
-				foreach (string candidate in Directory.GetDirectories(fallbackSdkParent, "wasi-sdk-*"))
+				foreach (string candidate in System.Linq.Enumerable.OrderByDescending(Directory.GetDirectories(fallbackSdkParent, "wasi-sdk-*"), d => d))
 				{
 					if (IsValidWasiSdkDirectory(candidate))
 					{
@@ -125,6 +125,27 @@ public static class WasiSdkResolver
 		string clangUnixPath = Path.Combine(directoryPath, "bin", "clang");
 		return (File.Exists(clangExecutablePath) && new FileInfo(clangExecutablePath).Length > 0)
 			|| (File.Exists(clangUnixPath) && new FileInfo(clangUnixPath).Length > 0);
+	}
+
+	public static string GetDefaultIlcLlvmTarget(string? wasiSdkPath = null)
+	{
+		string path = !string.IsNullOrWhiteSpace(wasiSdkPath) ? wasiSdkPath : ResolveWasiSdkPath();
+		if (!string.IsNullOrWhiteSpace(path) && Directory.Exists(path))
+		{
+			string libDir = Path.Combine(path, "share", "wasi-sysroot", "lib");
+			if (Directory.Exists(libDir))
+			{
+				if (Directory.Exists(Path.Combine(libDir, "wasm32-wasip1")))
+				{
+					return "wasm32-unknown-wasip1";
+				}
+				if (Directory.Exists(Path.Combine(libDir, "wasm32-wasi")))
+				{
+					return "wasm32-unknown-wasi";
+				}
+			}
+		}
+		return "wasm32-unknown-wasip1";
 	}
 
 	private static string NormalizeDirectoryPath(string path)
