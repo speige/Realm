@@ -41,7 +41,7 @@ public partial class EditorSettingsDialog : FloatingDialogBase
 	private OptionButton _optAutoBackup;
 
 	public EditorSettingsDialog(MapEditorHUD hud)
-		: base(hud, TranslationServer.Translate("Map Editor Usability Settings"), new Vector2(460, 360))
+		: base(hud, TranslationServer.Translate("Map Editor Usability Settings"), new Vector2(460, 440))
 	{
 		LoadSettingsFromFile();
 		BuildControls();
@@ -151,6 +151,30 @@ public partial class EditorSettingsDialog : FloatingDialogBase
 		btnOpenBackups.CustomMinimumSize = new Vector2(220, 32);
 		btnOpenBackups.Pressed += OpenMapBackupsFolder;
 		btnBackupsRow.AddChild(btnOpenBackups);
+
+		AddSectionHeader(contentVBox, "🛠️ " + TranslationServer.Translate("DEVELOPER & EDITOR TOOLS"), new Color(0.6f, 0.85f, 0.95f));
+
+		var btnReinstallRow = new HBoxContainer();
+		btnReinstallRow.AddThemeConstantOverride("separation", 10);
+		contentVBox.AddChild(btnReinstallRow);
+
+		var btnReinstallVSCode = new Button();
+		btnReinstallVSCode.Set("icon_max_width", 0);
+		btnReinstallVSCode.Text = "🔄 " + TranslationServer.Translate("Reinstall / Repair VS Code");
+		btnReinstallVSCode.TooltipText = TranslationServer.Translate("Forces a fresh download and installation of VS Code and editor dependencies into application user data");
+		btnReinstallVSCode.FocusMode = FocusModeEnum.None;
+		btnReinstallVSCode.CustomMinimumSize = new Vector2(240, 32);
+		btnReinstallVSCode.Pressed += () =>
+		{
+			btnReinstallVSCode.Disabled = true;
+			btnReinstallVSCode.Text = "⏳ " + TranslationServer.Translate("Reinstalling...");
+			if (OperatingSystem.IsWindows())
+			{
+				VSCodeManager.Instance.ForceReinstall();
+			}
+			Hud?.ShowFeedback(TranslationServer.Translate("Reinstalling VS Code dependencies in background..."));
+		};
+		btnReinstallRow.AddChild(btnReinstallVSCode);
 	}
 
 	private void OpenMapBackupsFolder()

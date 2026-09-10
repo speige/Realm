@@ -1,4 +1,6 @@
 .vs/
+MapTemplate/lib/Realm.MapAPI.dll
+MapTemplate/lib/Realm.MapAPI.pdb
 obj/
 bin/
 *.user

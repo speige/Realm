@@ -103,14 +103,12 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 
 		string[] subCats = new string[]
 		{
-			TranslationServer.Translate("Units (models/units)").ToString(),
+			TranslationServer.Translate("Characters (models/characters)").ToString(),
 			TranslationServer.Translate("Buildings (models/buildings)").ToString(),
-			TranslationServer.Translate("Resources (models/resources)").ToString(),
 			TranslationServer.Translate("Props (models/props)").ToString(),
-			TranslationServer.Translate("Projectiles (models/projectiles)").ToString(),
-			TranslationServer.Translate("Object Attachments (models/attachments)").ToString()
+			TranslationServer.Translate("Items (models/items)").ToString()
 		};
-		_optSubCategory = AddOptionDropdown(vbox, TranslationServer.Translate("Category:"), subCats, 3, (_) => ApplyCategoryDefaults(), 120f);
+		_optSubCategory = AddOptionDropdown(vbox, TranslationServer.Translate("Category:"), subCats, 2, (_) => ApplyCategoryDefaults(), 120f);
 		_txtAssetName = AddTextInput(vbox, TranslationServer.Translate("Asset Name:"), "", (_) => { }, TranslationServer.Translate("e.g. orc_warrior"), 120f);
 
 		AddSectionHeader(vbox, TranslationServer.Translate("TEAM COLOR MASKING"));
@@ -225,13 +223,13 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 		{
 			_optSubCategory.Selected = 1;
 		}
-		else if (lower.Contains("tree") || lower.Contains("rock") || lower.Contains("gold") || lower.Contains("resource"))
+		else if (lower.Contains("item") || lower.Contains("weapon") || lower.Contains("attach") || lower.Contains("proj") || lower.Contains("bullet") || lower.Contains("arrow") || lower.Contains("missile") || lower.Contains("shield") || lower.Contains("sword") || lower.Contains("spear") || lower.Contains("axe"))
+		{
+			_optSubCategory.Selected = 3;
+		}
+		else
 		{
 			_optSubCategory.Selected = 2;
-		}
-		else if (lower.Contains("proj") || lower.Contains("bullet") || lower.Contains("arrow") || lower.Contains("missile"))
-		{
-			_optSubCategory.Selected = 4;
 		}
 
 		ApplyCategoryDefaults();
@@ -246,15 +244,12 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 
 		if (!string.IsNullOrEmpty(initialSubCat))
 		{
-			_optSubCategory.Selected = initialSubCat switch
+			_optSubCategory.Selected = initialSubCat.ToLowerInvariant() switch
 			{
-				"units" => 0,
-				"buildings" => 1,
-				"resources" => 2,
-				"props" => 3,
-				"projectiles" => 4,
-				"attachments" => 5,
-				_ => 3
+				"units" or "unit" or "characters" or "character" => 0,
+				"buildings" or "building" => 1,
+				"items" or "item" or "attachments" or "attachment" or "weapons" or "weapon" or "projectiles" or "projectile" => 3,
+				_ => 2
 			};
 		}
 
@@ -274,17 +269,15 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 
 		string subCat = _optSubCategory.Selected switch
 		{
-			0 => "units",
+			0 => "characters",
 			1 => "buildings",
-			2 => "resources",
-			3 => "props",
-			4 => "projectiles",
-			5 => "attachments",
+			2 => "props",
+			3 => "items",
 			_ => "props"
 		};
 
-		bool teamColor = subCat is "units" or "buildings";
-		bool autoRig = subCat == "units";
+		bool teamColor = subCat is "characters" or "buildings";
+		bool autoRig = subCat == "characters";
 
 		if (_chkTeamColorMask != null)
 		{
@@ -361,10 +354,8 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 		{
 			0 => "units",
 			1 => "buildings",
-			2 => "resources",
-			3 => "props",
-			4 => "projectiles",
-			5 => "attachments",
+			2 => "props",
+			3 => "attachments",
 			_ => "props"
 		};
 
@@ -430,9 +421,12 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 				SetProgressStatus(TranslationServer.Translate("Step 3/4: Optimizing geometry & textures..."), 40, false);
 				byte[] srcBytes = File.ReadAllBytes(currentPath);
 
+				int maxRes = subCategory is "attachments" or "items" ? 512 : 1024;
 				var glbOpt = new GlbOptimizer();
 				var res = glbOpt.Optimize(srcBytes, new Realm.Shared.OptimizationOptions
 				{
+					SimplificationRatio = 0.5f,
+					MaxTextureResolution = maxRes,
 					ForceReDecimate = true
 				});
 
@@ -453,6 +447,7 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 					"buildings" => 1.5f,
 					"props" => 1.25f,
 					"units" => 1.0f,
+					"attachments" or "items" => 1.0f,
 					_ => 1.0f
 				};
 
@@ -522,10 +517,8 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 		{
 			0 => "units",
 			1 => "buildings",
-			2 => "resources",
-			3 => "props",
-			4 => "projectiles",
-			5 => "attachments",
+			2 => "props",
+			3 => "attachments",
 			_ => "props"
 		};
 		float defaultScale = subCategory switch
@@ -534,7 +527,7 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 			"buildings" => 1.5f,
 			"props" => 1.25f,
 			"units" => 1.0f,
-			"attachments" => 1.0f,
+			"attachments" or "items" => 1.0f,
 			_ => 1.0f
 		};
 

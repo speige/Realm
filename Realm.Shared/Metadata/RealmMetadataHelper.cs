@@ -112,8 +112,8 @@ public static class RealmMetadataHelper
 
 	private static readonly Dictionary<string, string[]> ValidAssetTypesByExtension = new(StringComparer.OrdinalIgnoreCase)
 	{
-		[".rtex"] = new[] { "Decal", "Icon", "Noise", "Ribbon", "Skybox", "SpellSpritesheet", "Tilesheet" },
-		[".glb"] = new[] { "Character", "Building", "Environment", "Projectile", "Prop", "Attachment", "Weapon" },
+		[".rtex"] = new[] { "Decal", "Icon", "Noise", "Ribbon", "Skybox", "Spritesheet", "Terrain", "vfx_radial", "vfx_vertical" },
+		[".glb"] = new[] { "Character", "Building", "Prop", "Item" },
 		[".ranim"] = new[] { "Animation" },
 		[".ogg"] = new[] { "Music", "SoundEffect" }
 	};
@@ -142,24 +142,23 @@ public static class RealmMetadataHelper
 
 		if (ext is ".rtex")
 		{
-			if (norm.Contains("tile") || norm.Contains("terrain")) { canonicalType = "Tilesheet"; return true; }
+			if (norm.Contains("radial")) { canonicalType = "vfx_radial"; return true; }
+			if (norm.Contains("vertical")) { canonicalType = "vfx_vertical"; return true; }
+			if (norm.Contains("tile") || norm.Contains("terrain")) { canonicalType = "Terrain"; return true; }
 			if (norm.Contains("decal")) { canonicalType = "Decal"; return true; }
 			if (norm.Contains("icon")) { canonicalType = "Icon"; return true; }
 			if (norm.Contains("noise")) { canonicalType = "Noise"; return true; }
 			if (norm.Contains("ribbon")) { canonicalType = "Ribbon"; return true; }
 			if (norm.Contains("skybox")) { canonicalType = "Skybox"; return true; }
-			if (norm.Contains("sprite") || norm.Contains("vfx") || norm.Contains("spell")) { canonicalType = "SpellSpritesheet"; return true; }
+			if (norm.Contains("sprite") || norm.Contains("vfx") || norm.Contains("spell")) { canonicalType = "Spritesheet"; return true; }
 			return false;
 		}
 		else if (ext is ".glb")
 		{
 			if (norm.Contains("character") || norm.Contains("unit")) { canonicalType = "Character"; return true; }
-			if (norm.Contains("building")) { canonicalType = "Building"; return true; }
-			if (norm.Contains("environment") || norm.Contains("resource")) { canonicalType = "Environment"; return true; }
-			if (norm.Contains("projectile")) { canonicalType = "Projectile"; return true; }
-			if (norm.Contains("prop")) { canonicalType = "Prop"; return true; }
-			if (norm.Contains("attachment") || norm.Contains("object")) { canonicalType = "Attachment"; return true; }
-			if (norm.Contains("weapon")) { canonicalType = "Weapon"; return true; }
+			if (norm.Contains("building") || norm.Contains("structure")) { canonicalType = "Building"; return true; }
+			if (norm.Contains("environment") || norm.Contains("resource") || norm.Contains("prop")) { canonicalType = "Prop"; return true; }
+			if (norm.Contains("item") || norm.Contains("attachment") || norm.Contains("weapon") || norm.Contains("projectile") || norm.Contains("gear") || norm.Contains("equipment") || norm.Contains("accessory") || norm.Contains("object")) { canonicalType = "Item"; return true; }
 			return false;
 		}
 		else if (ext is ".ranim")

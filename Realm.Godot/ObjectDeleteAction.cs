@@ -38,6 +38,10 @@ public class ObjectDeleteAction : IEditorAction
 		{
 			_spawnedNode = GameHost.Instance?.SpawnDecalExternalWithParams(_objectId, _position, _rotationY, _scale);
 		}
+		else if (_objectType == "vfx")
+		{
+			_spawnedNode = GameHost.Instance?.SpawnVfxExternalWithParams(_objectId, _position, new Godot.Vector3(0f, _rotationY, 0f), Godot.Vector3.One * (_scale <= 0f ? 1.0f : _scale));
+		}
 	}
 
 	public void Redo()

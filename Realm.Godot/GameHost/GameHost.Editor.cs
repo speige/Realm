@@ -12,6 +12,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using Realm.Godot.Utils;
+using Realm.Godot.VFX;
 
 public partial class GameHost
 {
@@ -1746,9 +1747,11 @@ public partial class GameHost
 		AllProps.Clear();
 		PropMultiMeshManager.Instance?.Clear();
 		AllDecals.Clear();
+		AllVfx.Clear();
 		ActivePings.Clear();
 		EntityToUnit3D.Clear();
 		EntityToProp3D.Clear();
+		EntityToVfx3D.Clear();
 		if (_controlGroups != null)
 		{
 			for (int i = 0; i < _controlGroups.Length; i++)
@@ -1767,6 +1770,10 @@ public partial class GameHost
 			else if (child is Decal decal && GodotObject.IsInstanceValid(decal))
 			{
 				DeleteNodeExternal(decal);
+			}
+			else if (child is ProceduralVfxInstance3D vfx && GodotObject.IsInstanceValid(vfx))
+			{
+				DeleteNodeExternal(vfx);
 			}
 		}
 		
@@ -2039,25 +2046,76 @@ public partial class GameHost
 		return SpawnPropExternalWithParams(propId, position, rotY, scale);
 	}
 
-	public Texture2D LoadDecalTexture(string decalId)
+	public class DecalAssetData
+	{
+		public string DecalId { get; set; } = "";
+		public Texture2D PrimaryTexture { get; set; }
+		public Texture2D? PrimaryNormal { get; set; }
+		public Texture2D[]? AlbedoFrames { get; set; }
+		public Texture2D[]? NormalFrames { get; set; }
+		public int Columns { get; set; } = 1;
+		public int Rows { get; set; } = 1;
+		public float Fps { get; set; } = 12.0f;
+		public bool SubframeBlend { get; set; } = true;
+		public bool IsAnimated => Columns > 1 || Rows > 1;
+	}
+
+	private readonly System.Collections.Generic.Dictionary<string, DecalAssetData> _decalAssetCache = new();
+
+	public void InvalidateDecalCache(string decalId)
+	{
+		if (string.IsNullOrEmpty(decalId)) return;
+		string baseKey = System.IO.Path.GetFileNameWithoutExtension(decalId);
+		_decalAssetCache.Remove(decalId);
+		_decalAssetCache.Remove(baseKey);
+		_decalAssetCache.Remove($"{baseKey}.rtex");
+		_decalAssetCache.Remove($"{baseKey}.png");
+	}
+
+	public DecalAssetData LoadDecalAsset(
+		string decalId,
+		int overrideCols = 0,
+		int overrideRows = 0,
+		float overrideFps = 0f,
+		bool? overrideSubframeBlend = null,
+		bool forceReload = false)
 	{
 		if (string.IsNullOrEmpty(decalId)) decalId = "logo";
+		string cacheKey = decalId;
+		if (!forceReload && overrideCols <= 0 && overrideRows <= 0 && overrideFps <= 0.001f && !overrideSubframeBlend.HasValue)
+		{
+			if (_decalAssetCache.TryGetValue(cacheKey, out var cachedData) && cachedData != null && GodotObject.IsInstanceValid(cachedData.PrimaryTexture))
+			{
+				return cachedData;
+			}
+		}
 
 		if (decalId.StartsWith("res://"))
 		{
 			try
 			{
 				if (ResourceLoader.Exists(decalId))
-					return GD.Load<Texture2D>(decalId);
+				{
+					var resTex = GD.Load<Texture2D>(decalId);
+					var resData = new DecalAssetData
+					{
+						DecalId = decalId,
+						PrimaryTexture = resTex,
+						Columns = 1,
+						Rows = 1
+					};
+					_decalAssetCache[cacheKey] = resData;
+					return resData;
+				}
 			}
 			catch { }
 		}
 
 		string filename = System.IO.Path.GetFileName(decalId);
+		string baseKey = System.IO.Path.GetFileNameWithoutExtension(decalId);
 		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 
 		List<string> candidatePaths = new List<string>();
-
 		if (System.IO.Path.IsPathRooted(decalId))
 		{
 			candidatePaths.Add(decalId);
@@ -2075,38 +2133,117 @@ public partial class GameHost
 			candidatePaths.Add(decalId);
 		}
 
+		int detectedCols = 1;
+		int detectedRows = 1;
+		float detectedFps = 12.0f;
+		bool detectedSubframeBlend = true;
+
+		try
+		{
+			var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
+			var decalsObj = assetsObj?["decals"] as System.Text.Json.Nodes.JsonObject;
+			if (decalsObj != null)
+			{
+				System.Text.Json.Nodes.JsonObject? meta = null;
+				if (decalsObj.TryGetPropertyValue(filename, out var n1) && n1 is System.Text.Json.Nodes.JsonObject o1) meta = o1;
+				else if (decalsObj.TryGetPropertyValue(baseKey, out var n2) && n2 is System.Text.Json.Nodes.JsonObject o2) meta = o2;
+				else if (decalsObj.TryGetPropertyValue($"{baseKey}.rtex", out var n3) && n3 is System.Text.Json.Nodes.JsonObject o3) meta = o3;
+				else if (decalsObj.TryGetPropertyValue($"{baseKey}.png", out var n4) && n4 is System.Text.Json.Nodes.JsonObject o4) meta = o4;
+
+				if (meta != null)
+				{
+					if (meta.TryGetPropertyValue("columns", out var cNode) && int.TryParse(cNode?.ToString(), out int c) && c > 0) detectedCols = c;
+					if (meta.TryGetPropertyValue("rows", out var rNode) && int.TryParse(rNode?.ToString(), out int r) && r > 0) detectedRows = r;
+					if (meta.TryGetPropertyValue("fps", out var fNode) && float.TryParse(fNode?.ToString(), out float f) && f > 0.001f) detectedFps = f;
+					else if (meta.TryGetPropertyValue("seconds_per_frame", out var sNode) && float.TryParse(sNode?.ToString(), out float spf) && spf > 0.001f) detectedFps = 1.0f / spf;
+					if (meta.TryGetPropertyValue("subframe_blend", out var sbNode) && bool.TryParse(sbNode?.ToString(), out bool sb)) detectedSubframeBlend = sb;
+				}
+			}
+		}
+		catch { }
+
 		foreach (var path in candidatePaths)
 		{
 			if (!string.IsNullOrEmpty(path) && System.IO.File.Exists(path))
 			{
 				try
 				{
-					Image? img = null;
+					Image? albedoImg = null;
+					Image? normalImg = null;
+
 					if (path.EndsWith(".rtex", StringComparison.OrdinalIgnoreCase))
 					{
 						byte[] rtexBytes = System.IO.File.ReadAllBytes(path);
-						byte[]? webpBytes = Realm.Shared.Textures.RtexFile.GetLayer(rtexBytes, 0);
-						if (webpBytes != null && webpBytes.Length > 0)
+						var (customJson, layers, _) = Realm.Shared.Textures.RtexFile.Parse(rtexBytes);
+						if (!string.IsNullOrEmpty(customJson))
 						{
-							img = Image.CreateEmpty(1, 1, false, Image.Format.Rgba8);
-							if (img.LoadWebpFromBuffer(webpBytes) != Error.Ok)
+							try
 							{
-								img.LoadPngFromBuffer(webpBytes);
+								var rtexMeta = System.Text.Json.Nodes.JsonNode.Parse(customJson)?.AsObject();
+								if (rtexMeta != null)
+								{
+									if (rtexMeta.TryGetPropertyValue("columns", out var cNode) && int.TryParse(cNode?.ToString(), out int c) && c > 0) detectedCols = c;
+									if (rtexMeta.TryGetPropertyValue("rows", out var rNode) && int.TryParse(rNode?.ToString(), out int r) && r > 0) detectedRows = r;
+								}
+							}
+							catch { }
+						}
+
+						if (layers.Count > 0 && layers[0] != null && layers[0].Length > 0)
+						{
+							albedoImg = Image.CreateEmpty(1, 1, false, Image.Format.Rgba8);
+							if (albedoImg.LoadWebpFromBuffer(layers[0]) != Error.Ok)
+							{
+								albedoImg.LoadPngFromBuffer(layers[0]);
+							}
+						}
+
+						if (layers.Count > 1 && layers[1] != null && layers[1].Length > 0)
+						{
+							normalImg = Image.CreateEmpty(1, 1, false, Image.Format.Rgba8);
+							if (normalImg.LoadWebpFromBuffer(layers[1]) != Error.Ok)
+							{
+								normalImg.LoadPngFromBuffer(layers[1]);
 							}
 						}
 					}
 					else
 					{
-						img = Image.LoadFromFile(path);
+						albedoImg = Image.LoadFromFile(path);
+						string? meta = Realm.Shared.Metadata.RealmMetadataHelper.ExtractMetadata(path);
+						if (!string.IsNullOrEmpty(meta))
+						{
+							try
+							{
+								var node = System.Text.Json.Nodes.JsonNode.Parse(meta);
+								if (node?["columns"] != null && int.TryParse(node["columns"]?.ToString(), out int c) && c > 0) detectedCols = c;
+								if (node?["rows"] != null && int.TryParse(node["rows"]?.ToString(), out int r) && r > 0) detectedRows = r;
+							}
+							catch { }
+						}
 					}
 
-					if (img != null)
+					if (albedoImg != null)
 					{
-						if (!img.HasMipmaps())
+						var assetData = new DecalAssetData
 						{
-							img.GenerateMipmaps();
+							DecalId = decalId,
+							Columns = 1,
+							Rows = 1,
+							Fps = 12.0f,
+							SubframeBlend = false
+						};
+
+						if (!albedoImg.HasMipmaps()) albedoImg.GenerateMipmaps();
+						assetData.PrimaryTexture = ImageTexture.CreateFromImage(albedoImg);
+						if (normalImg != null)
+						{
+							if (!normalImg.HasMipmaps()) normalImg.GenerateMipmaps();
+							assetData.PrimaryNormal = ImageTexture.CreateFromImage(normalImg);
 						}
-						return ImageTexture.CreateFromImage(img);
+
+						_decalAssetCache[cacheKey] = assetData;
+						return assetData;
 					}
 				}
 				catch (Exception ex)
@@ -2116,7 +2253,20 @@ public partial class GameHost
 			}
 		}
 
-		return GD.Load<Texture2D>("res://icon.svg");
+		var fallback = new DecalAssetData
+		{
+			DecalId = decalId,
+			PrimaryTexture = GD.Load<Texture2D>("res://icon.svg"),
+			Columns = 1,
+			Rows = 1
+		};
+		_decalAssetCache[cacheKey] = fallback;
+		return fallback;
+	}
+
+	public Texture2D LoadDecalTexture(string decalId)
+	{
+		return LoadDecalAsset(decalId).PrimaryTexture;
 	}
 
 	public string GetDecalTexturePath(string decalId)
@@ -2500,6 +2650,79 @@ public partial class GameHost
 		return decal;
 	}
 
+	public ProceduralVfxInstance3D SpawnVfxExternalWithParams(
+		string vfxId,
+		Vector3 position,
+		Vector3 rotationDegrees,
+		Vector3 scale,
+		float normalOffset = 0f,
+		VfxAttachmentConfig customConfig = null)
+	{
+		var entity = EcsWorld.Create();
+		VfxAttachmentConfig config;
+		if (customConfig != null)
+		{
+			config = customConfig.Clone();
+		}
+		else if (VfxRegistry.TryGetValue(vfxId, out var regCfg))
+		{
+			config = regCfg.Clone();
+		}
+		else if (Enum.TryParse<VfxPrimitiveType>(vfxId, true, out var primType))
+		{
+			config = new VfxAttachmentConfig { VfxId = vfxId, PrimitiveType = primType };
+		}
+		else
+		{
+			config = new VfxAttachmentConfig { VfxId = vfxId, Name = vfxId };
+		}
+
+		if (normalOffset != 0f)
+		{
+			config.SurfaceNormalOffset = normalOffset;
+		}
+
+		Vector3 safeScale = scale;
+		if (Mathf.IsZeroApprox(safeScale.X)) safeScale.X = 1f;
+		if (Mathf.IsZeroApprox(safeScale.Y)) safeScale.Y = 1f;
+		if (Mathf.IsZeroApprox(safeScale.Z)) safeScale.Z = 1f;
+
+		var vfx = new ProceduralVfxInstance3D(config);
+		vfx.Entity = entity;
+		vfx.Position = position;
+		vfx.RotationDegrees = rotationDegrees;
+		vfx.Scale = safeScale;
+
+		AddChild(vfx);
+		AllVfx.Add(vfx);
+		EntityToVfx3D[entity] = vfx;
+
+		EcsWorld.Add(entity, new Realm.Ecs.Components.Core.Position(new System.Numerics.Vector3(position.X, position.Y, position.Z)));
+		EcsWorld.Add(entity, new RotationY(rotationDegrees.Y));
+		EcsWorld.Add(entity, new ModelScale(safeScale.X));
+
+		return vfx;
+	}
+
+	public static Basis CreateAlignedBasis(Vector3 normal)
+	{
+		Vector3 up = normal.Normalized();
+		Vector3 tangent = (Mathf.Abs(up.Dot(Vector3.Up)) > 0.9f) ? Vector3.Right : Vector3.Up;
+		Vector3 right = tangent.Cross(up).Normalized();
+		Vector3 forward = up.Cross(right).Normalized();
+		return new Basis(right, up, forward);
+	}
+
+	public Vector3 GetTerrainNormalAt(Vector3 pos)
+	{
+		float step = 0.5f;
+		float hL = _editorService.GetTerrainHeightAt(new Vector3(pos.X - step, 0f, pos.Z));
+		float hR = _editorService.GetTerrainHeightAt(new Vector3(pos.X + step, 0f, pos.Z));
+		float hD = _editorService.GetTerrainHeightAt(new Vector3(pos.X, 0f, pos.Z - step));
+		float hU = _editorService.GetTerrainHeightAt(new Vector3(pos.X, 0f, pos.Z + step));
+		return new Vector3(hL - hR, 2f * step, hD - hU).Normalized();
+	}
+
 	private readonly System.Collections.Generic.Dictionary<(int, int), ImageTexture> _decalOrmCache = new();
 	private readonly System.Collections.Generic.Dictionary<string, ImageTexture> _decalNormalCache = new();
 
@@ -2622,12 +2845,17 @@ public partial class GameHost
 		}
 
 		// 3. Normal Depth
-		if (normalStrength > 0.01f && decal.TextureAlbedo != null)
+		if (normalStrength > 0.01f)
 		{
-			decal.TextureNormal = GetOrCreateNormalTexture(decal.TextureAlbedo, normalStrength, decalKey);
+			if (decal is Decal3D d3d) d3d.NormalEnabled = true;
+			if (decal.TextureNormal == null && decal.TextureAlbedo != null)
+			{
+				decal.TextureNormal = GetOrCreateNormalTexture(decal.TextureAlbedo, normalStrength, decalKey);
+			}
 		}
 		else
 		{
+			if (decal is Decal3D d3d) d3d.NormalEnabled = false;
 			decal.TextureNormal = null;
 		}
 
@@ -2656,6 +2884,11 @@ public partial class GameHost
 				decal.EmissionEnergy = 0.0f;
 				break;
 		}
+
+		if (decal is Decal3D decal3DNode)
+		{
+			decal3DNode.SetBaseProperties(decal.Modulate, decal.EmissionEnergy);
+		}
 	}
 
 	public void ApplyDecalPropertiesFromMetadata(Decal decal, string decalId)
@@ -2663,52 +2896,88 @@ public partial class GameHost
 		if (decal == null || !GodotObject.IsInstanceValid(decal) || string.IsNullOrEmpty(decalId)) return;
 		try
 		{
+			var assetData = LoadDecalAsset(decalId);
+			decal.TextureAlbedo = assetData.PrimaryTexture;
+			if (assetData.PrimaryNormal != null) decal.TextureNormal = assetData.PrimaryNormal;
+
 			string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
 			var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
 			var decalsObj = assetsObj?["decals"] as System.Text.Json.Nodes.JsonObject;
-			if (decalsObj == null) return;
 
 			string key = System.IO.Path.GetFileName(decalId);
 			string baseKey = System.IO.Path.GetFileNameWithoutExtension(decalId);
 
 			System.Text.Json.Nodes.JsonObject? meta = null;
-			if (decalsObj.TryGetPropertyValue(key, out var n1) && n1 is System.Text.Json.Nodes.JsonObject o1) meta = o1;
-			else if (decalsObj.TryGetPropertyValue(baseKey, out var n2) && n2 is System.Text.Json.Nodes.JsonObject o2) meta = o2;
-			else if (decalsObj.TryGetPropertyValue($"{baseKey}.rtex", out var n3) && n3 is System.Text.Json.Nodes.JsonObject o3) meta = o3;
-			else if (decalsObj.TryGetPropertyValue($"{baseKey}.png", out var n4) && n4 is System.Text.Json.Nodes.JsonObject o4) meta = o4;
-
-			if (meta != null)
+			if (decalsObj != null)
 			{
-				float brightness = meta.TryGetPropertyValue("brightness", out var bNode) && float.TryParse(bNode?.ToString(), out float b) ? b : 1.0f;
-				Color tint = Colors.White;
-				if (meta.TryGetPropertyValue("tint", out var tNode) && tNode != null)
-				{
-					string tStr = tNode.ToString();
-					if (tStr.StartsWith("#")) tint = Color.FromHtml(tStr);
-				}
-				float contrast = meta.TryGetPropertyValue("contrast", out var cNode) && float.TryParse(cNode?.ToString(), out float c) ? c : 1.0f;
-				float saturation = meta.TryGetPropertyValue("saturation", out var sNode) && float.TryParse(sNode?.ToString(), out float s) ? s : 1.0f;
-				float opacity = meta.TryGetPropertyValue("opacity", out var oNode) && float.TryParse(oNode?.ToString(), out float o) ? o : 1.0f;
-				float albedoMix = meta.TryGetPropertyValue("albedo_mix", out var mNode) && float.TryParse(mNode?.ToString(), out float m) ? m : 1.0f;
-				float normalStrength = meta.TryGetPropertyValue("normal_strength", out var nNode) && float.TryParse(nNode?.ToString(), out float n) ? n : 1.0f;
-				float roughness = meta.TryGetPropertyValue("roughness", out var rNode) && float.TryParse(rNode?.ToString(), out float r) ? r : 1.0f;
-				float metallic = meta.TryGetPropertyValue("metallic", out var metNode) && float.TryParse(metNode?.ToString(), out float met) ? met : 0.0f;
-				string blendMode = meta.TryGetPropertyValue("blend_mode", out var bmNode) ? bmNode?.ToString() ?? "Mix" : "Mix";
+				if (decalsObj.TryGetPropertyValue(key, out var n1) && n1 is System.Text.Json.Nodes.JsonObject o1) meta = o1;
+				else if (decalsObj.TryGetPropertyValue(baseKey, out var n2) && n2 is System.Text.Json.Nodes.JsonObject o2) meta = o2;
+				else if (decalsObj.TryGetPropertyValue($"{baseKey}.rtex", out var n3) && n3 is System.Text.Json.Nodes.JsonObject o3) meta = o3;
+				else if (decalsObj.TryGetPropertyValue($"{baseKey}.png", out var n4) && n4 is System.Text.Json.Nodes.JsonObject o4) meta = o4;
+			}
 
-				ApplyDecalRenderingProperties(
-					decal,
-					brightness,
-					tint,
-					contrast,
-					saturation,
-					opacity,
-					albedoMix,
-					normalStrength,
-					roughness,
-					metallic,
-					blendMode,
-					decalId
+			float brightness = meta != null && meta.TryGetPropertyValue("brightness", out var bNode) && float.TryParse(bNode?.ToString(), out float b) ? b : 1.0f;
+			Color tint = Colors.White;
+			if (meta != null && meta.TryGetPropertyValue("tint", out var tNode) && tNode != null)
+			{
+				string tStr = tNode.ToString();
+				if (tStr.StartsWith("#")) tint = Color.FromHtml(tStr);
+			}
+			float contrast = meta != null && meta.TryGetPropertyValue("contrast", out var cNode) && float.TryParse(cNode?.ToString(), out float c) ? c : 1.0f;
+			float saturation = meta != null && meta.TryGetPropertyValue("saturation", out var sNode) && float.TryParse(sNode?.ToString(), out float s) ? s : 1.0f;
+			float opacity = meta != null && meta.TryGetPropertyValue("opacity", out var oNode) && float.TryParse(oNode?.ToString(), out float o) ? o : 1.0f;
+			float albedoMix = meta != null && meta.TryGetPropertyValue("albedo_mix", out var mNode) && float.TryParse(mNode?.ToString(), out float m) ? m : 1.0f;
+			float normalStrength = meta != null && meta.TryGetPropertyValue("normal_strength", out var nNode) && float.TryParse(nNode?.ToString(), out float n) ? n : (assetData.PrimaryNormal != null ? 1.0f : 0.0f);
+			float roughness = meta != null && meta.TryGetPropertyValue("roughness", out var rNode) && float.TryParse(rNode?.ToString(), out float r) ? r : 1.0f;
+			float metallic = meta != null && meta.TryGetPropertyValue("metallic", out var metNode) && float.TryParse(metNode?.ToString(), out float met) ? met : 0.0f;
+			string blendMode = meta != null && meta.TryGetPropertyValue("blend_mode", out var bmNode) ? bmNode?.ToString() ?? "Mix" : "Mix";
+
+			bool animateOpacity = meta != null && meta.TryGetPropertyValue("animate_opacity", out var aoNode) && bool.TryParse(aoNode?.ToString(), out bool ao) && ao;
+			float opacityPulseSpeed = meta != null && meta.TryGetPropertyValue("opacity_pulse_speed", out var opsNode) && float.TryParse(opsNode?.ToString(), out float ops) ? ops : 1.0f;
+			float minOpacity = meta != null && meta.TryGetPropertyValue("min_opacity", out var minONode) && float.TryParse(minONode?.ToString(), out float minO) ? minO : 0.2f;
+			float maxOpacity = meta != null && meta.TryGetPropertyValue("max_opacity", out var maxONode) && float.TryParse(maxONode?.ToString(), out float maxO) ? maxO : 1.0f;
+
+			bool animateEmission = meta != null && meta.TryGetPropertyValue("animate_emission", out var aeNode) && bool.TryParse(aeNode?.ToString(), out bool ae) && ae;
+			float emissionPulseSpeed = meta != null && meta.TryGetPropertyValue("emission_pulse_speed", out var epsNode) && float.TryParse(epsNode?.ToString(), out float eps) ? eps : 1.0f;
+			float minEmission = meta != null && meta.TryGetPropertyValue("min_emission", out var minENode) && float.TryParse(minENode?.ToString(), out float minE) ? minE : 0.0f;
+			float maxEmission = meta != null && meta.TryGetPropertyValue("max_emission", out var maxENode) && float.TryParse(maxENode?.ToString(), out float maxE) ? maxE : 2.0f;
+
+			bool animateScale = meta != null && meta.TryGetPropertyValue("animate_scale", out var asNode) && bool.TryParse(asNode?.ToString(), out bool aSc) && aSc;
+			float scalePulseSpeed = meta != null && meta.TryGetPropertyValue("scale_pulse_speed", out var scpsNode) && float.TryParse(scpsNode?.ToString(), out float scps) ? scps : 1.0f;
+			float minScaleRatio = meta != null && meta.TryGetPropertyValue("min_scale_ratio", out var minScNode) && float.TryParse(minScNode?.ToString(), out float minSc) ? minSc : 0.8f;
+			float maxScaleRatio = meta != null && meta.TryGetPropertyValue("max_scale_ratio", out var maxScNode) && float.TryParse(maxScNode?.ToString(), out float maxSc) ? maxSc : 1.2f;
+
+			float upperFade = meta != null && meta.TryGetPropertyValue("upper_fade", out var ufNode) && float.TryParse(ufNode?.ToString(), out float uf) ? uf : 0.3f;
+			float lowerFade = meta != null && meta.TryGetPropertyValue("lower_fade", out var lfNode) && float.TryParse(lfNode?.ToString(), out float lf) ? lf : 0.3f;
+
+			ApplyDecalRenderingProperties(
+				decal,
+				brightness,
+				tint,
+				contrast,
+				saturation,
+				opacity,
+				albedoMix,
+				normalStrength,
+				roughness,
+				metallic,
+				blendMode,
+				decalId
+			);
+
+			if (decal is Decal3D d3d)
+			{
+				d3d.SetPropertyAnimation(
+					animateOpacity, opacityPulseSpeed, minOpacity, maxOpacity,
+					animateEmission, emissionPulseSpeed, minEmission, maxEmission,
+					animateScale, scalePulseSpeed, minScaleRatio, maxScaleRatio,
+					upperFade, lowerFade
 				);
+			}
+			else
+			{
+				decal.UpperFade = upperFade;
+				decal.LowerFade = lowerFade;
 			}
 		}
 		catch { }
@@ -2725,7 +2994,21 @@ public partial class GameHost
 		float normalStrength,
 		float roughness,
 		float metallic,
-		string blendMode)
+		string blendMode,
+		bool animateOpacity = false,
+		float opacityPulseSpeed = 1.0f,
+		float minOpacity = 0.2f,
+		float maxOpacity = 1.0f,
+		bool animateEmission = false,
+		float emissionPulseSpeed = 1.0f,
+		float minEmission = 0.0f,
+		float maxEmission = 2.0f,
+		bool animateScale = false,
+		float scalePulseSpeed = 1.0f,
+		float minScaleRatio = 0.8f,
+		float maxScaleRatio = 1.2f,
+		float upperFade = 0.3f,
+		float lowerFade = 0.3f)
 	{
 		if (string.IsNullOrEmpty(decalKey) || AllDecals == null) return;
 		string baseKey = System.IO.Path.GetFileNameWithoutExtension(decalKey);
@@ -2752,6 +3035,21 @@ public partial class GameHost
 						blendMode,
 						decalKey
 					);
+
+					if (decal is Decal3D targetD3d)
+					{
+						targetD3d.SetPropertyAnimation(
+							animateOpacity, opacityPulseSpeed, minOpacity, maxOpacity,
+							animateEmission, emissionPulseSpeed, minEmission, maxEmission,
+							animateScale, scalePulseSpeed, minScaleRatio, maxScaleRatio,
+							upperFade, lowerFade
+						);
+					}
+					else
+					{
+						decal.UpperFade = upperFade;
+						decal.LowerFade = lowerFade;
+					}
 				}
 			}
 		}
@@ -2815,6 +3113,22 @@ public partial class GameHost
 			decal.QueueFree();
 			return;
 		}
+		var vfx = (node as ProceduralVfxInstance3D) ?? FindVfxInParentChain(node);
+		if (vfx != null && GodotObject.IsInstanceValid(vfx))
+		{
+			if (vfx == _selectedEditorObject || FindVfxInParentChain(_selectedEditorObject) == vfx)
+			{
+				SelectedEditorObject = null;
+			}
+			AllVfx.Remove(vfx);
+			EntityToVfx3D.Remove(vfx.Entity);
+			if (EcsWorld.IsAlive(vfx.Entity))
+			{
+				EcsWorld.Destroy(vfx.Entity);
+			}
+			vfx.QueueFree();
+			return;
+		}
 
 		if (_selectedEditorObject == node)
 		{
@@ -2868,6 +3182,19 @@ public partial class GameHost
 			AllDecals.Remove(decal);
 			if (decal is Decal3D d3 && EcsWorld.IsAlive(d3.Entity)) EcsWorld.Destroy(d3.Entity);
 			decal.QueueFree();
+			return action;
+		}
+
+		var vfx = (collider as ProceduralVfxInstance3D) ?? FindVfxInParentChain(collider);
+		if (vfx != null && GodotObject.IsInstanceValid(vfx))
+		{
+			if (vfx == _selectedEditorObject || FindVfxInParentChain(_selectedEditorObject) == vfx) SelectedEditorObject = null;
+			string vfxId = vfx.Config?.VfxId ?? "vfx";
+			var action = new ObjectDeleteAction("vfx", vfxId, vfx.Position, vfx.RotationDegrees.Y, vfx.Scale.X, false, vfx);
+			AllVfx.Remove(vfx);
+			EntityToVfx3D.Remove(vfx.Entity);
+			if (EcsWorld.IsAlive(vfx.Entity)) EcsWorld.Destroy(vfx.Entity);
+			vfx.QueueFree();
 			return action;
 		}
 
@@ -2944,7 +3271,22 @@ public partial class GameHost
 			}
 		}
 
-		float minDistance = Mathf.Min(closestUnitDist, Mathf.Min(closestPropDist, Mathf.Min(closestStaticPropDist, closestDecalDist)));
+		ProceduralVfxInstance3D closestVfx = null;
+		float closestVfxDist = 2.0f;
+		foreach (var vfxObj in AllVfx)
+		{
+			if (GodotObject.IsInstanceValid(vfxObj))
+			{
+				float d = vfxObj.GlobalPosition.DistanceTo(hitPos);
+				if (d < closestVfxDist)
+				{
+					closestVfxDist = d;
+					closestVfx = vfxObj;
+				}
+			}
+		}
+
+		float minDistance = Mathf.Min(closestUnitDist, Mathf.Min(closestPropDist, Mathf.Min(closestStaticPropDist, Mathf.Min(closestDecalDist, closestVfxDist))));
 		if (minDistance < 2.0f)
 		{
 			if (closestUnit != null && minDistance == closestUnitDist)
@@ -2987,6 +3329,17 @@ public partial class GameHost
 				closestDecal.QueueFree();
 				return action;
 			}
+			else if (closestVfx != null && minDistance == closestVfxDist)
+			{
+				if (closestVfx == _selectedEditorObject) SelectedEditorObject = null;
+				string vfxId = closestVfx.Config?.VfxId ?? "vfx";
+				var action = new ObjectDeleteAction("vfx", vfxId, closestVfx.Position, closestVfx.RotationDegrees.Y, closestVfx.Scale.X, false, closestVfx);
+				AllVfx.Remove(closestVfx);
+				EntityToVfx3D.Remove(closestVfx.Entity);
+				if (EcsWorld.IsAlive(closestVfx.Entity)) EcsWorld.Destroy(closestVfx.Entity);
+				closestVfx.QueueFree();
+				return action;
+			}
 		}
 
 		MapEditorHUD.Instance?.ShowFeedbackExternal("[Debug] DeleteObjectAtWithUndo returned NULL (no direct or proximity match)");
@@ -3002,7 +3355,8 @@ public partial class GameHost
 	{
 		bool needsPreview = ActiveEditorTool == EditorTool.PlaceUnit ||
 							ActiveEditorTool == EditorTool.PlaceProp ||
-							ActiveEditorTool == EditorTool.PlaceDecal;
+							ActiveEditorTool == EditorTool.PlaceDecal ||
+							ActiveEditorTool == EditorTool.PlaceVfx;
 
 		if (!needsPreview)
 		{
@@ -3075,17 +3429,32 @@ public partial class GameHost
 			{
 				var previewDecal = new Decal3D();
 				previewDecal.CullMask = RuntimeTerrain.TerrainDecalCullMask;
-				previewDecal.TextureAlbedo = LoadDecalTexture(reqId);
-				previewDecal.Size = new Vector3(6.0f, 20.0f, 6.0f) * EditorPlacementScale;
-				AddChild(previewDecal);
 				previewDecal.DecalId = string.IsNullOrEmpty(reqId) ? "logo" : reqId;
-
-				Color color = new Color(1.0f, 1.0f, 1.0f);
-				var mat = new StandardMaterial3D();
-				mat.AlbedoColor = new Color(color.R, color.G, color.B, 0.4f);
-				mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+				AddChild(previewDecal);
+				ApplyDecalPropertiesFromMetadata(previewDecal, reqId);
+				previewDecal.Size = new Vector3(6.0f, 20.0f, 6.0f) * EditorPlacementScale;
 				previewDecal.AlbedoMix = 0.5f;
 				_editorPreviewNode = previewDecal;
+			}
+			else if (ActiveEditorTool == EditorTool.PlaceVfx)
+			{
+				VfxAttachmentConfig config;
+				if (VfxRegistry.TryGetValue(reqId, out var regCfg))
+				{
+					config = regCfg.Clone();
+				}
+				else if (Enum.TryParse<VfxPrimitiveType>(reqId, true, out var primType))
+				{
+					config = new VfxAttachmentConfig { VfxId = reqId, PrimitiveType = primType };
+				}
+				else
+				{
+					config = new VfxAttachmentConfig { VfxId = reqId, Name = reqId };
+				}
+
+				var previewVfx = new ProceduralVfxInstance3D(config);
+				AddChild(previewVfx);
+				_editorPreviewNode = previewVfx;
 			}
 		}
 
@@ -3118,16 +3487,37 @@ public partial class GameHost
 					previewPos = finalPos.Value;
 				}
 			}
-			_editorPreviewNode.Position = previewPos;
-			_editorPreviewNode.RotationDegrees = new Vector3(0.0f, previewRot, 0.0f);
+
 			float safePreviewScale = previewScaleVal <= 0.001f ? 1.0f : previewScaleVal;
-			if (_editorPreviewNode is Decal previewDecal)
+			if (_editorPreviewNode is ProceduralVfxInstance3D previewVfxNode)
 			{
+				float normalOffset = previewVfxNode.Config?.SurfaceNormalOffset ?? 0.02f;
+				if (previewVfxNode.Config?.PlacementMode == VfxPlacementMode.SurfaceSnap)
+				{
+					Vector3 hitNormal = GetTerrainNormalAt(previewPos);
+					Basis alignedBasis = CreateAlignedBasis(hitNormal);
+					previewVfxNode.Basis = alignedBasis;
+					previewVfxNode.RotateObjectLocal(Vector3.Up, Mathf.DegToRad(previewRot));
+					previewVfxNode.Position = previewPos + hitNormal * normalOffset;
+				}
+				else
+				{
+					previewVfxNode.Position = previewPos + Vector3.Up * normalOffset;
+					previewVfxNode.RotationDegrees = new Vector3(0.0f, previewRot, 0.0f);
+				}
+				previewVfxNode.Scale = Vector3.One * safePreviewScale;
+			}
+			else if (_editorPreviewNode is Decal previewDecal)
+			{
+				previewDecal.Position = previewPos;
+				previewDecal.RotationDegrees = new Vector3(0.0f, previewRot, 0.0f);
 				previewDecal.Size = new Vector3(6.0f, 20.0f, 6.0f) * safePreviewScale;
 				previewDecal.Scale = Vector3.One;
 			}
 			else
 			{
+				_editorPreviewNode.Position = previewPos;
+				_editorPreviewNode.RotationDegrees = new Vector3(0.0f, previewRot, 0.0f);
 				_editorPreviewNode.Scale = Vector3.One * safePreviewScale;
 			}
 			_editorPreviewNode.Visible = true;
@@ -3458,6 +3848,10 @@ public partial class GameHost
 				{
 					newHovered = FindDecal3DInParentChain(collider);
 				}
+				if (newHovered == null)
+				{
+					newHovered = FindVfxInParentChain(collider);
+				}
 			}
 
 			if (_hoveredEditorObject != newHovered)
@@ -3467,6 +3861,7 @@ public partial class GameHost
 					if (_hoveredEditorObject is Unit3D u) u.IsHovered = false;
 					else if (_hoveredEditorObject is Prop3D p) p.IsHovered = false;
 					else if (_hoveredEditorObject is Decal d) UpdateDecalHoverRing(d, false);
+					else if (_hoveredEditorObject is ProceduralVfxInstance3D v) v.IsHovered = false;
 				}
 				_hoveredEditorObject = newHovered;
 				if (GodotObject.IsInstanceValid(_hoveredEditorObject))
@@ -3474,6 +3869,7 @@ public partial class GameHost
 					if (_hoveredEditorObject is Unit3D u) u.IsHovered = true;
 					else if (_hoveredEditorObject is Prop3D p) p.IsHovered = true;
 					else if (_hoveredEditorObject is Decal d) UpdateDecalHoverRing(d, true);
+					else if (_hoveredEditorObject is ProceduralVfxInstance3D v) v.IsHovered = true;
 				}
 			}
 
@@ -3541,6 +3937,10 @@ public partial class GameHost
 							else if (SelectedEditorObject is Decal3D decal3D && EcsWorld.IsAlive(decal3D.Entity))
 							{
 								EcsWorld.Set(decal3D.Entity, new Position(new System.Numerics.Vector3(dragPos.X, dragPos.Y, dragPos.Z)));
+							}
+							else if (SelectedEditorObject is ProceduralVfxInstance3D vfxInst && EcsWorld.IsAlive(vfxInst.Entity))
+							{
+								EcsWorld.Set(vfxInst.Entity, new Position(new System.Numerics.Vector3(dragPos.X, dragPos.Y, dragPos.Z)));
 							}
 							MapEditorHUD.Instance?.UpdateSelectedObjectInfo();
 						}

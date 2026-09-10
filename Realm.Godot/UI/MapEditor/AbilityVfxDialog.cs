@@ -2,6 +2,9 @@ using Godot;
 using System;
 using System.Collections.Generic;
 using System.Text.Json.Nodes;
+using Realm.Godot.Services;
+using Realm.Godot.Utils;
+using Realm.Godot.VFX;
 
 public partial class AbilityVfxDialog : FloatingDialogBase
 {
@@ -10,9 +13,10 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 	private Camera3D _camera;
 	private DirectionalLight3D _light;
 	private Node3D _simRoot;
-	private AnimatedSprite3D _vfxSprite;
+	private ProceduralVfxInstance3D _vfxInstance;
 	private MeshInstance3D _aoeRingMesh;
 	private MeshInstance3D _aoeDiskMesh;
+	private MeshInstance3D _groundGrid;
 	private AudioStreamPlayer _sfxPlayer;
 
 	private TextureRect _iconPreviewRect;
@@ -38,7 +42,6 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 	private string _currentIconPath = "";
 	private float _currentAoeRadius = 4.0f;
 	private float _playbackSpeed = 1.0f;
-	private bool _isPaused = false;
 	private Action<JsonObject> _onApplied;
 
 	private float _defaultDistance = 8.0f;
@@ -64,7 +67,6 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 
 	private void BuildControls()
 	{
-		// 3D VIEWPORT
 		_viewportContainer = Add3DViewportContainer(BodyContainer, new Vector2(480, 230), out _subViewport, out _camera, out _light);
 		_viewportContainer.GuiInput += OnViewportGuiInput;
 		_viewportContainer.MouseDefaultCursorShape = CursorShape.Cross;
@@ -75,7 +77,6 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 		topControlsVBox.AddThemeConstantOverride("separation", 6);
 		BodyContainer.AddChild(topControlsVBox);
 
-		// ROW 1: CAMERA PRESETS & CAST TEST
 		var presetRow = new HBoxContainer();
 		presetRow.AddThemeConstantOverride("separation", 4);
 
@@ -98,11 +99,10 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 
 		topControlsVBox.AddChild(presetRow);
 
-		// ROW 2: PLAYBACK CONTROLS
 		var playbackRow = new HBoxContainer();
 		playbackRow.AddThemeConstantOverride("separation", 6);
 
-		AddButton(playbackRow, "▶ " + TranslationServer.Translate("Play"), () => PlayVfxAnimation(), "Play VFX loop", 10, new Vector2(50, 22));
+		AddButton(playbackRow, "▶ " + TranslationServer.Translate("Play"), () => PlayVfxAnimation(), "Play VFX", 10, new Vector2(50, 22));
 		AddButton(playbackRow, "⏸ " + TranslationServer.Translate("Pause"), () => PauseVfxAnimation(), "Pause VFX", 10, new Vector2(50, 22));
 		AddButton(playbackRow, "⏹ " + TranslationServer.Translate("Stop"), () => StopVfxAnimation(), "Stop VFX", 10, new Vector2(50, 22));
 
@@ -122,23 +122,21 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 		sldSpeed.ValueChanged += (val) =>
 		{
 			_playbackSpeed = (float)val;
-			if (_vfxSprite != null && _vfxSprite.SpriteFrames != null && _vfxSprite.SpriteFrames.HasAnimation("play"))
+			if (_vfxInstance != null && GodotObject.IsInstanceValid(_vfxInstance))
 			{
-				_vfxSprite.SpeedScale = _playbackSpeed;
+				_vfxInstance.SetSpeedScale(_playbackSpeed);
 			}
 		};
 		playbackRow.AddChild(sldSpeed);
 
 		topControlsVBox.AddChild(playbackRow);
 
-		// SCROLLABLE CONFIGURATION SECTIONS
 		var scrollBody = CreateScrollBody(340);
 		var configVBox = new VBoxContainer();
 		configVBox.AddThemeConstantOverride("separation", 10);
 		configVBox.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
 		scrollBody.AddChild(configVBox);
 
-		// SECTION 1: ABILITY ICON
 		AddSectionHeader(configVBox, "🎨 " + TranslationServer.Translate("ABILITY ICON"), new Color(0.95f, 0.8f, 0.4f));
 
 		var iconRow = new HBoxContainer();
@@ -175,24 +173,33 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 		iconRow.AddChild(iconDropdownVBox);
 		configVBox.AddChild(iconRow);
 
-		// SECTION 2: VISUAL EFFECT (SPRITESHEET)
-		AddSectionHeader(configVBox, "✨ " + TranslationServer.Translate("VISUAL EFFECT (SPRITESHEET)"), new Color(0.35f, 0.75f, 0.9f));
+		AddSectionHeader(configVBox, "✨ " + TranslationServer.Translate("VISUAL EFFECT (VFX)"), new Color(0.35f, 0.75f, 0.9f));
 
 		(_txtVisualEffect, _setVisualEffectValue) = AddAssetFilterDropdown(
 			configVBox,
-			TranslationServer.Translate("Spritesheet (VFX):"),
+			TranslationServer.Translate("Visual Effect (VFX):"),
 			_currentVisualEffect,
 			(all) => ScanAvailableAssets("vfx", all),
 			(val) =>
 			{
 				_currentVisualEffect = val ?? string.Empty;
-				ReloadVfxSpritesheet();
+				ReloadVfx();
 			},
-			TranslationServer.Translate("Select or search spritesheet..."),
+			TranslationServer.Translate("Select or search VFX preset, custom VFX, or texture..."),
 			140f
 		);
 
-		// SECTION 3: AREA OF EFFECT (AOE)
+		var vfxButtonsRow = new HBoxContainer();
+		vfxButtonsRow.AddThemeConstantOverride("separation", 6);
+
+		var vfxSpacer = new Control { CustomMinimumSize = new Vector2(140f, 0) };
+		vfxButtonsRow.AddChild(vfxSpacer);
+
+		AddButton(vfxButtonsRow, "✨ " + TranslationServer.Translate("Edit in VFX Studio..."), () => OpenVfxStudioForCurrentAbility(), "Open Procedural VFX Studio to edit this VFX preset or create custom visuals", 10, new Vector2(160, 24));
+		AddButton(vfxButtonsRow, "➕ " + TranslationServer.Translate("New VFX Preset..."), () => CreateNewVfxForAbility(), "Create a new custom procedural VFX preset for this ability", 10, new Vector2(140, 24));
+
+		configVBox.AddChild(vfxButtonsRow);
+
 		AddSectionHeader(configVBox, "🎯 " + TranslationServer.Translate("AREA OF EFFECT (AOE)"), new Color(0.4f, 0.85f, 0.5f));
 
 		(_sldAoeRadius, _lblAoeRadiusVal) = AddSlider(
@@ -211,7 +218,6 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 			140f
 		);
 
-		// SECTION 4: AUDIO & CAST SOUND
 		AddSectionHeader(configVBox, "🔊 " + TranslationServer.Translate("AUDIO & CAST SOUND"), new Color(0.9f, 0.6f, 0.35f));
 
 		(_txtCastSound, _setCastSoundValue) = AddAssetFilterDropdown(
@@ -237,7 +243,20 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 		_simRoot = new Node3D();
 		_subViewport.AddChild(_simRoot);
 
-		// AOE Disk (Translucent Fill)
+		_groundGrid = new MeshInstance3D();
+		_groundGrid.Name = "GroundGrid";
+		var planeMesh = new PlaneMesh { Size = new Vector2(24f, 24f), SubdivideWidth = 24, SubdivideDepth = 24 };
+		_groundGrid.Mesh = planeMesh;
+		var gridMat = new StandardMaterial3D
+		{
+			AlbedoColor = new Color(0.12f, 0.14f, 0.18f, 0.85f),
+			Roughness = 0.8f,
+			Transparency = BaseMaterial3D.TransparencyEnum.Alpha
+		};
+		_groundGrid.MaterialOverride = gridMat;
+		_groundGrid.Position = new Vector3(0, -0.01f, 0);
+		_simRoot.AddChild(_groundGrid);
+
 		var diskMesh = new CylinderMesh
 		{
 			TopRadius = 1.0f,
@@ -253,7 +272,6 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 		_aoeDiskMesh = new MeshInstance3D { Mesh = diskMesh, MaterialOverride = diskMat, Position = new Vector3(0, 0.01f, 0) };
 		_simRoot.AddChild(_aoeDiskMesh);
 
-		// AOE Outer Ring
 		var ringMesh = new TorusMesh
 		{
 			InnerRadius = 0.97f,
@@ -269,16 +287,6 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 		};
 		_aoeRingMesh = new MeshInstance3D { Mesh = ringMesh, MaterialOverride = ringMat, Position = new Vector3(0, 0.015f, 0) };
 		_simRoot.AddChild(_aoeRingMesh);
-
-		// Spritesheet Animated Sprite 3D
-		_vfxSprite = new AnimatedSprite3D
-		{
-			Position = new Vector3(0, 0.8f, 0),
-			Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
-			Transparent = true,
-			AlphaCut = SpriteBase3D.AlphaCutMode.Disabled
-		};
-		_simRoot.AddChild(_vfxSprite);
 
 		UpdateAoEIndicator(_currentAoeRadius);
 	}
@@ -339,14 +347,14 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 	{
 		_cameraYaw = Mathf.DegToRad(yawDegrees);
 		_cameraPitch = Mathf.DegToRad(pitchDegrees);
-		_targetPosition = Vector3.Zero;
+		_targetPosition = new Vector3(0, 0.5f, 0);
 		UpdateCameraTransform();
 	}
 
 	public void ResetCameraDefault()
 	{
 		_cameraDistance = _defaultDistance;
-		_targetPosition = Vector3.Zero;
+		_targetPosition = new Vector3(0, 0.5f, 0);
 		_cameraYaw = _defaultYaw;
 		_cameraPitch = _defaultPitch;
 		UpdateCameraTransform();
@@ -404,90 +412,158 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 		_iconPreviewRect.Texture = tex;
 	}
 
-	private void ReloadVfxSpritesheet()
+	private VfxAttachmentConfig ResolveVfxConfig(string visualEffect)
 	{
-		if (_vfxSprite == null) return;
+		if (string.IsNullOrWhiteSpace(visualEffect))
+		{
+			return new VfxAttachmentConfig { VfxId = "vfx_none", PrimitiveType = VfxPrimitiveType.CrossQuad };
+		}
+
+		string vfxKey = visualEffect.Trim();
+		if (vfxKey.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase))
+		{
+			vfxKey = vfxKey.Substring(4);
+		}
+
+		if (GameHost.VfxRegistry.TryGetValue(vfxKey, out var regCfg))
+		{
+			return regCfg.Clone();
+		}
+
+		if (Enum.TryParse<VfxPrimitiveType>(vfxKey, true, out var primType))
+		{
+			return new VfxAttachmentConfig { VfxId = vfxKey, PrimitiveType = primType };
+		}
+
+		if (vfxKey.EndsWith(".rtex", StringComparison.OrdinalIgnoreCase) ||
+			vfxKey.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+			vfxKey.EndsWith(".webp", StringComparison.OrdinalIgnoreCase) ||
+			vfxKey.Contains('/'))
+		{
+			var pConfig = new SpellParticleConfig
+			{
+				ParticleId = vfxKey,
+				Name = System.IO.Path.GetFileNameWithoutExtension(vfxKey),
+				RenderMode = SpellParticleRenderMode.BillboardQuad,
+				ParticleTexture = vfxKey,
+				Amount = 24,
+				Lifetime = 1.2f,
+				ColorStart = "#FFE066",
+				ColorMid = "#FF6600",
+				ColorEnd = "#990000",
+				EmissionEnergy = 3.0f,
+				InitialScaleMin = 0.4f,
+				InitialScaleMax = 0.8f
+			};
+			return new VfxAttachmentConfig
+			{
+				VfxId = vfxKey,
+				Name = System.IO.Path.GetFileNameWithoutExtension(vfxKey),
+				PrimitiveType = VfxPrimitiveType.ParticleSystem,
+				ParticleConfig = pConfig
+			};
+		}
+
+		return new VfxAttachmentConfig { VfxId = vfxKey, Name = vfxKey };
+	}
+
+	private void ReloadVfx()
+	{
+		if (_simRoot == null) return;
+
+		if (_vfxInstance != null && GodotObject.IsInstanceValid(_vfxInstance))
+		{
+			_vfxInstance.QueueFree();
+			_vfxInstance = null;
+		}
 
 		if (string.IsNullOrWhiteSpace(_currentVisualEffect))
 		{
-			_vfxSprite.SpriteFrames = null;
-			_vfxSprite.Visible = false;
 			return;
 		}
 
-		var texture = ResolveTexture(_currentVisualEffect);
-		if (texture == null)
+		var config = ResolveVfxConfig(_currentVisualEffect);
+		_vfxInstance = new ProceduralVfxInstance3D(config);
+		_vfxInstance.Name = "AbilityVfxPreview";
+		_simRoot.AddChild(_vfxInstance);
+		_vfxInstance.Position = new Vector3(0, 0.5f, 0);
+		_vfxInstance.SetSpeedScale(_playbackSpeed);
+	}
+
+	private void OpenVfxStudioForCurrentAbility()
+	{
+		VfxAttachmentConfig targetConfig = null;
+		if (!string.IsNullOrWhiteSpace(_currentVisualEffect))
 		{
-			_vfxSprite.SpriteFrames = null;
-			_vfxSprite.Visible = false;
-			return;
+			targetConfig = ResolveVfxConfig(_currentVisualEffect);
 		}
 
-		int cols = 4;
-		int rows = 4;
-
-		// Detect columns and rows from metadata if available
-		string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
-
-		try
+		if (targetConfig == null || string.IsNullOrWhiteSpace(targetConfig.VfxId) || targetConfig.VfxId == "vfx_none")
 		{
-			var unionedAssets = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
-			var vfxSheets = unionedAssets?["vfx_spritesheets"] as JsonObject;
-			string fName = System.IO.Path.GetFileName(_currentVisualEffect);
-			if (vfxSheets != null)
+			targetConfig = new VfxAttachmentConfig
 			{
-				JsonObject sheetObj = null;
-				if (vfxSheets.ContainsKey(fName) && vfxSheets[fName] is JsonObject so1) sheetObj = so1;
-				else if (vfxSheets.ContainsKey(_currentVisualEffect) && vfxSheets[_currentVisualEffect] is JsonObject so2) sheetObj = so2;
-
-				if (sheetObj != null)
+				VfxId = !string.IsNullOrWhiteSpace(_abilityId) ? $"vfx_{_abilityId}" : "vfx_custom",
+				Name = !string.IsNullOrWhiteSpace(_abilityName) ? $"{_abilityName} VFX" : "Ability VFX",
+				PrimitiveType = VfxPrimitiveType.ParticleSystem,
+				ParticleConfig = new SpellParticleConfig
 				{
-					if (sheetObj.ContainsKey("columns")) cols = (int)sheetObj["columns"];
-					if (sheetObj.ContainsKey("rows")) rows = (int)sheetObj["rows"];
+					ParticleId = !string.IsNullOrWhiteSpace(_abilityId) ? $"vfx_{_abilityId}" : "vfx_custom",
+					Name = !string.IsNullOrWhiteSpace(_abilityName) ? $"{_abilityName} Particles" : "Ability Particles",
+					RenderMode = SpellParticleRenderMode.BillboardQuad,
+					Amount = 32,
+					Lifetime = 1.0f
 				}
-			}
-		}
-		catch { }
-
-		if (cols <= 0) cols = 1;
-		if (rows <= 0) rows = 1;
-
-		int totalFrames = cols * rows;
-		var frames = new SpriteFrames();
-		frames.AddAnimation("play");
-		frames.SetAnimationLoopMode("play", SpriteFrames.LoopMode.Linear);
-		frames.SetAnimationSpeed("play", 20.0f);
-
-		int frameWidth = Math.Max(1, texture.GetWidth() / cols);
-		int frameHeight = Math.Max(1, texture.GetHeight() / rows);
-
-		for (int frameIndex = 0; frameIndex < totalFrames; frameIndex++)
-		{
-			int col = frameIndex % cols;
-			int row = frameIndex / cols;
-			var atlasFrame = new AtlasTexture
-			{
-				Atlas = texture,
-				Region = new Rect2(col * frameWidth, row * frameHeight, frameWidth, frameHeight)
 			};
-			frames.AddFrame("play", atlasFrame);
 		}
 
-		_vfxSprite.SpriteFrames = frames;
-		_vfxSprite.Animation = "play";
-		_vfxSprite.PixelSize = 6.0f / frameWidth;
-		_vfxSprite.SpeedScale = _playbackSpeed;
-		_vfxSprite.Visible = true;
-		_vfxSprite.Play("play");
+		Hud?.OpenVfxStudioDialog(targetConfig, (savedCfg) =>
+		{
+			string key = $"vfx:{savedCfg.VfxId}";
+			_currentVisualEffect = key;
+			_setVisualEffectValue?.Invoke(key);
+			ReloadVfx();
+		});
+	}
+
+	private void CreateNewVfxForAbility()
+	{
+		var newConfig = new VfxAttachmentConfig
+		{
+			VfxId = !string.IsNullOrWhiteSpace(_abilityId) ? $"vfx_{_abilityId}" : $"vfx_spell_{Random.Shared.Next(100, 999)}",
+			Name = !string.IsNullOrWhiteSpace(_abilityName) ? $"{_abilityName} VFX" : "Spell VFX",
+			PrimitiveType = VfxPrimitiveType.ParticleSystem,
+			ParticleConfig = new SpellParticleConfig
+			{
+				ParticleId = !string.IsNullOrWhiteSpace(_abilityId) ? $"vfx_{_abilityId}" : "vfx_spell",
+				Name = !string.IsNullOrWhiteSpace(_abilityName) ? $"{_abilityName} VFX" : "Spell VFX",
+				RenderMode = SpellParticleRenderMode.BillboardQuad,
+				Amount = 32,
+				Lifetime = 1.2f,
+				ColorStart = "#FFE066",
+				ColorMid = "#FF6600",
+				ColorEnd = "#990000",
+				EmissionEnergy = 3.5f
+			}
+		};
+
+		Hud?.OpenVfxStudioDialog(newConfig, (savedCfg) =>
+		{
+			string key = $"vfx:{savedCfg.VfxId}";
+			_currentVisualEffect = key;
+			_setVisualEffectValue?.Invoke(key);
+			ReloadVfx();
+		});
 	}
 
 	private void TriggerCastTest()
 	{
-		ReloadVfxSpritesheet();
-		if (_vfxSprite != null && _vfxSprite.SpriteFrames != null && _vfxSprite.SpriteFrames.HasAnimation("play"))
+		if (_vfxInstance != null && GodotObject.IsInstanceValid(_vfxInstance))
 		{
-			_vfxSprite.Frame = 0;
-			_vfxSprite.Play("play");
+			_vfxInstance.Restart();
+		}
+		else
+		{
+			ReloadVfx();
 		}
 
 		PlaySoundFile(_currentCastSound);
@@ -495,29 +571,29 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 
 	private void PlayVfxAnimation()
 	{
-		_isPaused = false;
-		if (_vfxSprite != null && _vfxSprite.SpriteFrames != null && _vfxSprite.SpriteFrames.HasAnimation("play"))
+		if (_vfxInstance != null && GodotObject.IsInstanceValid(_vfxInstance))
 		{
-			_vfxSprite.Play("play");
+			_vfxInstance.Play();
+		}
+		else
+		{
+			ReloadVfx();
 		}
 	}
 
 	private void PauseVfxAnimation()
 	{
-		_isPaused = true;
-		if (_vfxSprite != null && _vfxSprite.SpriteFrames != null && _vfxSprite.SpriteFrames.HasAnimation("play"))
+		if (_vfxInstance != null && GodotObject.IsInstanceValid(_vfxInstance))
 		{
-			_vfxSprite.Pause();
+			_vfxInstance.Stop();
 		}
 	}
 
 	private void StopVfxAnimation()
 	{
-		_isPaused = false;
-		if (_vfxSprite != null && _vfxSprite.SpriteFrames != null && _vfxSprite.SpriteFrames.HasAnimation("play"))
+		if (_vfxInstance != null && GodotObject.IsInstanceValid(_vfxInstance))
 		{
-			_vfxSprite.Stop();
-			_vfxSprite.Frame = 0;
+			_vfxInstance.Stop();
 		}
 	}
 
@@ -719,7 +795,7 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 
 		UpdateIconPreview(_currentIconPath);
 		UpdateAoEIndicator(_currentAoeRadius);
-		ReloadVfxSpritesheet();
+		ReloadVfx();
 
 		OpenDialog();
 		ResetCameraDefault();

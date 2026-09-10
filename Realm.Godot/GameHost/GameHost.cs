@@ -18,6 +18,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Realm.Godot.Animation;
 using Realm.Godot.Utils;
+using Realm.Godot.VFX;
 
 public partial class GameHost : Node3D, IGameAPI
 {
@@ -145,10 +146,13 @@ public partial class GameHost : Node3D, IGameAPI
 	public List<Unit3D> AllUnits { get; } = new List<Unit3D>();
 	public List<Prop3D> AllProps { get; } = new List<Prop3D>();
 	public List<Decal> AllDecals { get; } = new List<Decal>();
+	public List<ProceduralVfxInstance3D> AllVfx { get; } = new List<ProceduralVfxInstance3D>();
 	private readonly List<Unit3D> _castlesList = new();
 
 	public static readonly Dictionary<Entity, Unit3D> EntityToUnit3D = new();
 	public static readonly Dictionary<Entity, Prop3D> EntityToProp3D = new();
+	public static readonly Dictionary<Entity, ProceduralVfxInstance3D> EntityToVfx3D = new();
+	public static readonly Dictionary<string, VfxAttachmentConfig> VfxRegistry = new(StringComparer.OrdinalIgnoreCase);
 
 	public static bool TryGetUnit3D(Entity entity, out Unit3D unit)
 	{
@@ -158,6 +162,11 @@ public partial class GameHost : Node3D, IGameAPI
 	public static bool TryGetProp3D(Entity entity, out Prop3D prop)
 	{
 		return EntityToProp3D.TryGetValue(entity, out prop);
+	}
+
+	public static bool TryGetVfx3D(Entity entity, out ProceduralVfxInstance3D vfx)
+	{
+		return EntityToVfx3D.TryGetValue(entity, out vfx);
 	}
 
 	private Entity _playerEntity
@@ -324,6 +333,7 @@ public partial class GameHost : Node3D, IGameAPI
 		PlaceUnit,
 		PlaceProp,
 		PlaceDecal,
+		PlaceVfx,
 		DeleteObject,
 		SelectMove,
 		Eyedropper,
@@ -579,6 +589,10 @@ public partial class GameHost : Node3D, IGameAPI
 				{
 					UpdateDecalSelectionRing(oldDecal, false);
 				}
+				else if (_selectedEditorObject is ProceduralVfxInstance3D oldVfx)
+				{
+					oldVfx.IsSelected = false;
+				}
 			}
 			_selectedEditorObject = value;
 			if (GodotObject.IsInstanceValid(_selectedEditorObject))
@@ -595,6 +609,10 @@ public partial class GameHost : Node3D, IGameAPI
 				{
 					UpdateDecalSelectionRing(newDecal, true);
 				}
+				else if (_selectedEditorObject is ProceduralVfxInstance3D newVfx)
+				{
+					newVfx.IsSelected = true;
+				}
 			}
 			else
 			{
@@ -603,6 +621,13 @@ public partial class GameHost : Node3D, IGameAPI
 					if (GodotObject.IsInstanceValid(decal))
 					{
 						UpdateDecalSelectionRing(decal, false);
+					}
+				}
+				foreach (var vfx in AllVfx)
+				{
+					if (GodotObject.IsInstanceValid(vfx))
+					{
+						vfx.IsSelected = false;
 					}
 				}
 			}
@@ -655,6 +680,7 @@ public partial class GameHost : Node3D, IGameAPI
 			PositionOffset = Vector3.Zero;
 			RotationOffset = Vector3.Zero;
 			DefaultHand = "RightHand";
+			ChildVfxScale = Vector3.One;
 		}
 
 		public string AttachmentId { get; set; }
@@ -664,6 +690,10 @@ public partial class GameHost : Node3D, IGameAPI
 		public Vector3 PositionOffset { get; set; }
 		public Vector3 RotationOffset { get; set; }
 		public string DefaultHand { get; set; } = "RightHand";
+		public string? ChildVfxId { get; set; }
+		public Vector3 ChildVfxPosition { get; set; }
+		public Vector3 ChildVfxRotation { get; set; }
+		public Vector3 ChildVfxScale { get; set; } = Vector3.One;
 	}
 
 	public struct HandAttachmentOrientation
@@ -675,24 +705,150 @@ public partial class GameHost : Node3D, IGameAPI
 		public float YawY { get; set; }
 		public float RollZ { get; set; }
 		public float Scale { get; set; }
+		public float ScaleX { get; set; }
+		public float ScaleY { get; set; }
+		public float ScaleZ { get; set; }
+		public float NormalOffset { get; set; }
+		public string? ParentAttachmentId { get; set; }
 
 		[JsonIgnore]
 		public Vector3 Position => new Vector3(PositionX, PositionY, PositionZ);
 		[JsonIgnore]
 		public Vector3 RotationDegrees => new Vector3(PitchX, YawY, RollZ);
+		[JsonIgnore]
+		public Vector3 ScaleVector => new Vector3(
+			ScaleX > 0.0001f ? ScaleX : (Scale > 0f ? Scale : 1.0f),
+			ScaleY > 0.0001f ? ScaleY : (Scale > 0f ? Scale : 1.0f),
+			ScaleZ > 0.0001f ? ScaleZ : (Scale > 0f ? Scale : 1.0f));
 	}
 
 	public struct UnitObjectAttachments
 	{
 		public List<Dictionary<string, HandAttachmentOrientation>>? right_hand { get; set; }
 		public List<Dictionary<string, HandAttachmentOrientation>>? left_hand { get; set; }
+		public List<Dictionary<string, HandAttachmentOrientation>>? chest { get; set; }
+		public List<Dictionary<string, HandAttachmentOrientation>>? root { get; set; }
+		public List<Dictionary<string, HandAttachmentOrientation>>? head { get; set; }
+		public List<Dictionary<string, HandAttachmentOrientation>>? left_foot { get; set; }
+		public List<Dictionary<string, HandAttachmentOrientation>>? right_foot { get; set; }
+		public List<Dictionary<string, HandAttachmentOrientation>>? ground { get; set; }
+		public List<Dictionary<string, HandAttachmentOrientation>>? center { get; set; }
+		public List<Dictionary<string, HandAttachmentOrientation>>? overhead { get; set; }
+		public List<Dictionary<string, HandAttachmentOrientation>>? pivot { get; set; }
+
+		public List<Dictionary<string, HandAttachmentOrientation>>? GetSocketList(string socket)
+		{
+			if (string.IsNullOrEmpty(socket)) return right_hand;
+			string s = socket.ToLowerInvariant().Replace("_", "").Replace(" ", "");
+			return s switch
+			{
+				"ground" or "footprint" or "base" => ground,
+				"center" or "centerofmass" => center,
+				"overhead" or "top" or "crown" or "roof" => overhead,
+				"pivot" or "origin" => pivot,
+				"root" or "hips" => root,
+				"chest" or "spine" => chest,
+				"head" => head,
+				"lefthand" => left_hand,
+				"righthand" => right_hand,
+				"leftfoot" => left_foot,
+				"rightfoot" => right_foot,
+				_ => right_hand
+			};
+		}
+
+		public void SetSocketList(string socket, List<Dictionary<string, HandAttachmentOrientation>> list)
+		{
+			string s = (socket ?? "righthand").ToLowerInvariant().Replace("_", "").Replace(" ", "");
+			switch (s)
+			{
+				case "ground":
+				case "footprint":
+				case "base":
+					ground = list;
+					break;
+				case "center":
+				case "centerofmass":
+					center = list;
+					break;
+				case "overhead":
+				case "top":
+				case "crown":
+				case "roof":
+					overhead = list;
+					break;
+				case "pivot":
+				case "origin":
+					pivot = list;
+					break;
+				case "root":
+				case "hips":
+					root = list;
+					break;
+				case "chest":
+				case "spine":
+					chest = list;
+					break;
+				case "head":
+					head = list;
+					break;
+				case "lefthand":
+					left_hand = list;
+					break;
+				case "righthand":
+					right_hand = list;
+					break;
+				case "leftfoot":
+					left_foot = list;
+					break;
+				case "rightfoot":
+					right_foot = list;
+					break;
+				default:
+					right_hand = list;
+					break;
+			}
+		}
+
+		public List<Dictionary<string, HandAttachmentOrientation>>? GetBoneList(HumanoidBone bone)
+		{
+			return bone switch
+			{
+				HumanoidBone.LeftHand => left_hand,
+				HumanoidBone.RightHand => right_hand,
+				HumanoidBone.Chest or HumanoidBone.Spine => chest,
+				HumanoidBone.Hips => root,
+				HumanoidBone.Head => head,
+				HumanoidBone.LeftFoot => left_foot,
+				HumanoidBone.RightFoot => right_foot,
+				_ => right_hand
+			};
+		}
+
+		public void SetBoneList(HumanoidBone bone, List<Dictionary<string, HandAttachmentOrientation>> list)
+		{
+			switch (bone)
+			{
+				case HumanoidBone.LeftHand: left_hand = list; break;
+				case HumanoidBone.RightHand: right_hand = list; break;
+				case HumanoidBone.Chest:
+				case HumanoidBone.Spine: chest = list; break;
+				case HumanoidBone.Hips: root = list; break;
+				case HumanoidBone.Head: head = list; break;
+				case HumanoidBone.LeftFoot: left_foot = list; break;
+				case HumanoidBone.RightFoot: right_foot = list; break;
+				default: right_hand = list; break;
+			}
+		}
 
 		public bool TryGetOrientation(HumanoidBone hand, string attachmentId, out HandAttachmentOrientation orientation)
 		{
-			var list = hand == HumanoidBone.LeftHand ? left_hand : right_hand;
+			var list = GetBoneList(hand);
 			if (list != null && !string.IsNullOrEmpty(attachmentId))
 			{
-				string cleanId = System.IO.Path.GetFileNameWithoutExtension(attachmentId);
+				string cleanId = attachmentId.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase)
+					? attachmentId
+					: System.IO.Path.GetFileNameWithoutExtension(attachmentId);
 				foreach (var dict in list)
 				{
 					if (dict != null)
@@ -716,17 +872,59 @@ public partial class GameHost : Node3D, IGameAPI
 
 		public void SetOrientation(HumanoidBone hand, string attachmentId, HandAttachmentOrientation orientation)
 		{
-			string cleanId = System.IO.Path.GetFileNameWithoutExtension(attachmentId);
-			if (hand == HumanoidBone.LeftHand)
+			string cleanId = attachmentId.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase)
+				? attachmentId
+				: System.IO.Path.GetFileNameWithoutExtension(attachmentId);
+			var list = GetBoneList(hand);
+			if (list == null)
 			{
-				left_hand ??= new List<Dictionary<string, HandAttachmentOrientation>>();
-				UpdateList(left_hand, cleanId, orientation);
+				list = new List<Dictionary<string, HandAttachmentOrientation>>();
+				SetBoneList(hand, list);
 			}
-			else
+			UpdateList(list, cleanId, orientation);
+		}
+
+		public bool TryGetSocketOrientation(string socket, string attachmentId, out HandAttachmentOrientation orientation)
+		{
+			var list = GetSocketList(socket);
+			if (list != null && !string.IsNullOrEmpty(attachmentId))
 			{
-				right_hand ??= new List<Dictionary<string, HandAttachmentOrientation>>();
-				UpdateList(right_hand, cleanId, orientation);
+				string cleanId = attachmentId.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase)
+					? attachmentId
+					: System.IO.Path.GetFileNameWithoutExtension(attachmentId);
+				foreach (var dict in list)
+				{
+					if (dict != null)
+					{
+						foreach (var kvp in dict)
+						{
+							if (kvp.Key.Equals(attachmentId, StringComparison.OrdinalIgnoreCase) ||
+								kvp.Key.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
+								System.IO.Path.GetFileNameWithoutExtension(kvp.Key).Equals(cleanId, StringComparison.OrdinalIgnoreCase))
+							{
+								orientation = kvp.Value;
+								return true;
+							}
+						}
+					}
+				}
 			}
+			orientation = default;
+			return false;
+		}
+
+		public void SetSocketOrientation(string socket, string attachmentId, HandAttachmentOrientation orientation)
+		{
+			string cleanId = attachmentId.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase)
+				? attachmentId
+				: System.IO.Path.GetFileNameWithoutExtension(attachmentId);
+			var list = GetSocketList(socket);
+			if (list == null)
+			{
+				list = new List<Dictionary<string, HandAttachmentOrientation>>();
+				SetSocketList(socket, list);
+			}
+			UpdateList(list, cleanId, orientation);
 		}
 
 		private static void UpdateList(List<Dictionary<string, HandAttachmentOrientation>> list, string attachmentId, HandAttachmentOrientation orientation)
@@ -740,8 +938,11 @@ public partial class GameHost : Node3D, IGameAPI
 						if (key.Equals(attachmentId, StringComparison.OrdinalIgnoreCase) ||
 							System.IO.Path.GetFileNameWithoutExtension(key).Equals(attachmentId, StringComparison.OrdinalIgnoreCase))
 						{
-							dict[key] = orientation;
-							return;
+							if (string.Equals(dict[key].ParentAttachmentId, orientation.ParentAttachmentId, StringComparison.OrdinalIgnoreCase))
+							{
+								dict[key] = orientation;
+								return;
+							}
 						}
 					}
 				}
@@ -750,6 +951,98 @@ public partial class GameHost : Node3D, IGameAPI
 			{
 				[attachmentId] = orientation
 			});
+		}
+
+		public bool RemoveSocketAttachment(string socket, string attachmentId, string? parentAttachmentId = null)
+		{
+			var list = GetSocketList(socket);
+			if (list == null || string.IsNullOrEmpty(attachmentId)) return false;
+			string cleanId = attachmentId.StartsWith("vfx:", StringComparison.OrdinalIgnoreCase)
+				? attachmentId
+				: System.IO.Path.GetFileNameWithoutExtension(attachmentId);
+			bool removed = false;
+			for (int i = list.Count - 1; i >= 0; i--)
+			{
+				var dict = list[i];
+				if (dict != null)
+				{
+					var keysToRemove = dict.Keys.Where(k =>
+					{
+						bool keyMatch = k.Equals(attachmentId, StringComparison.OrdinalIgnoreCase) ||
+							k.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
+							System.IO.Path.GetFileNameWithoutExtension(k).Equals(cleanId, StringComparison.OrdinalIgnoreCase);
+
+						if (!string.IsNullOrEmpty(parentAttachmentId))
+						{
+							return keyMatch && string.Equals(dict[k].ParentAttachmentId, parentAttachmentId, StringComparison.OrdinalIgnoreCase);
+						}
+
+						bool isChildOfThis = dict[k].ParentAttachmentId != null &&
+							(dict[k].ParentAttachmentId.Equals(attachmentId, StringComparison.OrdinalIgnoreCase) ||
+							 dict[k].ParentAttachmentId.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
+							 System.IO.Path.GetFileNameWithoutExtension(dict[k].ParentAttachmentId).Equals(cleanId, StringComparison.OrdinalIgnoreCase));
+
+						return (keyMatch && string.IsNullOrEmpty(dict[k].ParentAttachmentId)) || isChildOfThis;
+					}).ToList();
+
+					foreach (var k in keysToRemove)
+					{
+						dict.Remove(k);
+						removed = true;
+					}
+					if (dict.Count == 0)
+					{
+						list.RemoveAt(i);
+					}
+				}
+			}
+			return removed;
+		}
+
+		public UnitObjectAttachments Clone()
+		{
+			static List<Dictionary<string, HandAttachmentOrientation>>? CloneList(List<Dictionary<string, HandAttachmentOrientation>>? src)
+			{
+				if (src == null) return null;
+				var res = new List<Dictionary<string, HandAttachmentOrientation>>(src.Count);
+				foreach (var dict in src)
+				{
+					if (dict == null) continue;
+					var d = new Dictionary<string, HandAttachmentOrientation>(dict, StringComparer.OrdinalIgnoreCase);
+					res.Add(d);
+				}
+				return res;
+			}
+
+			return new UnitObjectAttachments
+			{
+				right_hand = CloneList(right_hand),
+				left_hand = CloneList(left_hand),
+				chest = CloneList(chest),
+				root = CloneList(root),
+				head = CloneList(head),
+				left_foot = CloneList(left_foot),
+				right_foot = CloneList(right_foot),
+				ground = CloneList(ground),
+				center = CloneList(center),
+				overhead = CloneList(overhead),
+				pivot = CloneList(pivot)
+			};
+		}
+
+		public bool HasAny()
+		{
+			return (right_hand != null && right_hand.Count > 0) ||
+				   (left_hand != null && left_hand.Count > 0) ||
+				   (chest != null && chest.Count > 0) ||
+				   (root != null && root.Count > 0) ||
+				   (head != null && head.Count > 0) ||
+				   (left_foot != null && left_foot.Count > 0) ||
+				   (right_foot != null && right_foot.Count > 0) ||
+				   (ground != null && ground.Count > 0) ||
+				   (center != null && center.Count > 0) ||
+				   (overhead != null && overhead.Count > 0) ||
+				   (pivot != null && pivot.Count > 0);
 		}
 	}
 
@@ -922,11 +1215,40 @@ public partial class GameHost : Node3D, IGameAPI
 			return false;
 		}
 
+		public bool TryGetObjectAttachment(string socket, string attachmentId, out HandAttachmentOrientation orientation)
+		{
+			if (ObjectAttachments.HasValue)
+			{
+				return ObjectAttachments.Value.TryGetSocketOrientation(socket, attachmentId, out orientation);
+			}
+			orientation = default;
+			return false;
+		}
+
 		public void SetObjectAttachment(HumanoidBone hand, string attachmentId, HandAttachmentOrientation orientation)
 		{
 			var atts = ObjectAttachments ?? new UnitObjectAttachments();
 			atts.SetOrientation(hand, attachmentId, orientation);
 			ObjectAttachments = atts;
+		}
+
+		public void SetObjectAttachment(string socket, string attachmentId, HandAttachmentOrientation orientation)
+		{
+			var atts = ObjectAttachments ?? new UnitObjectAttachments();
+			atts.SetSocketOrientation(socket, attachmentId, orientation);
+			ObjectAttachments = atts;
+		}
+
+		public bool RemoveObjectAttachment(string socket, string attachmentId, string? parentAttachmentId = null)
+		{
+			if (ObjectAttachments.HasValue)
+			{
+				var atts = ObjectAttachments.Value;
+				bool removed = atts.RemoveSocketAttachment(socket, attachmentId, parentAttachmentId);
+				ObjectAttachments = atts;
+				return removed;
+			}
+			return false;
 		}
 	}
 
@@ -1211,6 +1533,20 @@ public partial class GameHost : Node3D, IGameAPI
 		public string TextureOrm { get; set; }
 		public string TextureEmission { get; set; }
 		public float EmissionEnergy { get; set; }
+		public bool AnimateOpacity { get; set; }
+		public float OpacityPulseSpeed { get; set; }
+		public float MinOpacity { get; set; }
+		public float MaxOpacity { get; set; }
+		public bool AnimateEmission { get; set; }
+		public float EmissionPulseSpeed { get; set; }
+		public float MinEmission { get; set; }
+		public float MaxEmission { get; set; }
+		public bool AnimateScale { get; set; }
+		public float ScalePulseSpeed { get; set; }
+		public float MinScaleRatio { get; set; }
+		public float MaxScaleRatio { get; set; }
+		public float UpperFade { get; set; }
+		public float LowerFade { get; set; }
 	}
 
 	public struct VfxMetadata
@@ -1219,6 +1555,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public int Columns { get; set; }
 		public int Rows { get; set; }
 		public float Fps { get; set; }
+		public bool SubframeBlend { get; set; }
 		public string AssetType { get; set; }
 	}
 
@@ -1361,12 +1698,52 @@ public partial class GameHost : Node3D, IGameAPI
 
 
 
-	public static readonly Dictionary<string, UnitMetadata> UnitRegistry = new();
-	public static readonly Dictionary<string, UnitMetadata> BuildingRegistry = new();
-	public static readonly Dictionary<string, PropMetadata> PropRegistry = new();
-	public static readonly Dictionary<string, ResourceMetadata> ResourceRegistry = new();
+	public static readonly Dictionary<string, UnitMetadata> UnitRegistry = new(StringComparer.OrdinalIgnoreCase);
+	public static readonly Dictionary<string, UnitMetadata> BuildingRegistry = new(StringComparer.OrdinalIgnoreCase);
+	public static readonly Dictionary<string, PropMetadata> PropRegistry = new(StringComparer.OrdinalIgnoreCase);
+	public static readonly Dictionary<string, ResourceMetadata> ResourceRegistry = new(StringComparer.OrdinalIgnoreCase);
 	public static readonly Dictionary<string, WeaponMetadata> WeaponRegistry = new(StringComparer.OrdinalIgnoreCase);
 	public static readonly Dictionary<string, AttachmentMetadata> AttachmentRegistry = new(StringComparer.OrdinalIgnoreCase);
+
+	public static bool TryGetUnitOrBuildingMetadata(string? unitId, out UnitMetadata meta)
+	{
+		meta = default;
+		if (string.IsNullOrEmpty(unitId)) return false;
+
+		if (UnitRegistry.TryGetValue(unitId, out meta)) return true;
+		if (BuildingRegistry != null && BuildingRegistry.TryGetValue(unitId, out meta)) return true;
+
+		string cleanId = System.IO.Path.GetFileNameWithoutExtension(unitId);
+		if (UnitRegistry.TryGetValue(cleanId, out meta)) return true;
+		if (BuildingRegistry != null && BuildingRegistry.TryGetValue(cleanId, out meta)) return true;
+
+		foreach (var kvp in UnitRegistry)
+		{
+			if (kvp.Key.Equals(unitId, StringComparison.OrdinalIgnoreCase) ||
+				kvp.Key.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
+				System.IO.Path.GetFileNameWithoutExtension(kvp.Key).Equals(cleanId, StringComparison.OrdinalIgnoreCase))
+			{
+				meta = kvp.Value;
+				return true;
+			}
+		}
+
+		if (BuildingRegistry != null)
+		{
+			foreach (var kvp in BuildingRegistry)
+			{
+				if (kvp.Key.Equals(unitId, StringComparison.OrdinalIgnoreCase) ||
+					kvp.Key.Equals(cleanId, StringComparison.OrdinalIgnoreCase) ||
+					System.IO.Path.GetFileNameWithoutExtension(kvp.Key).Equals(cleanId, StringComparison.OrdinalIgnoreCase))
+				{
+					meta = kvp.Value;
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
 
 	public string GetFallbackModelPath(string unitId, bool isBuilding)
 	{
@@ -3130,6 +3507,7 @@ public class {mapName} : IMapScript
 					var newResources = new Dictionary<string, ResourceMetadata>(StringComparer.OrdinalIgnoreCase);
 					var newWeapons = new Dictionary<string, WeaponMetadata>(StringComparer.OrdinalIgnoreCase);
 					var newAttachments = new Dictionary<string, AttachmentMetadata>(StringComparer.OrdinalIgnoreCase);
+					var newVfx = new Dictionary<string, VfxAttachmentConfig>(StringComparer.OrdinalIgnoreCase);
 
 					bool hasStructuredArrays = false;
 
@@ -3175,6 +3553,10 @@ public class {mapName} : IMapScript
 							Vector3 posOffset = Vector3.Zero;
 							Vector3 rotOffset = Vector3.Zero;
 							string hand = "RightHand";
+							string? childVfxId = null;
+							Vector3 childVfxPos = Vector3.Zero;
+							Vector3 childVfxRot = Vector3.Zero;
+							Vector3 childVfxScale = Vector3.One;
 							if (itemProp.Value.ValueKind == JsonValueKind.Object)
 							{
 								if (itemProp.Value.TryGetProperty("scale", out var sc) && sc.TryGetSingle(out var sVal)) scale = sVal;
@@ -3189,6 +3571,23 @@ public class {mapName} : IMapScript
 									if (arr.Length >= 3) rotOffset = new Vector3(arr[0].GetSingle(), arr[1].GetSingle(), arr[2].GetSingle());
 								}
 								if (itemProp.Value.TryGetProperty("default_hand", out var dh)) hand = dh.GetString() ?? "RightHand";
+								if (itemProp.Value.TryGetProperty("child_vfx_id", out var cvid)) childVfxId = cvid.GetString();
+								else if (itemProp.Value.TryGetProperty("ChildVfxId", out var cvid2)) childVfxId = cvid2.GetString();
+								if (itemProp.Value.TryGetProperty("child_vfx_position", out var cvp) && cvp.ValueKind == JsonValueKind.Array)
+								{
+									var arr = cvp.EnumerateArray().ToArray();
+									if (arr.Length >= 3) childVfxPos = new Vector3(arr[0].GetSingle(), arr[1].GetSingle(), arr[2].GetSingle());
+								}
+								if (itemProp.Value.TryGetProperty("child_vfx_rotation", out var cvr) && cvr.ValueKind == JsonValueKind.Array)
+								{
+									var arr = cvr.EnumerateArray().ToArray();
+									if (arr.Length >= 3) childVfxRot = new Vector3(arr[0].GetSingle(), arr[1].GetSingle(), arr[2].GetSingle());
+								}
+								if (itemProp.Value.TryGetProperty("child_vfx_scale", out var cvs) && cvs.ValueKind == JsonValueKind.Array)
+								{
+									var arr = cvs.EnumerateArray().ToArray();
+									if (arr.Length >= 3) childVfxScale = new Vector3(arr[0].GetSingle(), arr[1].GetSingle(), arr[2].GetSingle());
+								}
 							}
 							var meta = new AttachmentMetadata
 							{
@@ -3198,7 +3597,11 @@ public class {mapName} : IMapScript
 								Scale = scale,
 								PositionOffset = posOffset,
 								RotationOffset = rotOffset,
-								DefaultHand = hand
+								DefaultHand = hand,
+								ChildVfxId = childVfxId,
+								ChildVfxPosition = childVfxPos,
+								ChildVfxRotation = childVfxRot,
+								ChildVfxScale = childVfxScale
 							};
 							newAttachments[id] = meta;
 							newAttachments[fileName] = meta;
@@ -3289,6 +3692,22 @@ public class {mapName} : IMapScript
 						}
 					}
 
+					if (doc.RootElement.TryGetProperty("CustomVfx", out var vfxProp) && vfxProp.ValueKind == JsonValueKind.Array)
+					{
+						hasStructuredArrays = true;
+						var list = JsonSerializer.Deserialize<List<VfxAttachmentConfig>>(vfxProp.GetRawText(), Options);
+						if (list != null)
+						{
+							foreach (var cfg in list)
+							{
+								if (!string.IsNullOrEmpty(cfg.VfxId))
+								{
+									newVfx[cfg.VfxId] = cfg;
+								}
+							}
+						}
+					}
+
 					if (!hasStructuredArrays)
 					{
 						var loadedRegistry = JsonSerializer.Deserialize<Dictionary<string, UnitMetadata>>(jsonText, Options);
@@ -3296,7 +3715,7 @@ public class {mapName} : IMapScript
 						{
 							var skipKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
 							{
-								"MapProperties", "CustomWeapons", "CustomAbilities", "CustomUpgrades", "CustomItems", "CustomUnits", "CustomBuildings", "CustomResources", "CustomProps", "Assets"
+								"MapProperties", "CustomWeapons", "CustomAbilities", "CustomUpgrades", "CustomItems", "CustomUnits", "CustomBuildings", "CustomResources", "CustomProps", "CustomVfx", "Assets"
 							};
 							foreach (var kvp in loadedRegistry)
 							{
@@ -3325,6 +3744,9 @@ public class {mapName} : IMapScript
 
 					AttachmentRegistry.Clear();
 					foreach (var kvp in newAttachments) AttachmentRegistry[kvp.Key] = kvp.Value;
+
+					VfxRegistry.Clear();
+					foreach (var kvp in newVfx) VfxRegistry[kvp.Key] = kvp.Value;
 
 					Prop3D.ClearModelPathCache();
 				}

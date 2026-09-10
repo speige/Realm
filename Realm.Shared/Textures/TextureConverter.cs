@@ -426,7 +426,9 @@ public static class TextureConverter
 		string rawImagePath,
 		string outputRtexPath,
 		float? forcedScaleFactor = null,
-		bool enableRdo = true)
+		bool enableRdo = true,
+		int columns = 1,
+		int rows = 1)
 	{
 		var result = new TextureConversionResult
 		{
@@ -450,12 +452,15 @@ public static class TextureConverter
 			float scaleFactor = forcedScaleFactor ?? CalculateLuminanceScaleFactor(sourceImage);
 			result.ScaleFactor = scaleFactor;
 
+			int safeCols = Math.Max(1, columns);
+			int safeRows = Math.Max(1, rows);
+
 			ProcessTerrainPbr(sourceImage, isDecal: true, out var layer0, out var layer1);
 
 			using (layer0)
 			using (layer1)
 			{
-				string metadataJson = $"{{\"created_utc\":\"{DateTime.UtcNow:O}\",\"type\":\"decal\",\"canonical_blake3\":\"{originalBlake3}\",\"scale_factor\":{scaleFactor.ToString("F4", System.Globalization.CultureInfo.InvariantCulture)},\"layers\":2}}";
+				string metadataJson = $"{{\"created_utc\":\"{DateTime.UtcNow:O}\",\"type\":\"decal\",\"canonical_blake3\":\"{originalBlake3}\",\"scale_factor\":{scaleFactor.ToString("F4", System.Globalization.CultureInfo.InvariantCulture)},\"columns\":{safeCols},\"rows\":{safeRows},\"layers\":2}}";
 				bool encodeOk = EncodeTwoLayerPbrRtex(
 					layer0,
 					layer1,
@@ -488,6 +493,7 @@ public static class TextureConverter
 		string outputRtexPath,
 		int columns = 4,
 		int rows = 4,
+		float fps = 20.0f,
 		bool enableRdo = false)
 	{
 		var result = new TextureConversionResult
@@ -509,7 +515,7 @@ public static class TextureConverter
 			string originalBlake3 = RealmMetadataHelper.ComputeBlake3(originalBits, Path.GetExtension(result.InputPath));
 
 			using var sourceImage = Image.Load<Rgba32>(result.InputPath);
-			string metadataJson = $"{{\"created_utc\":\"{DateTime.UtcNow:O}\",\"type\":\"vfx_spritesheet\",\"canonical_blake3\":\"{originalBlake3}\",\"columns\":{columns},\"rows\":{rows},\"layers\":1}}";
+			string metadataJson = $"{{\"created_utc\":\"{DateTime.UtcNow:O}\",\"type\":\"vfx_spritesheet\",\"canonical_blake3\":\"{originalBlake3}\",\"columns\":{columns},\"rows\":{rows},\"fps\":{fps.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)},\"layers\":1}}";
 
 			bool encodeOk = EncodeSingleLayerRtex(
 				sourceImage,
@@ -540,7 +546,12 @@ public static class TextureConverter
 	public static TextureConversionResult ProcessAndSaveSkybox(
 		string rawImagePath,
 		string outputRtexPath,
-		bool enableRdo = false)
+		bool enableRdo = false,
+		float horizonBlendStart = 0.5f,
+		Rgba32? horizonColor = null,
+		float wrapBlendWidth = 0.05f,
+		float zenithBlendEnd = 0.08f,
+		Rgba32? zenithColor = null)
 	{
 		var result = new TextureConversionResult
 		{
@@ -560,11 +571,22 @@ public static class TextureConverter
 			byte[] originalBits = File.ReadAllBytes(result.InputPath);
 			string originalBlake3 = RealmMetadataHelper.ComputeBlake3(originalBits, Path.GetExtension(result.InputPath));
 
-			using var sourceImage = Image.Load<Rgba32>(result.InputPath);
+			using var sourceImage = Path.GetExtension(result.InputPath).Equals(".rtex", StringComparison.OrdinalIgnoreCase)
+				? ExtractImageFromRtex(result.InputPath, 0) ?? throw new InvalidOperationException($"Failed to load image from RTEX: {result.InputPath}")
+				: Image.Load<Rgba32>(originalBits);
+
+			using var processedImage = SkyboxProcessor.ProcessSkybox(
+				sourceImage,
+				horizonBlendStart,
+				horizonColor,
+				wrapBlendWidth,
+				zenithBlendEnd,
+				zenithColor);
+
 			string metadataJson = $"{{\"created_utc\":\"{DateTime.UtcNow:O}\",\"type\":\"skybox\",\"canonical_blake3\":\"{originalBlake3}\",\"layers\":1}}";
 
 			bool encodeOk = EncodeSingleLayerRtex(
-				sourceImage,
+				processedImage,
 				result.OutputPath,
 				metadataJson,
 				out string errorMsg,
@@ -603,6 +625,22 @@ public static class TextureConverter
 		bool enableRdo = true)
 	{
 		return ProcessAndSaveSingleLayerTexture(rawImagePath, outputRtexPath, "icon", enableRdo);
+	}
+
+	public static TextureConversionResult ProcessAndSaveVfxRadialTexture(
+		string rawImagePath,
+		string outputRtexPath,
+		bool enableRdo = false)
+	{
+		return ProcessAndSaveSingleLayerTexture(rawImagePath, outputRtexPath, "vfx_radial", enableRdo);
+	}
+
+	public static TextureConversionResult ProcessAndSaveVfxVerticalTexture(
+		string rawImagePath,
+		string outputRtexPath,
+		bool enableRdo = false)
+	{
+		return ProcessAndSaveSingleLayerTexture(rawImagePath, outputRtexPath, "vfx_vertical", enableRdo);
 	}
 
 	public static TextureConversionResult ProcessAndSaveSingleLayerTexture(
@@ -798,8 +836,9 @@ public static class TextureConverter
 		string inputPath,
 		string? outputPath,
 		string? assetType = null,
-		int columns = 4,
-		int rows = 4)
+		int? columns = null,
+		int? rows = null,
+		float? fps = null)
 	{
 		string fullInput = Path.GetFullPath(inputPath);
 		string ext = Path.GetExtension(fullInput).ToLowerInvariant();
@@ -831,6 +870,18 @@ public static class TextureConverter
 					{
 						normType = metaType.Trim().ToLowerInvariant();
 					}
+					if (node?["columns"] != null && int.TryParse(node["columns"]?.ToString(), out int c) && c > 0)
+					{
+						columns ??= c;
+					}
+					if (node?["rows"] != null && int.TryParse(node["rows"]?.ToString(), out int r) && r > 0)
+					{
+						rows ??= r;
+					}
+					if (node?["fps"] != null && float.TryParse(node["fps"]?.ToString(), out float f) && f > 0.001f)
+					{
+						fps ??= f;
+					}
 				}
 				catch { }
 			}
@@ -838,7 +889,7 @@ public static class TextureConverter
 
 		if (string.IsNullOrEmpty(normType))
 		{
-			throw new InvalidOperationException($"Asset type was not specified and could not be detected from image metadata in '{inputPath}'. Please specify -t / --type (Decal, Icon, Noise, Ribbon, Skybox, SpellSpritesheet, Tilesheet).");
+			throw new InvalidOperationException($"Asset type was not specified and could not be detected from image metadata in '{inputPath}'. Please specify -t / --type (Decal, Icon, Noise, Ribbon, Skybox, Spritesheet, Terrain, vfx_radial, vfx_vertical).");
 		}
 
 		string targetRtex = string.IsNullOrEmpty(outputPath)
@@ -852,16 +903,22 @@ public static class TextureConverter
 
 		if (normType is "decal" or "decals")
 		{
-			return ProcessAndSaveDecalTexture(fullInput, targetRtex);
+			return ProcessAndSaveDecalTexture(fullInput, targetRtex, columns: columns ?? 1, rows: rows ?? 1);
 		}
 
 		if (normType is "spritesheet" or "vfx_spritesheet" or "vfx_spritesheets" or "spritesheets" or "spellspritesheet" or "spellspritesheets" or "spell_spritesheet" or "spell_spritesheets" or "vfxspritesheet" or "vfxspritesheets" or "vfx")
 		{
-			return ProcessAndSaveSpritesheet(fullInput, targetRtex, columns, rows);
+			return ProcessAndSaveSpritesheet(fullInput, targetRtex, columns ?? 4, rows ?? 4, fps: fps ?? 20.0f);
 		}
 
 		if (normType is "skybox" or "skyboxes")
 		{
+			string outExt = Path.GetExtension(targetRtex).ToLowerInvariant();
+			if (outExt is not ".rtex")
+			{
+				return SkyboxProcessor.ProcessSkyboxFile(fullInput, targetRtex);
+			}
+
 			return ProcessAndSaveSkybox(fullInput, targetRtex);
 		}
 
@@ -880,7 +937,17 @@ public static class TextureConverter
 			return ProcessAndSaveIconTexture(fullInput, targetRtex);
 		}
 
-		throw new InvalidOperationException($"Unsupported asset type '{normType}'. Supported types: Decal, Icon, Noise, Ribbon, Skybox, SpellSpritesheet, Tilesheet.");
+		if (normType is "vfx_radial" or "vfxradial" or "radial" or "radial_mask" or "radialmask")
+		{
+			return ProcessAndSaveVfxRadialTexture(fullInput, targetRtex);
+		}
+
+		if (normType is "vfx_vertical" or "vfxvertical" or "vertical" or "vertical_fin" or "verticalfin")
+		{
+			return ProcessAndSaveVfxVerticalTexture(fullInput, targetRtex);
+		}
+
+		throw new InvalidOperationException($"Unsupported asset type '{normType}'. Supported types: Decal, Icon, Noise, Ribbon, Skybox, Spritesheet, Terrain, vfx_radial, vfx_vertical.");
 	}
 
 	public static int ConvertTextureDirectory(
@@ -888,8 +955,9 @@ public static class TextureConverter
 		string? outputDir,
 		string? assetType,
 		bool recursive,
-		int columns = 4,
-		int rows = 4)
+		int? columns = null,
+		int? rows = null,
+		float? fps = null)
 	{
 		string fullInputDir = Path.GetFullPath(inputDir);
 		string? fullOutputDir = !string.IsNullOrEmpty(outputDir) ? Path.GetFullPath(outputDir) : null;
@@ -919,7 +987,7 @@ public static class TextureConverter
 
 			try
 			{
-				var res = ConvertTextureFile(file, target, assetType, columns, rows);
+				var res = ConvertTextureFile(file, target, assetType, columns, rows, fps);
 				if (res.Success)
 				{
 					Console.WriteLine($"Converted: {file} -> {target}");

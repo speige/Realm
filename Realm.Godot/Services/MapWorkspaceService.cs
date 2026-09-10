@@ -791,8 +791,10 @@ public static partial class MapWorkspaceService
 			{
 				var node = JsonNode.Parse(metaJson);
 				string? type = node?["type"]?.GetValue<string>();
-				int cols = node?["columns"]?.GetValue<int>() ?? 4;
-				int rows = node?["rows"]?.GetValue<int>() ?? 4;
+				bool isDecal = !string.IsNullOrEmpty(type) && type.Contains("decal", StringComparison.OrdinalIgnoreCase);
+				int defaultGrid = isDecal ? 1 : 4;
+				int cols = node?["columns"]?.GetValue<int>() ?? defaultGrid;
+				int rows = node?["rows"]?.GetValue<int>() ?? defaultGrid;
 				if (!string.IsNullOrEmpty(type))
 				{
 					return (type, cols, rows);
@@ -814,8 +816,22 @@ public static partial class MapWorkspaceService
 
 		if (assetsObj != null)
 		{
-				if (assetsObj["decals"] is JsonObject decals && (decals.ContainsKey(fileName) || decals.ContainsKey($"{cleanName}.rtex")))
-					return ("decal", 4, 4);
+				if (assetsObj["decals"] is JsonObject decals)
+				{
+					JsonNode? entry = null;
+					if (decals.TryGetPropertyValue(fileName, out var e1)) entry = e1;
+					else if (decals.TryGetPropertyValue($"{cleanName}.rtex", out var e2)) entry = e2;
+					else if (decals.TryGetPropertyValue(cleanName, out var e3)) entry = e3;
+
+					int cols = 1;
+					int rows = 1;
+					if (entry is JsonObject dObj)
+					{
+						if (dObj.TryGetPropertyValue("columns", out var cNode) && int.TryParse(cNode?.ToString(), out int c) && c > 0) cols = c;
+						if (dObj.TryGetPropertyValue("rows", out var rNode) && int.TryParse(rNode?.ToString(), out int r) && r > 0) rows = r;
+					}
+					return ("decal", cols, rows);
+				}
 
 				if (assetsObj["icons"] is JsonObject icons && (icons.ContainsKey(fileName) || icons.ContainsKey($"{cleanName}.rtex")))
 					return ("icon", 4, 4);
@@ -855,7 +871,7 @@ public static partial class MapWorkspaceService
 			}
 
 		if (normalized.Contains("/assets/decals/"))
-			return ("decal", 4, 4);
+			return ("decal", 1, 1);
 
 		if (normalized.Contains("/assets/icons/"))
 			return ("icon", 4, 4);
@@ -933,6 +949,17 @@ public static partial class MapWorkspaceService
 						["hash"] = newHash
 					};
 				}
+				else if (categoryKey == "decals")
+				{
+					var decalEntry = preservedProps ?? (targetCatObj.ContainsKey(rtexFileName) && targetCatObj[rtexFileName] is JsonObject exObj ? (exObj.DeepClone() as JsonObject) : new JsonObject());
+					decalEntry["hash"] = newHash;
+					if (columns > 1 || rows > 1 || decalEntry.ContainsKey("columns") || decalEntry.ContainsKey("rows"))
+					{
+						decalEntry["columns"] = columns;
+						decalEntry["rows"] = rows;
+					}
+					targetCatObj[rtexFileName] = decalEntry;
+				}
 				else if (categoryKey == "textures")
 				{
 					var texEntry = preservedProps ?? (targetCatObj.ContainsKey(rtexFileName) && targetCatObj[rtexFileName] is JsonObject exObj ? (exObj.DeepClone() as JsonObject) : new JsonObject());
@@ -950,74 +977,6 @@ public static partial class MapWorkspaceService
 			}
 
 			Realm.Godot.Utils.MapAssetHelper.SaveAssetsToManifest(workspacePath, assetsObj, removeFromMetadata: true);
-
-			string metadataPath = Path.Combine(workspacePath, "metadata.json");
-			if (File.Exists(metadataPath))
-			{
-				string jsonText = File.ReadAllText(metadataPath);
-				var jsonNode = JsonNode.Parse(jsonText);
-				if (jsonNode is JsonObject root)
-				{
-					bool modified = false;
-
-					void ReplacePngReferences(JsonNode? node)
-					{
-						if (node is JsonObject obj)
-						{
-							var propList = obj.ToList();
-							foreach (var prop in propList)
-							{
-								if (prop.Value is JsonValue val && val.TryGetValue<string>(out string strVal))
-								{
-									if (strVal.EndsWith(pngFileName, StringComparison.OrdinalIgnoreCase))
-									{
-										string updated = strVal.Substring(0, strVal.Length - pngFileName.Length) + rtexFileName;
-										obj[prop.Key] = updated;
-										modified = true;
-									}
-								}
-								else if (prop.Value is JsonObject or JsonArray)
-								{
-									ReplacePngReferences(prop.Value);
-								}
-							}
-						}
-						else if (node is JsonArray arr)
-						{
-							for (int i = 0; i < arr.Count; i++)
-							{
-								if (arr[i] is JsonValue val && val.TryGetValue<string>(out string strVal))
-								{
-									if (strVal.EndsWith(pngFileName, StringComparison.OrdinalIgnoreCase))
-									{
-										string updated = strVal.Substring(0, strVal.Length - pngFileName.Length) + rtexFileName;
-										arr[i] = updated;
-										modified = true;
-									}
-								}
-								else if (arr[i] is JsonObject or JsonArray)
-								{
-									ReplacePngReferences(arr[i]);
-								}
-							}
-						}
-					}
-
-					ReplacePngReferences(root);
-
-					if (root.ContainsKey("Assets"))
-					{
-						root.Remove("Assets");
-						modified = true;
-					}
-
-					if (modified)
-					{
-						SaveLoadService.CleanMetadataJsonSchema(root);
-						MapJsonFormatter.SaveFormattedJson(metadataPath, root);
-					}
-				}
-			}
 		}
 		catch (Exception ex)
 		{

@@ -616,10 +616,15 @@ public partial class UIManager : Control
 		btnCancel.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
 		btnCancel.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
 		btnCancel.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
-		btnCancel.Pressed += () =>
+		Action cancelAction = () =>
 		{
 			overlay.QueueFree();
 			onCancel?.Invoke();
+		};
+		overlay.SetMeta("CancelAction", Callable.From(cancelAction));
+		btnCancel.Pressed += () =>
+		{
+			cancelAction();
 		};
 		hbox.AddChild(btnCancel);
 	}

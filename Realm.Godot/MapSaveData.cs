@@ -8,6 +8,7 @@ public class MapSaveData
 	public List<UnitSaveData> Units { get; set; }
 	public List<PropSaveData> Props { get; set; }
 	public List<DecalSaveData> Decals { get; set; }
+	public List<VfxSaveData> Vfx { get; set; }
 	public float? CameraBoundsLeft { get; set; }
 	public float? CameraBoundsRight { get; set; }
 	public float? CameraBoundsTop { get; set; }

@@ -16,6 +16,24 @@ public class DecalSnapshot
 	public float Metallic { get; set; } = 0.0f;
 	public string BlendMode { get; set; } = "Mix";
 
+	public bool AnimateOpacity { get; set; } = false;
+	public float OpacityPulseSpeed { get; set; } = 1.0f;
+	public float MinOpacity { get; set; } = 0.2f;
+	public float MaxOpacity { get; set; } = 1.0f;
+
+	public bool AnimateEmission { get; set; } = false;
+	public float EmissionPulseSpeed { get; set; } = 1.0f;
+	public float MinEmission { get; set; } = 0.0f;
+	public float MaxEmission { get; set; } = 2.0f;
+
+	public bool AnimateScale { get; set; } = false;
+	public float ScalePulseSpeed { get; set; } = 1.0f;
+	public float MinScaleRatio { get; set; } = 0.8f;
+	public float MaxScaleRatio { get; set; } = 1.2f;
+
+	public float UpperFade { get; set; } = 0.3f;
+	public float LowerFade { get; set; } = 0.3f;
+
 	public DecalSnapshot Clone()
 	{
 		return new DecalSnapshot
@@ -29,7 +47,21 @@ public class DecalSnapshot
 			NormalStrength = this.NormalStrength,
 			Roughness = this.Roughness,
 			Metallic = this.Metallic,
-			BlendMode = this.BlendMode
+			BlendMode = this.BlendMode,
+			AnimateOpacity = this.AnimateOpacity,
+			OpacityPulseSpeed = this.OpacityPulseSpeed,
+			MinOpacity = this.MinOpacity,
+			MaxOpacity = this.MaxOpacity,
+			AnimateEmission = this.AnimateEmission,
+			EmissionPulseSpeed = this.EmissionPulseSpeed,
+			MinEmission = this.MinEmission,
+			MaxEmission = this.MaxEmission,
+			AnimateScale = this.AnimateScale,
+			ScalePulseSpeed = this.ScalePulseSpeed,
+			MinScaleRatio = this.MinScaleRatio,
+			MaxScaleRatio = this.MaxScaleRatio,
+			UpperFade = this.UpperFade,
+			LowerFade = this.LowerFade
 		};
 	}
 }
@@ -47,7 +79,56 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 	private float _roughness = 1.0f;
 	private float _metallic = 0.0f;
 	private string _blendMode = "Mix";
+
+	private bool _animateOpacity = false;
+	private float _opacityPulseSpeed = 1.0f;
+	private float _minOpacity = 0.2f;
+	private float _maxOpacity = 1.0f;
+
+	private bool _animateEmission = false;
+	private float _emissionPulseSpeed = 1.0f;
+	private float _minEmission = 0.0f;
+	private float _maxEmission = 2.0f;
+
+	private bool _animateScale = false;
+	private float _scalePulseSpeed = 1.0f;
+	private float _minScaleRatio = 0.8f;
+	private float _maxScaleRatio = 1.2f;
+
+	private float _upperFade = 0.3f;
+	private float _lowerFade = 0.3f;
+
 	private bool _isSyncingControls = false;
+	private CheckBox _chkAnimateOpacity;
+	private HSlider _sldOpacitySpeed;
+	private Label _lblOpacitySpeed;
+	private HSlider _sldMinOpacity;
+	private Label _lblMinOpacity;
+	private HSlider _sldMaxOpacity;
+	private Label _lblMaxOpacity;
+
+	private CheckBox _chkAnimateEmission;
+	private HSlider _sldEmissionSpeed;
+	private Label _lblEmissionSpeed;
+	private HSlider _sldMinEmission;
+	private Label _lblMinEmission;
+	private HSlider _sldMaxEmission;
+	private Label _lblMaxEmission;
+
+	private CheckBox _chkAnimateScale;
+	private HSlider _sldScaleSpeed;
+	private Label _lblScaleSpeed;
+	private HSlider _sldMinScale;
+	private Label _lblMinScale;
+	private HSlider _sldMaxScale;
+	private Label _lblMaxScale;
+
+	private HSlider _sldUpperFade;
+	private Label _lblUpperFade;
+	private HSlider _sldLowerFade;
+	private Label _lblLowerFade;
+
+	private double _previewAnimTime = 0.0;
 
 	private struct DecalNodeState
 	{
@@ -57,6 +138,9 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 		public Texture2D TextureOrm;
 		public Texture2D TextureEmission;
 		public float EmissionEnergy;
+		public Vector3 Size;
+		public float UpperFade;
+		public float LowerFade;
 	}
 
 	private readonly System.Collections.Generic.Dictionary<ulong, DecalNodeState> _originalDecalStates = new();
@@ -88,14 +172,14 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 	private OptionButton _optBlendMode;
 
 	public DecalSettingsDialog(MapEditorHUD hud)
-		: base(hud, TranslationServer.Translate("Decal Rendering & Blending Properties"), new Vector2(460, 660))
+		: base(hud, TranslationServer.Translate("Decal Rendering & Blending Properties"), new Vector2(480, 720))
 	{
 		BuildControls();
 	}
 
 	private void BuildControls()
 	{
-		var scrollBody = CreateScrollBody(540);
+		var scrollBody = CreateScrollBody(600);
 		var contentVBox = new VBoxContainer();
 		contentVBox.AddThemeConstantOverride("separation", 10);
 		contentVBox.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
@@ -315,6 +399,127 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 			},
 			140f
 		);
+
+		(_sldUpperFade, _lblUpperFade) = AddSlider(
+			contentVBox,
+			TranslationServer.Translate("Upper Fade:"),
+			0.0f,
+			1.0f,
+			0.05f,
+			_upperFade,
+			(val) =>
+			{
+				if (_isSyncingControls) return;
+				_upperFade = val;
+				UpdateLivePreviewAndWorld();
+			},
+			"0.00",
+			140f
+		);
+
+		(_sldLowerFade, _lblLowerFade) = AddSlider(
+			contentVBox,
+			TranslationServer.Translate("Lower Fade:"),
+			0.0f,
+			1.0f,
+			0.05f,
+			_lowerFade,
+			(val) =>
+			{
+				if (_isSyncingControls) return;
+				_lowerFade = val;
+				UpdateLivePreviewAndWorld();
+			},
+			"0.00",
+			140f
+		);
+
+		// SECTION 3: PROPERTY ANIMATION
+		AddSectionHeader(contentVBox, "⚡ " + TranslationServer.Translate("DYNAMIC PROPERTY ANIMATION"), new Color(0.4f, 0.8f, 0.95f));
+
+		_chkAnimateOpacity = AddCheckBox(contentVBox, TranslationServer.Translate("Enable Opacity Pulse:"), _animateOpacity, (val) =>
+		{
+			if (_isSyncingControls) return;
+			_animateOpacity = val;
+			UpdateLivePreviewAndWorld();
+		});
+
+		(_sldOpacitySpeed, _lblOpacitySpeed) = AddSlider(contentVBox, TranslationServer.Translate("Opacity Speed:"), 0.1f, 10.0f, 0.1f, _opacityPulseSpeed, (val) =>
+		{
+			if (_isSyncingControls) return;
+			_opacityPulseSpeed = val;
+			UpdateLivePreviewAndWorld();
+		}, "0.0x", 140f);
+
+		(_sldMinOpacity, _lblMinOpacity) = AddSlider(contentVBox, TranslationServer.Translate("Min Opacity:"), 0.0f, 1.0f, 0.05f, _minOpacity, (val) =>
+		{
+			if (_isSyncingControls) return;
+			_minOpacity = val;
+			UpdateLivePreviewAndWorld();
+		}, "0.00", 140f);
+
+		(_sldMaxOpacity, _lblMaxOpacity) = AddSlider(contentVBox, TranslationServer.Translate("Max Opacity:"), 0.0f, 1.0f, 0.05f, _maxOpacity, (val) =>
+		{
+			if (_isSyncingControls) return;
+			_maxOpacity = val;
+			UpdateLivePreviewAndWorld();
+		}, "0.00", 140f);
+
+		_chkAnimateEmission = AddCheckBox(contentVBox, TranslationServer.Translate("Enable Emission Pulse:"), _animateEmission, (val) =>
+		{
+			if (_isSyncingControls) return;
+			_animateEmission = val;
+			UpdateLivePreviewAndWorld();
+		});
+
+		(_sldEmissionSpeed, _lblEmissionSpeed) = AddSlider(contentVBox, TranslationServer.Translate("Emission Speed:"), 0.1f, 10.0f, 0.1f, _emissionPulseSpeed, (val) =>
+		{
+			if (_isSyncingControls) return;
+			_emissionPulseSpeed = val;
+			UpdateLivePreviewAndWorld();
+		}, "0.0x", 140f);
+
+		(_sldMinEmission, _lblMinEmission) = AddSlider(contentVBox, TranslationServer.Translate("Min Emission:"), 0.0f, 10.0f, 0.1f, _minEmission, (val) =>
+		{
+			if (_isSyncingControls) return;
+			_minEmission = val;
+			UpdateLivePreviewAndWorld();
+		}, "0.0", 140f);
+
+		(_sldMaxEmission, _lblMaxEmission) = AddSlider(contentVBox, TranslationServer.Translate("Max Emission:"), 0.0f, 10.0f, 0.1f, _maxEmission, (val) =>
+		{
+			if (_isSyncingControls) return;
+			_maxEmission = val;
+			UpdateLivePreviewAndWorld();
+		}, "0.0", 140f);
+
+		_chkAnimateScale = AddCheckBox(contentVBox, TranslationServer.Translate("Enable Scale Pulse:"), _animateScale, (val) =>
+		{
+			if (_isSyncingControls) return;
+			_animateScale = val;
+			UpdateLivePreviewAndWorld();
+		});
+
+		(_sldScaleSpeed, _lblScaleSpeed) = AddSlider(contentVBox, TranslationServer.Translate("Scale Speed:"), 0.1f, 10.0f, 0.1f, _scalePulseSpeed, (val) =>
+		{
+			if (_isSyncingControls) return;
+			_scalePulseSpeed = val;
+			UpdateLivePreviewAndWorld();
+		}, "0.0x", 140f);
+
+		(_sldMinScale, _lblMinScale) = AddSlider(contentVBox, TranslationServer.Translate("Min Scale Ratio:"), 0.1f, 2.0f, 0.05f, _minScaleRatio, (val) =>
+		{
+			if (_isSyncingControls) return;
+			_minScaleRatio = val;
+			UpdateLivePreviewAndWorld();
+		}, "0.00x", 140f);
+
+		(_sldMaxScale, _lblMaxScale) = AddSlider(contentVBox, TranslationServer.Translate("Max Scale Ratio:"), 0.1f, 3.0f, 0.05f, _maxScaleRatio, (val) =>
+		{
+			if (_isSyncingControls) return;
+			_maxScaleRatio = val;
+			UpdateLivePreviewAndWorld();
+		}, "0.00x", 140f);
 	}
 
 	public static JsonObject ResolveDecalMetadata(string decalKey, JsonObject? providedData = null)
@@ -337,28 +542,28 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 				var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
 				var decalsObj = assetsObj?["decals"] as JsonObject;
 				if (decalsObj != null)
+				{
+					string key = Path.GetFileName(decalKey);
+					string baseKey = Path.GetFileNameWithoutExtension(decalKey);
+
+					JsonObject? foundMeta = null;
+					if (decalsObj.TryGetPropertyValue(key, out var n1) && n1 is JsonObject o1) foundMeta = o1;
+					else if (decalsObj.TryGetPropertyValue(baseKey, out var n2) && n2 is JsonObject o2) foundMeta = o2;
+					else if (decalsObj.TryGetPropertyValue($"{baseKey}.rtex", out var n3) && n3 is JsonObject o3) foundMeta = o3;
+					else if (decalsObj.TryGetPropertyValue($"{baseKey}.png", out var n4) && n4 is JsonObject o4) foundMeta = o4;
+					else if (decalsObj.TryGetPropertyValue($"{baseKey}.webp", out var n5) && n5 is JsonObject o5) foundMeta = o5;
+
+					if (foundMeta != null)
 					{
-						string key = Path.GetFileName(decalKey);
-						string baseKey = Path.GetFileNameWithoutExtension(decalKey);
-
-						JsonObject? foundMeta = null;
-						if (decalsObj.TryGetPropertyValue(key, out var n1) && n1 is JsonObject o1) foundMeta = o1;
-						else if (decalsObj.TryGetPropertyValue(baseKey, out var n2) && n2 is JsonObject o2) foundMeta = o2;
-						else if (decalsObj.TryGetPropertyValue($"{baseKey}.rtex", out var n3) && n3 is JsonObject o3) foundMeta = o3;
-						else if (decalsObj.TryGetPropertyValue($"{baseKey}.png", out var n4) && n4 is JsonObject o4) foundMeta = o4;
-						else if (decalsObj.TryGetPropertyValue($"{baseKey}.webp", out var n5) && n5 is JsonObject o5) foundMeta = o5;
-
-						if (foundMeta != null)
+						foreach (var kvp in foundMeta)
 						{
-							foreach (var kvp in foundMeta)
+							if (!result.ContainsKey(kvp.Key))
 							{
-								if (!result.ContainsKey(kvp.Key))
-								{
-									result[kvp.Key] = kvp.Value?.DeepClone();
-								}
+								result[kvp.Key] = kvp.Value?.DeepClone();
 							}
 						}
 					}
+				}
 			}
 			catch { }
 		}
@@ -426,6 +631,8 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 						result["normal_strength"] = (d.TextureNormal != null) ? 1.0f : 0.0f;
 						result["roughness"] = 1.0f;
 						result["metallic"] = 0.0f;
+						result["upper_fade"] = d.UpperFade;
+						result["lower_fade"] = d.LowerFade;
 						if (d.TextureEmission != null)
 						{
 							result["blend_mode"] = d.AlbedoMix <= 0.01f ? "Additive" : "Screen";
@@ -433,6 +640,22 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 						else
 						{
 							result["blend_mode"] = "Mix";
+						}
+
+						if (d is Decal3D d3dAnim)
+						{
+							result["animate_opacity"] = d3dAnim.AnimateOpacity;
+							result["opacity_pulse_speed"] = d3dAnim.OpacityPulseSpeed;
+							result["min_opacity"] = d3dAnim.MinOpacity;
+							result["max_opacity"] = d3dAnim.MaxOpacity;
+							result["animate_emission"] = d3dAnim.AnimateEmission;
+							result["emission_pulse_speed"] = d3dAnim.EmissionPulseSpeed;
+							result["min_emission"] = d3dAnim.MinEmission;
+							result["max_emission"] = d3dAnim.MaxEmission;
+							result["animate_scale"] = d3dAnim.AnimateScale;
+							result["scale_pulse_speed"] = d3dAnim.ScalePulseSpeed;
+							result["min_scale_ratio"] = d3dAnim.MinScaleRatio;
+							result["max_scale_ratio"] = d3dAnim.MaxScaleRatio;
 						}
 						break;
 					}
@@ -461,6 +684,24 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 		_metallic = resolvedData.TryGetPropertyValue("metallic", out var metNode) && float.TryParse(metNode?.ToString(), out float met) ? met : 0.0f;
 		_blendMode = resolvedData.TryGetPropertyValue("blend_mode", out var bmNode) ? bmNode?.ToString() ?? "Mix" : "Mix";
 
+		_animateOpacity = resolvedData.TryGetPropertyValue("animate_opacity", out var aoNode) && bool.TryParse(aoNode?.ToString(), out bool ao) && ao;
+		_opacityPulseSpeed = resolvedData.TryGetPropertyValue("opacity_pulse_speed", out var opsNode) && float.TryParse(opsNode?.ToString(), out float ops) ? ops : 1.0f;
+		_minOpacity = resolvedData.TryGetPropertyValue("min_opacity", out var minONode) && float.TryParse(minONode?.ToString(), out float minO) ? minO : 0.2f;
+		_maxOpacity = resolvedData.TryGetPropertyValue("max_opacity", out var maxONode) && float.TryParse(maxONode?.ToString(), out float maxO) ? maxO : 1.0f;
+
+		_animateEmission = resolvedData.TryGetPropertyValue("animate_emission", out var aeNode) && bool.TryParse(aeNode?.ToString(), out bool ae) && ae;
+		_emissionPulseSpeed = resolvedData.TryGetPropertyValue("emission_pulse_speed", out var epsNode) && float.TryParse(epsNode?.ToString(), out float eps) ? eps : 1.0f;
+		_minEmission = resolvedData.TryGetPropertyValue("min_emission", out var minENode) && float.TryParse(minENode?.ToString(), out float minE) ? minE : 0.0f;
+		_maxEmission = resolvedData.TryGetPropertyValue("max_emission", out var maxENode) && float.TryParse(maxENode?.ToString(), out float maxE) ? maxE : 2.0f;
+
+		_animateScale = resolvedData.TryGetPropertyValue("animate_scale", out var asNode) && bool.TryParse(asNode?.ToString(), out bool aSc) && aSc;
+		_scalePulseSpeed = resolvedData.TryGetPropertyValue("scale_pulse_speed", out var scpsNode) && float.TryParse(scpsNode?.ToString(), out float scps) ? scps : 1.0f;
+		_minScaleRatio = resolvedData.TryGetPropertyValue("min_scale_ratio", out var minScNode) && float.TryParse(minScNode?.ToString(), out float minSc) ? minSc : 0.8f;
+		_maxScaleRatio = resolvedData.TryGetPropertyValue("max_scale_ratio", out var maxScNode) && float.TryParse(maxScNode?.ToString(), out float maxSc) ? maxSc : 1.2f;
+
+		_upperFade = resolvedData.TryGetPropertyValue("upper_fade", out var ufNode) && float.TryParse(ufNode?.ToString(), out float uf) ? uf : 0.3f;
+		_lowerFade = resolvedData.TryGetPropertyValue("lower_fade", out var lfNode) && float.TryParse(lfNode?.ToString(), out float lf) ? lf : 0.3f;
+
 		_tint = Colors.White;
 		if (resolvedData.TryGetPropertyValue("tint", out var tNode) && tNode != null)
 		{
@@ -487,7 +728,10 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 							TextureNormal = d.TextureNormal,
 							TextureOrm = d.TextureOrm,
 							TextureEmission = d.TextureEmission,
-							EmissionEnergy = d.EmissionEnergy
+							EmissionEnergy = d.EmissionEnergy,
+							Size = d.Size,
+							UpperFade = d.UpperFade,
+							LowerFade = d.LowerFade
 						};
 					}
 				}
@@ -505,7 +749,21 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 			NormalStrength = _normalStrength,
 			Roughness = _roughness,
 			Metallic = _metallic,
-			BlendMode = _blendMode
+			BlendMode = _blendMode,
+			AnimateOpacity = _animateOpacity,
+			OpacityPulseSpeed = _opacityPulseSpeed,
+			MinOpacity = _minOpacity,
+			MaxOpacity = _maxOpacity,
+			AnimateEmission = _animateEmission,
+			EmissionPulseSpeed = _emissionPulseSpeed,
+			MinEmission = _minEmission,
+			MaxEmission = _maxEmission,
+			AnimateScale = _animateScale,
+			ScalePulseSpeed = _scalePulseSpeed,
+			MinScaleRatio = _minScaleRatio,
+			MaxScaleRatio = _maxScaleRatio,
+			UpperFade = _upperFade,
+			LowerFade = _lowerFade
 		};
 
 		SyncControlsWithValues();
@@ -556,10 +814,129 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 				"Screen" => 3,
 				_ => 0
 			};
+
+			if (_chkAnimateOpacity != null) _chkAnimateOpacity.ButtonPressed = _animateOpacity;
+			if (_sldOpacitySpeed != null)
+			{
+				_sldOpacitySpeed.Value = _opacityPulseSpeed;
+				_lblOpacitySpeed.Text = $"{_opacityPulseSpeed:F1}x";
+			}
+			if (_sldMinOpacity != null)
+			{
+				_sldMinOpacity.Value = _minOpacity;
+				_lblMinOpacity.Text = $"{_minOpacity:F2}";
+			}
+			if (_sldMaxOpacity != null)
+			{
+				_sldMaxOpacity.Value = _maxOpacity;
+				_lblMaxOpacity.Text = $"{_maxOpacity:F2}";
+			}
+
+			if (_chkAnimateEmission != null) _chkAnimateEmission.ButtonPressed = _animateEmission;
+			if (_sldEmissionSpeed != null)
+			{
+				_sldEmissionSpeed.Value = _emissionPulseSpeed;
+				_lblEmissionSpeed.Text = $"{_emissionPulseSpeed:F1}x";
+			}
+			if (_sldMinEmission != null)
+			{
+				_sldMinEmission.Value = _minEmission;
+				_lblMinEmission.Text = $"{_minEmission:F1}";
+			}
+			if (_sldMaxEmission != null)
+			{
+				_sldMaxEmission.Value = _maxEmission;
+				_lblMaxEmission.Text = $"{_maxEmission:F1}";
+			}
+
+			if (_chkAnimateScale != null) _chkAnimateScale.ButtonPressed = _animateScale;
+			if (_sldScaleSpeed != null)
+			{
+				_sldScaleSpeed.Value = _scalePulseSpeed;
+				_lblScaleSpeed.Text = $"{_scalePulseSpeed:F1}x";
+			}
+			if (_sldMinScale != null)
+			{
+				_sldMinScale.Value = _minScaleRatio;
+				_lblMinScale.Text = $"{_minScaleRatio:F2}x";
+			}
+			if (_sldMaxScale != null)
+			{
+				_sldMaxScale.Value = _maxScaleRatio;
+				_lblMaxScale.Text = $"{_maxScaleRatio:F2}x";
+			}
+
+			if (_sldUpperFade != null)
+			{
+				_sldUpperFade.Value = _upperFade;
+				_lblUpperFade.Text = $"{_upperFade:F2}";
+			}
+			if (_sldLowerFade != null)
+			{
+				_sldLowerFade.Value = _lowerFade;
+				_lblLowerFade.Text = $"{_lowerFade:F2}";
+			}
 		}
 		finally
 		{
 			_isSyncingControls = false;
+		}
+	}
+
+	public override void _Process(double delta)
+	{
+		base._Process(delta);
+		if (!Visible || _previewRect == null) return;
+
+		if (_animateOpacity || _animateEmission || _animateScale)
+		{
+			_previewAnimTime += delta;
+			float time = (float)_previewAnimTime;
+
+			float currentOpacity = _opacity;
+			if (_animateOpacity)
+			{
+				float sine = (MathF.Sin(time * _opacityPulseSpeed * MathF.PI * 2.0f) + 1.0f) * 0.5f;
+				currentOpacity = Mathf.Lerp(_minOpacity, _maxOpacity, sine);
+			}
+
+			float currentEmission = 1.0f;
+			if (_animateEmission)
+			{
+				float sine = (MathF.Sin(time * _emissionPulseSpeed * MathF.PI * 2.0f) + 1.0f) * 0.5f;
+				currentEmission = Mathf.Lerp(_minEmission, _maxEmission, sine);
+			}
+
+			float currentScale = 1.0f;
+			if (_animateScale)
+			{
+				float sine = (MathF.Sin(time * _scalePulseSpeed * MathF.PI * 2.0f) + 1.0f) * 0.5f;
+				currentScale = Mathf.Lerp(_minScaleRatio, _maxScaleRatio, sine);
+			}
+
+			float r = _tint.R * _brightness * (1.0f + currentEmission * 0.5f);
+			float g = _tint.G * _brightness * (1.0f + currentEmission * 0.5f);
+			float b = _tint.B * _brightness * (1.0f + currentEmission * 0.5f);
+
+			float lum = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+			r = lum + (r - lum) * _saturation;
+			g = lum + (g - lum) * _saturation;
+			b = lum + (b - lum) * _saturation;
+
+			r = (r - 0.5f) * _contrast + 0.5f;
+			g = (g - 0.5f) * _contrast + 0.5f;
+			b = (b - 0.5f) * _contrast + 0.5f;
+
+			_previewRect.Modulate = new Color(Mathf.Clamp(r, 0f, 4f), Mathf.Clamp(g, 0f, 4f), Mathf.Clamp(b, 0f, 4f), Mathf.Clamp(currentOpacity, 0f, 1f));
+			_previewRect.Scale = new Vector2(currentScale, currentScale);
+			_previewRect.PivotOffset = _previewRect.Size * 0.5f;
+		}
+		else
+		{
+			if (_previewRect.Scale != Vector2.One)
+			{
+				_previewRect.Scale = Vector2.One;
+			}
 		}
 	}
 
@@ -574,10 +951,20 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 		_lblRoughness.Text = $"{_roughness:F2}";
 		_lblMetallic.Text = $"{_metallic:F2}";
 
+		if (_lblOpacitySpeed != null) _lblOpacitySpeed.Text = $"{_opacityPulseSpeed:F1}x";
+		if (_lblMinOpacity != null) _lblMinOpacity.Text = $"{_minOpacity:F2}";
+		if (_lblMaxOpacity != null) _lblMaxOpacity.Text = $"{_maxOpacity:F2}";
+		if (_lblEmissionSpeed != null) _lblEmissionSpeed.Text = $"{_emissionPulseSpeed:F1}x";
+		if (_lblMinEmission != null) _lblMinEmission.Text = $"{_minEmission:F1}";
+		if (_lblMaxEmission != null) _lblMaxEmission.Text = $"{_maxEmission:F1}";
+		if (_lblScaleSpeed != null) _lblScaleSpeed.Text = $"{_scalePulseSpeed:F1}x";
+		if (_lblMinScale != null) _lblMinScale.Text = $"{_minScaleRatio:F2}x";
+		if (_lblMaxScale != null) _lblMaxScale.Text = $"{_maxScaleRatio:F2}x";
+		if (_lblUpperFade != null) _lblUpperFade.Text = $"{_upperFade:F2}";
+		if (_lblLowerFade != null) _lblLowerFade.Text = $"{_lowerFade:F2}";
+
 		if (_previewRect != null)
 		{
-			_previewRect.Texture = _baseTexture;
-
 			float r = _tint.R * _brightness;
 			float g = _tint.G * _brightness;
 			float b = _tint.B * _brightness;
@@ -592,6 +979,7 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 			b = (b - 0.5f) * _contrast + 0.5f;
 
 			_previewRect.Modulate = new Color(Mathf.Clamp(r, 0f, 4f), Mathf.Clamp(g, 0f, 4f), Mathf.Clamp(b, 0f, 4f), Mathf.Clamp(_opacity, 0f, 1f));
+			_previewRect.Texture = _baseTexture;
 
 			if (_previewRect.Material is not CanvasItemMaterial mat)
 			{
@@ -618,12 +1006,28 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 			_normalStrength,
 			_roughness,
 			_metallic,
-			_blendMode
+			_blendMode,
+			_animateOpacity,
+			_opacityPulseSpeed,
+			_minOpacity,
+			_maxOpacity,
+			_animateEmission,
+			_emissionPulseSpeed,
+			_minEmission,
+			_maxEmission,
+			_animateScale,
+			_scalePulseSpeed,
+			_minScaleRatio,
+			_maxScaleRatio,
+			_upperFade,
+			_lowerFade
 		);
 	}
 
 	protected override void OnApply()
 	{
+		GameHost.Instance?.InvalidateDecalCache(_decalKey);
+
 		var result = new JsonObject
 		{
 			["brightness"] = Math.Round(_brightness, 3),
@@ -636,6 +1040,20 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 			["roughness"] = Math.Round(_roughness, 3),
 			["metallic"] = Math.Round(_metallic, 3),
 			["blend_mode"] = _blendMode,
+			["animate_opacity"] = _animateOpacity,
+			["opacity_pulse_speed"] = Math.Round(_opacityPulseSpeed, 2),
+			["min_opacity"] = Math.Round(_minOpacity, 3),
+			["max_opacity"] = Math.Round(_maxOpacity, 3),
+			["animate_emission"] = _animateEmission,
+			["emission_pulse_speed"] = Math.Round(_emissionPulseSpeed, 2),
+			["min_emission"] = Math.Round(_minEmission, 2),
+			["max_emission"] = Math.Round(_maxEmission, 2),
+			["animate_scale"] = _animateScale,
+			["scale_pulse_speed"] = Math.Round(_scalePulseSpeed, 2),
+			["min_scale_ratio"] = Math.Round(_minScaleRatio, 3),
+			["max_scale_ratio"] = Math.Round(_maxScaleRatio, 3),
+			["upper_fade"] = Math.Round(_upperFade, 3),
+			["lower_fade"] = Math.Round(_lowerFade, 3),
 			["asset_type"] = "Decal"
 		};
 
@@ -658,6 +1076,14 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 					d.TextureOrm = orig.TextureOrm;
 					d.TextureEmission = orig.TextureEmission;
 					d.EmissionEnergy = orig.EmissionEnergy;
+					d.Size = orig.Size;
+					d.UpperFade = orig.UpperFade;
+					d.LowerFade = orig.LowerFade;
+					if (d is Decal3D d3d)
+					{
+						d3d.SetBaseProperties(orig.Modulate, orig.EmissionEnergy, orig.Size);
+						d3d.UpdateProcessState();
+					}
 				}
 			}
 		}
@@ -673,6 +1099,20 @@ public partial class DecalSettingsDialog : FloatingDialogBase
 			_roughness = _initialSnapshot.Roughness;
 			_metallic = _initialSnapshot.Metallic;
 			_blendMode = _initialSnapshot.BlendMode;
+			_animateOpacity = _initialSnapshot.AnimateOpacity;
+			_opacityPulseSpeed = _initialSnapshot.OpacityPulseSpeed;
+			_minOpacity = _initialSnapshot.MinOpacity;
+			_maxOpacity = _initialSnapshot.MaxOpacity;
+			_animateEmission = _initialSnapshot.AnimateEmission;
+			_emissionPulseSpeed = _initialSnapshot.EmissionPulseSpeed;
+			_minEmission = _initialSnapshot.MinEmission;
+			_maxEmission = _initialSnapshot.MaxEmission;
+			_animateScale = _initialSnapshot.AnimateScale;
+			_scalePulseSpeed = _initialSnapshot.ScalePulseSpeed;
+			_minScaleRatio = _initialSnapshot.MinScaleRatio;
+			_maxScaleRatio = _initialSnapshot.MaxScaleRatio;
+			_upperFade = _initialSnapshot.UpperFade;
+			_lowerFade = _initialSnapshot.LowerFade;
 
 			UpdateLivePreviewAndWorld();
 		}
