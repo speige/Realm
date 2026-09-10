@@ -2460,7 +2460,7 @@ public partial class GameHost
 		return prop;
 	}
 
-	public Decal SpawnDecalExternalWithParams(string decalId, Vector3 position, float rotationY, float scale)
+	public Decal SpawnDecalExternalWithParams(string decalId, Vector3 position, Vector3 rotationDegrees, float scale)
 	{
 		var entity = EcsWorld.Create();
 		var decal = new Decal3D();
@@ -2473,18 +2473,25 @@ public partial class GameHost
 		AddChild(decal);
 		AllDecals.Add(decal);
 		
-		position.Y = _editorService.GetTerrainHeightAt(position);
 		decal.Position = position;
-		decal.RotationDegrees = new Vector3(0.0f, rotationY, 0.0f);
+		decal.RotationDegrees = rotationDegrees;
 		decal.Scale = Vector3.One;
 		
 		EcsWorld.Add(entity, new Realm.Ecs.Components.Core.Position(new System.Numerics.Vector3(position.X, position.Y, position.Z)));
-		EcsWorld.Add(entity, new RotationY(rotationY));
+		EcsWorld.Add(entity, new Realm.Ecs.Components.Meta.Rotation3D(new System.Numerics.Vector3(rotationDegrees.X, rotationDegrees.Y, rotationDegrees.Z)));
+		EcsWorld.Add(entity, new RotationY(rotationDegrees.Y));
 		EcsWorld.Add(entity, new ModelScale(scale));
 
 		ApplyDecalPropertiesFromMetadata(decal, decalId);
 		
 		return decal;
+	}
+
+	public Decal SpawnDecalExternalWithParams(string decalId, Vector3 position, float rotationY, float scale)
+	{
+		Vector3 pos = position;
+		pos.Y = _editorService.GetTerrainHeightAt(pos);
+		return SpawnDecalExternalWithParams(decalId, pos, new Vector3(0.0f, rotationY, 0.0f), scale);
 	}
 
 	public ProceduralVfxInstance3D SpawnVfxExternalWithParams(
@@ -3314,7 +3321,10 @@ public partial class GameHost
 			{
 				previewPos = _editorService.SnapToGrid(previewPos);
 			}
-			previewPos.Y = _editorService.GetTerrainHeightAt(previewPos);
+			if (ActiveEditorTool != EditorTool.PlaceDecal)
+			{
+				previewPos.Y = _editorService.GetTerrainHeightAt(previewPos);
+			}
 			if (ActiveEditorTool == EditorTool.PlaceUnit || ActiveEditorTool == EditorTool.PlaceProp)
 			{
 				float radius = GetPlacementRadius(ActivePlaceId, previewScaleVal);
@@ -3346,8 +3356,17 @@ public partial class GameHost
 			}
 			else if (_editorPreviewNode is Decal previewDecal)
 			{
+				Vector3 hitNormal = GetTerrainNormalAt(previewPos);
+				var mousePos = GetViewport().GetMousePosition();
+				var terrainHit = RaycastTerrainFromMouse(mousePos);
+				if (terrainHit != null && terrainHit.ContainsKey("normal"))
+				{
+					hitNormal = terrainHit["normal"].AsVector3();
+				}
+				Basis alignedBasis = CreateAlignedBasis(hitNormal);
+				previewDecal.Basis = alignedBasis;
+				previewDecal.RotateObjectLocal(Vector3.Up, Mathf.DegToRad(previewRot));
 				previewDecal.Position = previewPos;
-				previewDecal.RotationDegrees = new Vector3(0.0f, previewRot, 0.0f);
 				previewDecal.Size = new Vector3(6.0f, 20.0f, 6.0f) * safePreviewScale;
 				previewDecal.Scale = Vector3.One;
 			}

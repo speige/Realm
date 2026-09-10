@@ -52,7 +52,9 @@ public static class MapJsonFormatter
 						.ThenBy(item => GetFloatProperty(item, "PosX"))
 						.ThenBy(item => GetFloatProperty(item, "PosZ"))
 						.ThenBy(item => GetFloatProperty(item, "PosY"))
+						.ThenBy(item => GetFloatProperty(item, "RotationX"))
 						.ThenBy(item => GetFloatProperty(item, "RotationY"))
+						.ThenBy(item => GetFloatProperty(item, "RotationZ"))
 						.ThenBy(item => GetFloatProperty(item, "Scale"))
 						.ThenBy(item => GetFloatProperty(item, "Player"))
 						.ThenBy(item => GetBoolProperty(item, "IsEnemy"))
@@ -81,7 +83,9 @@ public static class MapJsonFormatter
 						.ThenBy(item => GetFloatProperty(item, "PosX"))
 						.ThenBy(item => GetFloatProperty(item, "PosZ"))
 						.ThenBy(item => GetFloatProperty(item, "PosY"))
+						.ThenBy(item => GetFloatProperty(item, "RotationX"))
 						.ThenBy(item => GetFloatProperty(item, "RotationY"))
+						.ThenBy(item => GetFloatProperty(item, "RotationZ"))
 						.ThenBy(item => GetFloatProperty(item, "Scale"))
 						.ToList();
 

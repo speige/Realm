@@ -426,13 +426,23 @@ public class SaveLoadService
 					return;
 				}
 
+				float rotX = 0f;
 				float rotY = 0f;
-				if (EcsWorld.Has<RotationY>(entity)) rotY = EcsWorld.Get<RotationY>(entity).Value;
+				float rotZ = 0f;
+				if (EcsWorld.Has<Realm.Ecs.Components.Meta.Rotation3D>(entity))
+				{
+					var r3d = EcsWorld.Get<Realm.Ecs.Components.Meta.Rotation3D>(entity).Value;
+					rotX = r3d.X; rotY = r3d.Y; rotZ = r3d.Z;
+				}
+				else if (EcsWorld.Has<RotationY>(entity))
+				{
+					rotY = EcsWorld.Get<RotationY>(entity).Value;
+				}
 
 				float scale = 1f;
 				if (EcsWorld.Has<ModelScale>(entity)) scale = EcsWorld.Get<ModelScale>(entity).Value;
 
-				string fingerprint = $"{decalId.DecalId}_{pos.Value.X:F3}_{pos.Value.Y:F3}_{pos.Value.Z:F3}_{rotY:F2}_{scale:F3}";
+				string fingerprint = $"{decalId.DecalId}_{pos.Value.X:F3}_{pos.Value.Y:F3}_{pos.Value.Z:F3}_{rotX:F2}_{rotY:F2}_{rotZ:F2}_{scale:F3}";
 				if (!savedDecalFingerprints.Add(fingerprint))
 				{
 					orphanedDecalEntities.Add(entity);
@@ -445,7 +455,9 @@ public class SaveLoadService
 					PosX = pos.Value.X,
 					PosY = pos.Value.Y,
 					PosZ = pos.Value.Z,
+					RotationX = rotX,
 					RotationY = rotY,
+					RotationZ = rotZ,
 					Scale = scale
 				});
 			});
@@ -893,7 +905,7 @@ public class SaveLoadService
 					var loadedDecalFingerprints = new HashSet<string>();
 					foreach (var d in saveData.Decals)
 					{
-						string fingerprint = $"{d.DecalId}_{d.PosX:F3}_{d.PosY:F3}_{d.PosZ:F3}_{d.RotationY:F2}_{d.Scale:F3}";
+						string fingerprint = $"{d.DecalId}_{d.PosX:F3}_{d.PosY:F3}_{d.PosZ:F3}_{d.RotationX:F2}_{d.RotationY:F2}_{d.RotationZ:F2}_{d.Scale:F3}";
 						if (!loadedDecalFingerprints.Add(fingerprint))
 						{
 							continue;
@@ -903,7 +915,7 @@ public class SaveLoadService
 						EcsWorld.Add(reqEnt, new DecalSpawnRequest(
 							d.DecalId,
 							new System.Numerics.Vector3(d.PosX, d.PosY, d.PosZ),
-							d.RotationY,
+							new System.Numerics.Vector3(d.RotationX, d.RotationY, d.RotationZ),
 							d.Scale
 						));
 					}

@@ -944,22 +944,31 @@ public partial class GameHost
 						if (!_editorService.HasCachedRandom) GenerateNewRandomPlacementRotationAndScale();
 						float placementRot = (EditorRandomRotation && !_editorService.IsPastingObject) ? _editorService.CachedRandomRotation : EditorPlacementRotation;
 						float scaleVal = (EditorRandomScale && !_editorService.IsPastingObject) ? _editorService.CachedRandomScale : EditorPlacementScale;
-						var decal = SpawnDecalExternalWithParams(ActivePlaceId, hitPos, placementRot, scaleVal);
+						
+						Vector3 hitNormal = (terrainHit != null && terrainHit.ContainsKey("normal")) ? terrainHit["normal"].AsVector3() : (hit.ContainsKey("normal") ? hit["normal"].AsVector3() : GetTerrainNormalAt(hitPos));
+						Basis alignedBasis = CreateAlignedBasis(hitNormal);
+						alignedBasis = alignedBasis.Rotated(hitNormal, Mathf.DegToRad(placementRot));
+						Vector3 spawnRot = alignedBasis.GetRotationQuaternion().GetEuler() * (180f / MathF.PI);
+
+						var decal = SpawnDecalExternalWithParams(ActivePlaceId, hitPos, spawnRot, scaleVal);
 						if (decal != null)
 						{
 							var actions = new List<IEditorAction> {
-								new ObjectSpawnAction("decal", ActivePlaceId, hitPos, placementRot, scaleVal, false, decal)
+								new ObjectSpawnAction("decal", ActivePlaceId, hitPos, spawnRot, scaleVal, false, decal)
 							};
 							if (EditorMirrorMode != MirrorMode.None)
 							{
 								foreach (var t in GetMirroredTransforms(hitPos, placementRot))
 								{
 									Vector3 mPos = t.Position;
-									mPos.Y = GetTerrainHeightAt(mPos);
-									var mDecal = SpawnDecalExternalWithParams(ActivePlaceId, mPos, t.Rotation, scaleVal);
+									Vector3 mNormal = GetTerrainNormalAt(mPos);
+									Basis mBasis = CreateAlignedBasis(mNormal).Rotated(mNormal, Mathf.DegToRad(t.Rotation));
+									Vector3 mRot = mBasis.GetRotationQuaternion().GetEuler() * (180f / MathF.PI);
+
+									var mDecal = SpawnDecalExternalWithParams(ActivePlaceId, mPos, mRot, scaleVal);
 									if (mDecal != null)
 									{
-										actions.Add(new ObjectSpawnAction("decal", ActivePlaceId, mPos, t.Rotation, scaleVal, false, mDecal));
+										actions.Add(new ObjectSpawnAction("decal", ActivePlaceId, mPos, mRot, scaleVal, false, mDecal));
 									}
 								}
 							}

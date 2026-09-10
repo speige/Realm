@@ -448,7 +448,7 @@ public partial class GameHost
 				foreach (var reqEnt in decalRequests)
 				{
 					ref var req = ref EcsWorld.Get<DecalSpawnRequest>(reqEnt);
-					SpawnDecalExternalWithParams(req.DecalId, new Vector3(req.Position.X, req.Position.Y, req.Position.Z), req.RotationY, req.Scale);
+					SpawnDecalExternalWithParams(req.DecalId, new Vector3(req.Position.X, req.Position.Y, req.Position.Z), new Vector3(req.RotationX, req.RotationY, req.RotationZ), req.Scale);
 					EcsWorld.Destroy(reqEnt);
 				}
 			}
