@@ -25,10 +25,9 @@ public partial class MainMenu : Control
 	private Button _websiteButton;
 	private Button _discordButton;
 	private Button _youtubeButton;
-	private Button _githubButton;
 	private Button _donateButton;
+	private Button _announcementsButton;
 	private Button _bugReportButton;
-	private Button _seedNodeButton;
 	private Control _profilePopup;
 	private OptionButton _versionDropdown;
 	private Label _outdatedLabel;
@@ -69,10 +68,9 @@ public partial class MainMenu : Control
 		_websiteButton = GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/WebsiteButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/WebsiteButton");
 		_discordButton = GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/DiscordButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/DiscordButton");
 		_youtubeButton = GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/YoutubeButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/YoutubeButton");
-		_githubButton = GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/GithubButton") ?? GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/ContributeButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/GithubButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/ContributeButton");
 		_donateButton = GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/DonateButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/DonateButton");
+		_announcementsButton = GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/AnnouncementsButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/AnnouncementsButton");
 		_bugReportButton = GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/BugReportButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/BugReportButton");
-		_seedNodeButton = GetNodeOrNull<Button>("SocialPopover/MarginContainer/PopoverVBox/SeedNodeButton") ?? GetNodeOrNull<Button>("SocialPopover/PopoverVBox/SeedNodeButton");
 
 		// Style background & panels
 		_bgPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateEntranceBgTexture());
@@ -123,10 +121,9 @@ public partial class MainMenu : Control
 			if (_websiteButton != null) SetupMenuButton(_websiteButton, "WEBSITE", () => { OS.ShellOpen("https://www.realm-game.com/"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png", null, "res://Assets/UI/globe_icon.png");
 			if (_discordButton != null) SetupMenuButton(_discordButton, "DISCORD", () => { OS.ShellOpen("http://discord.realm-game.com"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png", null, "res://Assets/UI/discord_icon.png");
 			if (_youtubeButton != null) SetupMenuButton(_youtubeButton, "YOUTUBE", () => { OS.ShellOpen("https://www.youtube.com/@Realm-Game"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png", null, "res://Assets/UI/youtube_icon.png");
-			if (_githubButton != null) SetupMenuButton(_githubButton, "GITHUB", () => { OS.ShellOpen("https://github.com/speige/realm"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png", null, "res://Assets/UI/github_icon.png");
-			if (_donateButton != null) SetupMenuButton(_donateButton, "DONATE", () => { OS.ShellOpen("https://github.com/sponsors/speige"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png", null, "res://Assets/UI/donate_icon.png");
+			if (_donateButton != null) SetupMenuButton(_donateButton, "DONATE", () => { OS.ShellOpen("http://realm-game.com/#donate"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png", null, "res://Assets/UI/donate_icon.png");
+			if (_announcementsButton != null) SetupMenuButton(_announcementsButton, "ANNOUNCEMENTS", () => { OS.ShellOpen("https://realm-game.com/#subscribe"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png", null, "res://Assets/UI/email_icon.png");
 			if (_bugReportButton != null) SetupMenuButton(_bugReportButton, "BUG REPORT", () => { OS.ShellOpen("https://github.com/speige/Realm/issues"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png", null, "res://Assets/UI/bug_icon.png");
-			if (_seedNodeButton != null) SetupMenuButton(_seedNodeButton, "HOST A SEED NODE (ADVANCED)", () => { OS.ShellOpen("https://github.com/speige/Realm/blob/main/Seed_Node_Setup.md"); HideSocialPopover(); }, "res://Assets/UI/options_menu_button.png", null, "res://Assets/UI/seed_node_icon.png");
 
 			_socialPopoverOverlay.GuiInput += (@event) =>
 			{
@@ -152,7 +149,6 @@ public partial class MainMenu : Control
 			if (_creatorDiscoveryButton != null) _creatorDiscoveryButton.Visible = false;
 			if (_replaysButton != null) _replaysButton.Visible = false;
 			if (_profileButton != null) _profileButton.Visible = false;
-			if (_seedNodeButton != null) _seedNodeButton.Visible = false;
 		}
 	}
 

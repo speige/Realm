@@ -1,4 +1,4 @@
-[gd_scene load_steps=15 format=3]
+[gd_scene load_steps=16 format=3]
 
 [ext_resource type="Script" path="res://UI/MainMenu.cs" id="1_script"]
 [ext_resource type="Texture2D" path="res://Assets/UI/gear_icon.png" id="2_gear"]
@@ -15,6 +15,7 @@
 [ext_resource type="Texture2D" path="res://Assets/UI/github_icon.png" id="13_github"]
 [ext_resource type="Texture2D" path="res://Assets/UI/bug_icon.png" id="14_bug"]
 [ext_resource type="Texture2D" path="res://Assets/UI/seed_node_icon.png" id="15_seed_node"]
+[ext_resource type="Texture2D" path="res://Assets/UI/email_icon.png" id="16_email"]
 
 [node name="MainMenu" type="Control"]
 layout_mode = 3
@@ -186,7 +187,7 @@ anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
 offset_left = 120.0
-offset_top = -730.0
+offset_top = -782.0
 offset_right = 480.0
 offset_bottom = -130.0
 grow_vertical = 0
@@ -239,13 +240,6 @@ size_flags_horizontal = 4
 focus_mode = 0
 icon = ExtResource("12_youtube")
 
-[node name="GithubButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
-custom_minimumSize = Vector2(270, 44)
-layout_mode = 2
-size_flags_horizontal = 4
-focus_mode = 0
-icon = ExtResource("13_github")
-
 [node name="DonateButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
 custom_minimumSize = Vector2(270, 44)
 layout_mode = 2
@@ -253,19 +247,19 @@ size_flags_horizontal = 4
 focus_mode = 0
 icon = ExtResource("6_donate")
 
+[node name="AnnouncementsButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
+custom_minimumSize = Vector2(270, 44)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+icon = ExtResource("16_email")
+
 [node name="BugReportButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
 custom_minimumSize = Vector2(270, 44)
 layout_mode = 2
 size_flags_horizontal = 4
 focus_mode = 0
 icon = ExtResource("14_bug")
-
-[node name="SeedNodeButton" type="Button" parent="SocialPopover/MarginContainer/PopoverVBox"]
-custom_minimumSize = Vector2(270, 44)
-layout_mode = 2
-size_flags_horizontal = 4
-focus_mode = 0
-icon = ExtResource("15_seed_node")
 
 [node name="SettingsButton" type="Button" parent="."]
 custom_minimumSize = Vector2(206, 68)
