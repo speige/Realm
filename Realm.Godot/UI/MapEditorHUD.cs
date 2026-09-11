@@ -228,7 +228,6 @@ public partial class MapEditorHUD : Control
 	private Button _btnEditAttachments;
 	private Button _btnAssetsManager;
 	private Button _btnObjectManager;
-	private Button _btnImportAnimation;
 	private bool _isUpdatingInspectorUI;
 
 	private CheckBox _chkApplyGroundTexture;
@@ -591,8 +590,7 @@ public partial class MapEditorHUD : Control
 		{
 			SetupIconButton(_btnSettings, "res://Assets/UI/gear_icon.png", () =>
 			{
-				if (_editorSettingsDialog != null) _editorSettingsDialog.OpenDialog();
-				else UIManager.Instance?.OpenSettingsOverlay();
+				UIManager.Instance?.OpenSettingsOverlay();
 			}, "Editor Settings");
 			StyleMapEditorTopButton(_btnSettings);
 		}
@@ -675,11 +673,6 @@ public partial class MapEditorHUD : Control
 		_btnObjectManager.Name = "BtnObjectManager";
 		SetupOptionButton(_btnObjectManager, "\uf0cb OBJECT MANAGER", () => OpenObjectManagerDialog(), 13, "Open Object Manager dialog to list and locate all placed objects");
 		_contentFile.AddChild(_btnObjectManager);
-
-		_btnImportAnimation = new Button();
-		_btnImportAnimation.Name = "BtnImportAnimation";
-		SetupOptionButton(_btnImportAnimation, "\uf1c8 MIXAMO / GLB", () => ImportMixamoOrAnimationDialog(), 13, "Import Mixamo character/animation GLB or .ranim binary animation files");
-		_contentFile.AddChild(_btnImportAnimation);
 
 		_btnMapSettings = new Button();
 		_btnMapSettings.Name = "BtnMapSettings";
@@ -1529,7 +1522,6 @@ public partial class MapEditorHUD : Control
 		StyleRowButton(_btnResetMap);
 		StyleRowButton(_btnGenerateMap);
 		StyleRowButton(_btnImportMinimap);
-		StyleRowButton(_btnImportAnimation);
 		StyleRowButton(_btnMapSettings);
 		StyleRowButton(_btnEditorSettings);
 
@@ -5506,7 +5498,6 @@ public partial class MapEditorHUD : Control
 
 			SafeReparent(_btnGenerateMap, fileGrid2);
 			SafeReparent(_btnImportMinimap, fileGrid2);
-			SafeReparent(_btnImportAnimation, fileGrid2);
 			SafeReparent(_btnMapSettings, fileGrid2);
 			SafeReparent(_btnResetMap, fileGrid2);
 
