@@ -442,6 +442,10 @@ public partial class MapSettingsDialog : FloatingDialogBase
 				{
 					meta.MapProperties.MapName = cleanMapName;
 					meta.MapProperties.Name = cleanMapName;
+					meta.MapProperties.CameraBoundsLeft = GameHost.Instance?.EditorCameraBoundsLeft;
+					meta.MapProperties.CameraBoundsRight = GameHost.Instance?.EditorCameraBoundsRight;
+					meta.MapProperties.CameraBoundsTop = GameHost.Instance?.EditorCameraBoundsTop;
+					meta.MapProperties.CameraBoundsBottom = GameHost.Instance?.EditorCameraBoundsBottom;
 				});
 			}
 			catch (Exception ex)

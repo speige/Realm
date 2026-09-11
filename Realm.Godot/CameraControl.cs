@@ -534,10 +534,14 @@ public partial class CameraControl : Camera3D
 			Vector3 newPos = Position + velocity;
 			if (GameHost.Instance == null || !GameHost.Instance.IsMapEditorMode)
 			{
-				float rawMinX = LimitLeft ?? -MapLimit;
-				float rawMaxX = LimitRight ?? MapLimit;
-				float rawMinZ = LimitTop ?? -MapLimit;
-				float rawMaxZ = LimitBottom ?? (MapLimit + 30f);
+				float defaultLimit = (GameHost.Instance?.GroundTerrain != null)
+					? (GameHost.Instance.GroundTerrain.Width * GameHost.Instance.GroundTerrain.QuadSize * 0.5f) - 10.0f
+					: MapLimit;
+
+				float rawMinX = LimitLeft ?? -defaultLimit;
+				float rawMaxX = LimitRight ?? defaultLimit;
+				float rawMinZ = LimitTop ?? -defaultLimit;
+				float rawMaxZ = LimitBottom ?? (defaultLimit + 30f);
 
 				float minX = Mathf.Min(rawMinX, rawMaxX);
 				float maxX = Mathf.Max(rawMinX, rawMaxX);
@@ -721,10 +725,14 @@ public partial class CameraControl : Camera3D
 			Vector3 newPos = Position + velocity;
 			if (!isEditor)
 			{
-				float rawMinX = state.LimitLeft ?? -MapLimit;
-				float rawMaxX = state.LimitRight ?? MapLimit;
-				float rawMinZ = state.LimitTop ?? -MapLimit;
-				float rawMaxZ = state.LimitBottom ?? (MapLimit + 30f);
+				float defaultLimit = (GameHost.Instance?.GroundTerrain != null)
+					? (GameHost.Instance.GroundTerrain.Width * GameHost.Instance.GroundTerrain.QuadSize * 0.5f) - 10.0f
+					: MapLimit;
+
+				float rawMinX = state.LimitLeft ?? -defaultLimit;
+				float rawMaxX = state.LimitRight ?? defaultLimit;
+				float rawMinZ = state.LimitTop ?? -defaultLimit;
+				float rawMaxZ = state.LimitBottom ?? (defaultLimit + 30f);
 
 				float minX = Mathf.Min(rawMinX, rawMaxX);
 				float maxX = Mathf.Max(rawMinX, rawMaxX);

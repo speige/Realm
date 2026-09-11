@@ -73,7 +73,7 @@ void fragment() {
 	if (shroud_enabled && hide_in_shroud > 0.5) {
 		vec2 shroud_uv = (v_world_pos.xz - shroud_world_min) / shroud_world_size;
 		float shroud_factor = texture(shroud_texture, clamp(shroud_uv, 0.0, 1.0)).r;
-		if (shroud_factor > 0.2) {
+		if (shroud_factor > 0.8) {
 			discard;
 		}
 	}

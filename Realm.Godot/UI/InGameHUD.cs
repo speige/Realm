@@ -11,6 +11,7 @@ using Realm.Ecs.Components.Resources;
 using Realm.Ecs.Components.Terrain;
 using Realm.Ecs.Services;
 using Realm.Godot.ReplaySystem;
+using Realm.Godot.Services;
 using System;
 using System.Collections.Generic;
 using Vector3 = Godot.Vector3;
@@ -489,7 +490,18 @@ public partial class InGameHUD : Control
 		string currentWeather = "clear";
 		if (GameHost.Instance != null)
 		{
-			GameHost.Instance.LoadMapProperties("res://map.json");
+			string mapDir = !string.IsNullOrEmpty(GameHost.Instance.CurrentMapDirectory)
+				? GameHost.Instance.CurrentMapDirectory
+				: MapWorkspaceService.GetActiveWorkspacePath();
+			string metaPath = System.IO.Path.Combine(mapDir, "metadata.json").Replace("\\", "/");
+			if (Godot.FileAccess.FileExists(metaPath))
+			{
+				GameHost.Instance.LoadMapProperties(metaPath);
+			}
+			else
+			{
+				GameHost.Instance.LoadMapProperties("res://map.json");
+			}
 			currentWeather = GameHost.Instance?.EnvironmentService?.GetCurrentWeather() ?? "clear";
 		}
 
