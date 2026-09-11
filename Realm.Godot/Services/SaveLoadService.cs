@@ -833,6 +833,15 @@ public class SaveLoadService
 			var newEditorState = new EditorState(isBlock, step, left, right, top, bottom, skybox, false, MirrorMode.None, currentWaterMode);
 			EcsWorld.SetOrAdd(worldEntity, newEditorState);
 
+			if (EcsWorld.Has<CameraState>(worldEntity))
+			{
+				ref var camState = ref EcsWorld.Get<CameraState>(worldEntity);
+				camState.LimitLeft = left;
+				camState.LimitRight = right;
+				camState.LimitTop = top;
+				camState.LimitBottom = bottom;
+			}
+
 			if (!terrainOnly)
 			{
 				if (saveData.Units != null)

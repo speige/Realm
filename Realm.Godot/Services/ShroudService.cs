@@ -231,6 +231,13 @@ void fragment() {
 	{
 		if (GameHost.Instance == null) return;
 
+		float worldWidth = GameHost.Instance.GroundTerrain != null
+			? GameHost.Instance.GroundTerrain.Width * GameHost.Instance.GroundTerrain.QuadSize
+			: 250f;
+		float worldDepth = GameHost.Instance.GroundTerrain != null
+			? GameHost.Instance.GroundTerrain.Depth * GameHost.Instance.GroundTerrain.QuadSize
+			: 250f;
+
 		if (isPlayingReplay || isSpectator)
 		{
 			int targetOwnerId = isPlayingReplay
@@ -278,12 +285,12 @@ void fragment() {
 					int ownerId = GameHost.Instance.GetOwnerPeerId(unit.Entity);
 					if (ownerId != targetOwnerId) continue;
 					Vector3 pos = unit.GlobalPosition;
-					int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
-					int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
+					int gx = (int)Mathf.Clamp((pos.X / worldWidth + 0.5f) * 32, 0, 31);
+					int gz = (int)Mathf.Clamp((pos.Z / worldDepth + 0.5f) * 32, 0, 31);
 					float scanRadius = (EcsWorld.IsAlive(unit.Entity) && EcsWorld.Has<Realm.Ecs.Components.Combat.ScanRadius>(unit.Entity))
 						? EcsWorld.Get<Realm.Ecs.Components.Combat.ScanRadius>(unit.Entity).Value
 						: 15.0f;
-					int rGrid = (int)Math.Max(1, Math.Ceiling(scanRadius / (250f / 32f)));
+					int rGrid = (int)Math.Max(1, Math.Ceiling(scanRadius / (worldWidth / 32f)));
 					for (int dx = -rGrid; dx <= rGrid; dx++)
 					{
 						for (int dz = -rGrid; dz <= rGrid; dz++)
@@ -311,8 +318,8 @@ void fragment() {
 					else
 					{
 						Vector3 pos = unit.GlobalPosition;
-						int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
-						int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
+						int gx = (int)Mathf.Clamp((pos.X / worldWidth + 0.5f) * 32, 0, 31);
+						int gz = (int)Mathf.Clamp((pos.Z / worldDepth + 0.5f) * 32, 0, 31);
 						shouldBeVisible = (shroudGrid[gx, gz] == ShroudState.Visible);
 					}
 					if (unit.Visible != shouldBeVisible)
@@ -325,8 +332,8 @@ void fragment() {
 				{
 					if (prop == null || !GodotObject.IsInstanceValid(prop)) continue;
 					Vector3 pos = prop.GlobalPosition;
-					int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
-					int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
+					int gx = (int)Mathf.Clamp((pos.X / worldWidth + 0.5f) * 32, 0, 31);
+					int gz = (int)Mathf.Clamp((pos.Z / worldDepth + 0.5f) * 32, 0, 31);
 					bool shouldBeVisible = (shroudGrid[gx, gz] == ShroudState.Visible);
 					if (prop.Visible != shouldBeVisible)
 					{
@@ -338,8 +345,8 @@ void fragment() {
 				{
 					if (decal == null || !GodotObject.IsInstanceValid(decal)) continue;
 					Vector3 pos = decal.GlobalPosition;
-					int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
-					int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
+					int gx = (int)Mathf.Clamp((pos.X / worldWidth + 0.5f) * 32, 0, 31);
+					int gz = (int)Mathf.Clamp((pos.Z / worldDepth + 0.5f) * 32, 0, 31);
 					bool shouldBeVisible = (shroudGrid[gx, gz] != ShroudState.ExplorationShroud);
 					if (decal.Visible != shouldBeVisible)
 					{
@@ -395,14 +402,14 @@ void fragment() {
 				if (unit.IsEnemy) continue;
 
 				Vector3 pos = unit.GlobalPosition;
-				int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
-				int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
+				int gx = (int)Mathf.Clamp((pos.X / worldWidth + 0.5f) * 32, 0, 31);
+				int gz = (int)Mathf.Clamp((pos.Z / worldDepth + 0.5f) * 32, 0, 31);
 
 				float scanRadius = (EcsWorld.IsAlive(unit.Entity) && EcsWorld.Has<Realm.Ecs.Components.Combat.ScanRadius>(unit.Entity))
 					? EcsWorld.Get<Realm.Ecs.Components.Combat.ScanRadius>(unit.Entity).Value
 					: 15.0f;
 
-				int rGrid = (int)Math.Max(1, Math.Ceiling(scanRadius / (250f / 32f)));
+				int rGrid = (int)Math.Max(1, Math.Ceiling(scanRadius / (worldWidth / 32f)));
 				for (int dx = -rGrid; dx <= rGrid; dx++)
 				{
 					for (int dz = -rGrid; dz <= rGrid; dz++)
@@ -429,8 +436,8 @@ void fragment() {
 				else
 				{
 					Vector3 pos = unit.GlobalPosition;
-					int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
-					int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
+					int gx = (int)Mathf.Clamp((pos.X / worldWidth + 0.5f) * 32, 0, 31);
+					int gz = (int)Mathf.Clamp((pos.Z / worldDepth + 0.5f) * 32, 0, 31);
 					shouldBeVisible = (shroudGrid[gx, gz] == ShroudState.Visible);
 				}
 				if (unit.Visible != shouldBeVisible)
@@ -443,8 +450,8 @@ void fragment() {
 			{
 				if (prop == null || !GodotObject.IsInstanceValid(prop)) continue;
 				Vector3 pos = prop.GlobalPosition;
-				int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
-				int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
+				int gx = (int)Mathf.Clamp((pos.X / worldWidth + 0.5f) * 32, 0, 31);
+				int gz = (int)Mathf.Clamp((pos.Z / worldDepth + 0.5f) * 32, 0, 31);
 				bool shouldBeVisible = (shroudGrid[gx, gz] == ShroudState.Visible);
 				if (prop.Visible != shouldBeVisible)
 				{
@@ -456,8 +463,8 @@ void fragment() {
 			{
 				if (decal == null || !GodotObject.IsInstanceValid(decal)) continue;
 				Vector3 pos = decal.GlobalPosition;
-				int gx = (int)Mathf.Clamp((pos.X / 250f + 0.5f) * 32, 0, 31);
-				int gz = (int)Mathf.Clamp((pos.Z / 250f + 0.5f) * 32, 0, 31);
+				int gx = (int)Mathf.Clamp((pos.X / worldWidth + 0.5f) * 32, 0, 31);
+				int gz = (int)Mathf.Clamp((pos.Z / worldDepth + 0.5f) * 32, 0, 31);
 				bool shouldBeVisible = (shroudGrid[gx, gz] != ShroudState.ExplorationShroud);
 				if (decal.Visible != shouldBeVisible)
 				{
