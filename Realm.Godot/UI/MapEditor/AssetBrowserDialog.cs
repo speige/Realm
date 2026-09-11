@@ -370,7 +370,7 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 			.Select(e => e.StartsWith(".") ? e : "." + e)
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-		if (_allowedExtensions.Contains(".glb"))
+		if (_allowedExtensions.Contains(".glb") || _allowedExtensions.Contains(".rmod"))
 		{
 			requireRealmMetadata = true;
 		}
@@ -715,12 +715,26 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 			_btnEditAssetType.Disabled = (validTypes.Length == 0);
 
 			string ext = _selectedAsset.Extension?.ToLowerInvariant() ?? "";
-			bool isAudio = ext is ".ogg" or ".wav" or ".mp3";
+			bool isAudio = ext is ".raud" or ".ogg" or ".wav" or ".mp3";
 			if (isAudio && File.Exists(_selectedAsset.FilePath))
 			{
 				try
 				{
-					if (ext == ".ogg")
+					if (ext == ".raud")
+					{
+						byte[] raudBytes = File.ReadAllBytes(_selectedAsset.FilePath);
+						byte[]? oggBytes = Realm.Shared.Audio.RaudFile.GetTrack(raudBytes, 0);
+						if (oggBytes != null && oggBytes.Length > 0)
+						{
+							var oggStream = AudioStreamOggVorbis.LoadFromBuffer(oggBytes);
+							if (oggStream != null)
+							{
+								oggStream.Loop = false;
+								_audioPlayer.Stream = oggStream;
+							}
+						}
+					}
+					else if (ext == ".ogg")
 					{
 						var oggStream = AudioStreamOggVorbis.LoadFromFile(_selectedAsset.FilePath);
 						if (oggStream != null)

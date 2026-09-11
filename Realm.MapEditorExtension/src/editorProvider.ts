@@ -594,7 +594,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 <button type="button" id="toggle-lock-btn" class="btn secondary-btn small-btn" title="Lock Editor (Read-Only Mode)">🔓 Lock</button>
                 <button type="button" id="toggle-buttons-btn" class="btn secondary-btn small-btn" title="Toggle Add/Delete Controls">➕ Edit Ops</button>
                 <button type="button" id="toggle-debug-btn" class="btn secondary-btn small-btn" title="Toggle Debug JSON View">🐞 Debug</button>
-                <span style="font-size: 11px; color: var(--text-muted); opacity: 0.8; margin-left: 4px;" title="Press F12 inside editor to open Chromium DevTools console for debugging">💡 F12 DevTools</span>
+                <span style="font-size: 11px; color: var(--text-muted); opacity: 0.8; margin-left: 4px;" title="Press Ctrl+Shift+I inside editor to open Chromium DevTools console for debugging">💡 Ctrl+Shift+I DevTools</span>
             </div>
         </div>
         <div class="editor-body">

@@ -626,7 +626,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		}
 
 		string ext = Path.GetExtension(fileName).ToLowerInvariant();
-		if (ext == ".glb")
+		if (ext is ".glb" or ".rmod")
 		{
 			return subCategoryOrFolder switch
 			{
@@ -657,7 +657,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		{
 			return "Animation";
 		}
-		else if (ext == ".ogg")
+		else if (ext is ".ogg" or ".raud")
 		{
 			return subCategoryOrFolder == "music" ? "Music" : "SoundEffect";
 		}
@@ -668,7 +668,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	private string ResolveAssetFilePath(string wsPath, string fileName, string subCategoryOrFolder)
 	{
 		string ext = Path.GetExtension(fileName).ToLowerInvariant();
-		if (ext == ".glb")
+		if (ext is ".glb" or ".rmod")
 		{
 			string path = Path.Combine(wsPath, "Assets", "models", subCategoryOrFolder, fileName);
 			if (File.Exists(path)) return path;
@@ -698,7 +698,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		{
 			return Path.Combine(wsPath, "Assets", "animations", fileName);
 		}
-		else if (ext == ".ogg")
+		else if (ext is ".ogg" or ".raud")
 		{
 			string sub = subCategoryOrFolder == "music" ? "music" : "sfx";
 			string path = Path.Combine(wsPath, "Assets", "audio", sub, fileName);
@@ -1563,7 +1563,16 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		{
 			try
 			{
-				if (audioPath.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase))
+				if (audioPath.EndsWith(".raud", StringComparison.OrdinalIgnoreCase))
+				{
+					byte[] raudBytes = File.ReadAllBytes(audioPath);
+					byte[]? oggBytes = Realm.Shared.Audio.RaudFile.GetTrack(raudBytes, 0);
+					if (oggBytes != null && oggBytes.Length > 0)
+					{
+						_audioPlayer.Stream = AudioStreamOggVorbis.LoadFromBuffer(oggBytes);
+					}
+				}
+				else if (audioPath.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase))
 				{
 					_audioPlayer.Stream = AudioStreamOggVorbis.LoadFromFile(audioPath);
 				}

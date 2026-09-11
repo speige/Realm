@@ -633,7 +633,16 @@ public partial class AbilityVfxDialog : FloatingDialogBase
 			{
 				if (!string.IsNullOrWhiteSpace(candidate) && System.IO.File.Exists(candidate))
 				{
-					if (candidate.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase))
+					if (candidate.EndsWith(".raud", StringComparison.OrdinalIgnoreCase))
+					{
+						byte[] raudBytes = System.IO.File.ReadAllBytes(candidate);
+						byte[]? oggBytes = Realm.Shared.Audio.RaudFile.GetTrack(raudBytes, 0);
+						if (oggBytes != null && oggBytes.Length > 0)
+						{
+							stream = AudioStreamOggVorbis.LoadFromBuffer(oggBytes);
+						}
+					}
+					else if (candidate.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase))
 					{
 						stream = AudioStreamOggVorbis.LoadFromFile(candidate);
 					}

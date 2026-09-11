@@ -7,6 +7,8 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Blake3;
+using Realm.Shared.Audio;
+using Realm.Shared.ModelOptimization;
 using Realm.Shared.Textures;
 
 namespace Realm.Shared.Metadata;
@@ -42,7 +44,7 @@ public static class RealmMetadataHelper
 	{
 		string ext = Path.GetExtension(extensionOrPath).ToLowerInvariant();
 		if (string.IsNullOrEmpty(ext) && extensionOrPath.StartsWith('.')) ext = extensionOrPath.ToLowerInvariant();
-		return ext is ".glb" or ".rtex" or ".ranim" or ".ogg";
+		return ext is ".glb" or ".rtex" or ".ranim" or ".ogg" or ".rmod" or ".raud";
 	}
 
 	public static string? ExtractMetadata(string filePath)
@@ -52,9 +54,11 @@ public static class RealmMetadataHelper
 		return ext switch
 		{
 			".glb" => ExtractMetadataFromGlb(filePath),
+			".rmod" => ExtractMetadataFromRmod(filePath),
 			".rtex" => ExtractMetadataFromRtex(filePath),
 			".ranim" => ExtractMetadataFromRanim(filePath),
 			".ogg" => ExtractMetadataFromOgg(filePath),
+			".raud" => ExtractMetadataFromRaud(filePath),
 			_ => null
 		};
 	}
@@ -114,8 +118,10 @@ public static class RealmMetadataHelper
 	{
 		[".rtex"] = new[] { "Decal", "Icon", "Noise", "Ribbon", "Skybox", "Spritesheet", "Terrain", "vfx_radial", "vfx_vertical" },
 		[".glb"] = new[] { "Character", "Building", "Prop", "Item" },
+		[".rmod"] = new[] { "Character", "Building", "Prop", "Item" },
 		[".ranim"] = new[] { "Animation" },
-		[".ogg"] = new[] { "Music", "SoundEffect" }
+		[".ogg"] = new[] { "Music", "SoundEffect" },
+		[".raud"] = new[] { "Music", "SoundEffect" }
 	};
 
 	public static string[] GetValidAssetTypesForExtension(string extensionOrPath)
@@ -153,7 +159,7 @@ public static class RealmMetadataHelper
 			if (norm.Contains("sprite") || norm.Contains("vfx") || norm.Contains("spell")) { canonicalType = "Spritesheet"; return true; }
 			return false;
 		}
-		else if (ext is ".glb")
+		else if (ext is ".glb" or ".rmod")
 		{
 			if (norm.Contains("character") || norm.Contains("unit")) { canonicalType = "Character"; return true; }
 			if (norm.Contains("building") || norm.Contains("structure")) { canonicalType = "Building"; return true; }
@@ -166,7 +172,7 @@ public static class RealmMetadataHelper
 			canonicalType = "Animation";
 			return true;
 		}
-		else if (ext is ".ogg")
+		else if (ext is ".ogg" or ".raud")
 		{
 			if (norm.Contains("music")) { canonicalType = "Music"; return true; }
 			if (norm.Contains("sound") || norm.Contains("sfx")) { canonicalType = "SoundEffect"; return true; }
@@ -233,6 +239,177 @@ public static class RealmMetadataHelper
 		return AddMetadata(filePath, metaObj.ToJsonString());
 	}
 
+	public static string? ExtractAuthor(string filePath)
+	{
+		string? metaJson = ExtractMetadata(filePath);
+		if (string.IsNullOrEmpty(metaJson)) return null;
+		try
+		{
+			var node = JsonNode.Parse(metaJson);
+			return node?["author"]?.ToString() ?? node?["Author"]?.ToString();
+		}
+		catch { }
+		return null;
+	}
+
+	public static bool SetAuthor(string filePath, string author)
+	{
+		if (!File.Exists(filePath)) return false;
+		string? existingMeta = ExtractMetadata(filePath);
+		JsonObject metaObj;
+		if (!string.IsNullOrEmpty(existingMeta))
+		{
+			try
+			{
+				metaObj = JsonNode.Parse(existingMeta)?.AsObject() ?? new JsonObject();
+			}
+			catch
+			{
+				metaObj = new JsonObject();
+			}
+		}
+		else
+		{
+			metaObj = new JsonObject();
+			string ext = Path.GetExtension(filePath).ToLowerInvariant();
+			metaObj["created_utc"] = DateTime.UtcNow.ToString("O");
+			metaObj["format"] = ext.TrimStart('.');
+		}
+
+		metaObj["author"] = author;
+		metaObj["blake3"] = ComputeBlake3(filePath);
+		return AddMetadata(filePath, metaObj.ToJsonString());
+	}
+
+	public static string? ExtractPreferredFileName(string filePath)
+	{
+		string? metaJson = ExtractMetadata(filePath);
+		if (string.IsNullOrEmpty(metaJson)) return null;
+		try
+		{
+			var node = JsonNode.Parse(metaJson);
+			return node?["preferred_file_name"]?.ToString() ?? node?["preferredFileName"]?.ToString();
+		}
+		catch { }
+		return null;
+	}
+
+	public static bool SetPreferredFileName(string filePath, string preferredFileName)
+	{
+		if (!File.Exists(filePath)) return false;
+		string? existingMeta = ExtractMetadata(filePath);
+		JsonObject metaObj;
+		if (!string.IsNullOrEmpty(existingMeta))
+		{
+			try
+			{
+				metaObj = JsonNode.Parse(existingMeta)?.AsObject() ?? new JsonObject();
+			}
+			catch
+			{
+				metaObj = new JsonObject();
+			}
+		}
+		else
+		{
+			metaObj = new JsonObject();
+			string ext = Path.GetExtension(filePath).ToLowerInvariant();
+			metaObj["created_utc"] = DateTime.UtcNow.ToString("O");
+			metaObj["format"] = ext.TrimStart('.');
+		}
+
+		metaObj["preferred_file_name"] = preferredFileName;
+		metaObj["blake3"] = ComputeBlake3(filePath);
+		return AddMetadata(filePath, metaObj.ToJsonString());
+	}
+
+	public static bool? ExtractSupportsTeamColor(string filePath)
+	{
+		string? metaJson = ExtractMetadata(filePath);
+		if (string.IsNullOrEmpty(metaJson)) return null;
+		try
+		{
+			var node = JsonNode.Parse(metaJson);
+			if (node is JsonObject obj && obj.TryGetPropertyValue("supports_team_color", out var val) && val != null)
+			{
+				return val.GetValue<bool>();
+			}
+		}
+		catch { }
+		return null;
+	}
+
+	public static bool SetSupportsTeamColor(string filePath, bool supportsTeamColor)
+	{
+		if (!File.Exists(filePath)) return false;
+		string? existingMeta = ExtractMetadata(filePath);
+		JsonObject metaObj;
+		if (!string.IsNullOrEmpty(existingMeta))
+		{
+			try
+			{
+				metaObj = JsonNode.Parse(existingMeta)?.AsObject() ?? new JsonObject();
+			}
+			catch
+			{
+				metaObj = new JsonObject();
+			}
+		}
+		else
+		{
+			metaObj = new JsonObject();
+			string ext = Path.GetExtension(filePath).ToLowerInvariant();
+			metaObj["created_utc"] = DateTime.UtcNow.ToString("O");
+			metaObj["format"] = ext.TrimStart('.');
+		}
+
+		metaObj["supports_team_color"] = supportsTeamColor;
+		metaObj["blake3"] = ComputeBlake3(filePath);
+		return AddMetadata(filePath, metaObj.ToJsonString());
+	}
+
+	public static string? ExtractLicense(string filePath)
+	{
+		string? metaJson = ExtractMetadata(filePath);
+		if (string.IsNullOrEmpty(metaJson)) return null;
+		try
+		{
+			var node = JsonNode.Parse(metaJson);
+			return node?["license"]?.ToString() ?? node?["License"]?.ToString();
+		}
+		catch { }
+		return null;
+	}
+
+	public static bool SetLicense(string filePath, string license)
+	{
+		if (!File.Exists(filePath)) return false;
+		string? existingMeta = ExtractMetadata(filePath);
+		JsonObject metaObj;
+		if (!string.IsNullOrEmpty(existingMeta))
+		{
+			try
+			{
+				metaObj = JsonNode.Parse(existingMeta)?.AsObject() ?? new JsonObject();
+			}
+			catch
+			{
+				metaObj = new JsonObject();
+			}
+		}
+		else
+		{
+			metaObj = new JsonObject();
+			string ext = Path.GetExtension(filePath).ToLowerInvariant();
+			metaObj["created_utc"] = DateTime.UtcNow.ToString("O");
+			metaObj["format"] = ext.TrimStart('.');
+		}
+
+		metaObj["license"] = license;
+		metaObj["blake3"] = ComputeBlake3(filePath);
+		return AddMetadata(filePath, metaObj.ToJsonString());
+	}
+
 	public static List<string> ExtractTags(string filePath)
 	{
 		var result = new List<string>();
@@ -261,7 +438,7 @@ public static class RealmMetadataHelper
 	{
 		if (!File.Exists(filePath)) return false;
 		string ext = Path.GetExtension(filePath).ToLowerInvariant();
-		if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg")) return false;
+		if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg" or ".rmod" or ".raud")) return false;
 
 		string? existingMeta = ExtractMetadata(filePath);
 		JsonObject metaObj;
@@ -304,6 +481,9 @@ public static class RealmMetadataHelper
 			case ".glb":
 				AddMetadataToGlb(filePath, realmMetadataJson);
 				return true;
+			case ".rmod":
+				AddMetadataToRmod(filePath, realmMetadataJson);
+				return true;
 			case ".rtex":
 				AddMetadataToRtex(filePath, realmMetadataJson);
 				return true;
@@ -313,8 +493,11 @@ public static class RealmMetadataHelper
 			case ".ogg":
 				AddMetadataToOgg(filePath, realmMetadataJson);
 				return true;
+			case ".raud":
+				AddMetadataToRaud(filePath, realmMetadataJson);
+				return true;
 			default:
-				throw new NotSupportedException($"Unsupported file format '{ext}' for metadata. Supported formats: .glb, .rtex, .ogg, .ranim");
+				throw new NotSupportedException($"Unsupported file format '{ext}' for metadata. Supported formats: .glb, .rmod, .rtex, .ogg, .raud, .ranim");
 		}
 	}
 
@@ -327,6 +510,9 @@ public static class RealmMetadataHelper
 			case ".glb":
 				RemoveMetadataFromGlb(filePath);
 				return true;
+			case ".rmod":
+				RemoveMetadataFromRmod(filePath);
+				return true;
 			case ".rtex":
 				RemoveMetadataFromRtex(filePath);
 				return true;
@@ -336,8 +522,11 @@ public static class RealmMetadataHelper
 			case ".ogg":
 				RemoveMetadataFromOgg(filePath);
 				return true;
+			case ".raud":
+				RemoveMetadataFromRaud(filePath);
+				return true;
 			default:
-				throw new NotSupportedException($"Unsupported file format '{ext}' for metadata. Supported formats: .glb, .rtex, .ogg, .ranim");
+				throw new NotSupportedException($"Unsupported file format '{ext}' for metadata. Supported formats: .glb, .rmod, .rtex, .ogg, .raud, .ranim");
 		}
 	}
 
@@ -530,6 +719,48 @@ public static class RealmMetadataHelper
 	}
 
 
+
+	public static string? ExtractMetadataFromRmod(string filePath)
+	{
+		if (!File.Exists(filePath)) return null;
+		byte[] bytes = File.ReadAllBytes(filePath);
+		return RmodFile.ExtractMetadata(bytes);
+	}
+
+	public static void AddMetadataToRmod(string filePath, string realmMetadataJson)
+	{
+		byte[] bytes = File.ReadAllBytes(filePath);
+		byte[] updated = RmodFile.SetMetadata(bytes, realmMetadataJson);
+		File.WriteAllBytes(filePath, updated);
+	}
+
+	public static void RemoveMetadataFromRmod(string filePath)
+	{
+		byte[] bytes = File.ReadAllBytes(filePath);
+		byte[] updated = RmodFile.SetMetadata(bytes, null);
+		File.WriteAllBytes(filePath, updated);
+	}
+
+	public static string? ExtractMetadataFromRaud(string filePath)
+	{
+		if (!File.Exists(filePath)) return null;
+		byte[] bytes = File.ReadAllBytes(filePath);
+		return RaudFile.ExtractMetadata(bytes);
+	}
+
+	public static void AddMetadataToRaud(string filePath, string realmMetadataJson)
+	{
+		byte[] bytes = File.ReadAllBytes(filePath);
+		byte[] updated = RaudFile.SetMetadata(bytes, realmMetadataJson);
+		File.WriteAllBytes(filePath, updated);
+	}
+
+	public static void RemoveMetadataFromRaud(string filePath)
+	{
+		byte[] bytes = File.ReadAllBytes(filePath);
+		byte[] updated = RaudFile.SetMetadata(bytes, null);
+		File.WriteAllBytes(filePath, updated);
+	}
 
 	public static string? ExtractMetadataFromRtex(string filePath)
 	{
@@ -1341,6 +1572,11 @@ public static class RealmMetadataHelper
 		return BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(0, 4)) == 0x46546C67;
 	}
 
+	public static bool IsRmodBytes(ReadOnlySpan<byte> bytes)
+	{
+		return RmodFile.IsRmodBytes(bytes);
+	}
+
 	public static bool IsRtexBytes(ReadOnlySpan<byte> bytes)
 	{
 		return Realm.Shared.Textures.RtexFile.IsRtexBytes(bytes);
@@ -1350,6 +1586,11 @@ public static class RealmMetadataHelper
 	{
 		if (bytes.Length < 4) return false;
 		return bytes[0] == 0x4F && bytes[1] == 0x67 && bytes[2] == 0x67 && bytes[3] == 0x53;
+	}
+
+	public static bool IsRaudBytes(ReadOnlySpan<byte> bytes)
+	{
+		return RaudFile.IsRaudBytes(bytes);
 	}
 
 	public static bool IsRanimBytes(ReadOnlySpan<byte> bytes)
@@ -1399,6 +1640,14 @@ public static class RealmMetadataHelper
 
 		try
 		{
+			if (extension == ".rmod" || ((string.IsNullOrEmpty(extension) || extension == ".bin") && IsRmodBytes(bytes)))
+			{
+				return RmodFile.SetMetadata(bytes, null);
+			}
+			if (extension == ".raud" || ((string.IsNullOrEmpty(extension) || extension == ".bin") && IsRaudBytes(bytes)))
+			{
+				return RaudFile.SetMetadata(bytes, null);
+			}
 			if (extension == ".glb" || ((string.IsNullOrEmpty(extension) || extension == ".bin") && IsGlbBytes(bytes)))
 			{
 				return RemoveMetadataFromGlbBytes(bytes);
@@ -1461,7 +1710,7 @@ public static class RealmMetadataHelper
 	{
 		if (!File.Exists(filePath)) return false;
 		string ext = Path.GetExtension(filePath).ToLowerInvariant();
-		if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg")) return false;
+		if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg" or ".rmod" or ".raud")) return false;
 
 		try
 		{
@@ -1500,16 +1749,18 @@ public static class RealmMetadataHelper
 		if (bytes == null || bytes.Length == 0) return bytes ?? Array.Empty<byte>();
 		string ext = Path.GetExtension(extensionOrPath).ToLowerInvariant();
 		if (string.IsNullOrEmpty(ext) && extensionOrPath.StartsWith('.')) ext = extensionOrPath.ToLowerInvariant();
-		if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg")) return bytes;
+		if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg" or ".rmod" or ".raud")) return bytes;
 
 		try
 		{
 			string canonicalBlake3 = ComputeBlake3(bytes, ext);
 			string? existingMeta = null;
 			if (ext == ".glb") existingMeta = ExtractMetadataFromGlbBytes(bytes);
+			else if (ext == ".rmod") existingMeta = RmodFile.ExtractMetadata(bytes);
 			else if (ext == ".rtex") existingMeta = RtexFile.ExtractMetadata(bytes);
 			else if (ext == ".ranim") existingMeta = ExtractMetadataFromRanimBytes(bytes);
 			else if (ext == ".ogg") existingMeta = ExtractMetadataFromOggBytes(bytes);
+			else if (ext == ".raud") existingMeta = RaudFile.ExtractMetadata(bytes);
 
 			JsonObject metaObj;
 			if (!string.IsNullOrWhiteSpace(existingMeta))
@@ -1536,9 +1787,11 @@ public static class RealmMetadataHelper
 			return ext switch
 			{
 				".glb" => AddMetadataToGlbBytes(bytes, newMetaJson),
+				".rmod" => RmodFile.SetMetadata(bytes, newMetaJson),
 				".rtex" => RtexFile.SetMetadata(bytes, newMetaJson),
 				".ranim" => AddMetadataToRanimBytes(bytes, newMetaJson),
 				".ogg" => AddMetadataToOggBytes(bytes, newMetaJson),
+				".raud" => RaudFile.SetMetadata(bytes, newMetaJson),
 				_ => bytes
 			};
 		}

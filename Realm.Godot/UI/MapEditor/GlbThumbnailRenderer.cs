@@ -247,7 +247,17 @@ public partial class GlbThumbnailRenderer : Node
 
 			var doc = new GltfDocument();
 			var state = new GltfState();
-			var err = doc.AppendFromFile(request.FilePath, state);
+			Error err;
+			if (request.FilePath.EndsWith(".rmod", StringComparison.OrdinalIgnoreCase))
+			{
+				byte[] rmodBytes = File.ReadAllBytes(request.FilePath);
+				byte[] glbBytes = Realm.Shared.ModelOptimization.RmodFile.GetGlbBytes(rmodBytes) ?? rmodBytes;
+				err = doc.AppendFromBuffer(glbBytes, "", state);
+			}
+			else
+			{
+				err = doc.AppendFromFile(request.FilePath, state);
+			}
 			if (err != Error.Ok)
 			{
 				_pendingPaths.Remove(request.FilePath);

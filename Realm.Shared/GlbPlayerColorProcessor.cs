@@ -4,6 +4,7 @@ using System.IO;
 using System.Numerics;
 using System.Text.Json.Nodes;
 using Realm.Shared.Metadata;
+using Realm.Shared.ModelOptimization;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -29,6 +30,75 @@ public class GlbPlayerColorOptions
 
 public static class GlbPlayerColorProcessor
 {
+    public static bool DetectSupportsTeamColor(string filePath)
+    {
+        if (!File.Exists(filePath)) return false;
+        try
+        {
+            byte[] bytes = File.ReadAllBytes(filePath);
+            return DetectSupportsTeamColor(bytes);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public static bool DetectSupportsTeamColor(ReadOnlySpan<byte> glbOrRmodBytes)
+    {
+        if (glbOrRmodBytes.Length == 0) return false;
+        try
+        {
+            byte[] glbBytes;
+            if (RmodFile.IsRmodBytes(glbOrRmodBytes))
+            {
+                byte[]? extractedGlb = RmodFile.GetGlbBytes(glbOrRmodBytes);
+                if (extractedGlb == null || extractedGlb.Length == 0) return false;
+                glbBytes = extractedGlb;
+            }
+            else
+            {
+                glbBytes = glbOrRmodBytes.ToArray();
+            }
+
+            var (jsonNode, binChunk, _) = GlbManifestUtils.ParseGlb(glbBytes);
+            if (jsonNode is not JsonObject root || binChunk == null) return false;
+
+            var textures = root["textures"] as JsonArray;
+            var materials = root["materials"] as JsonArray;
+            var images = root["images"] as JsonArray;
+            var bufferViews = root["bufferViews"] as JsonArray;
+
+            if (textures == null || materials == null || images == null || bufferViews == null) return false;
+
+            int ormImageIndex = FindOrmImageIndex(textures, materials);
+            if (ormImageIndex < 0) return false;
+
+            byte[] ormRaw = ExtractImageBytes(ormImageIndex, images, bufferViews, binChunk);
+            if (ormRaw.Length == 0) return false;
+
+            using var ormImg = Image.Load<Rgba32>(ormRaw);
+            int maskCount = 0;
+            for (int y = 0; y < ormImg.Height; y += 2)
+            {
+                for (int x = 0; x < ormImg.Width; x += 2)
+                {
+                    if (ormImg[x, y].R > 32)
+                    {
+                        maskCount++;
+                        if (maskCount > 5) return true;
+                    }
+                }
+            }
+
+            return maskCount > 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public static GlbPlayerColorResult ProcessFile(
         string inputPath,
         string outputPath,

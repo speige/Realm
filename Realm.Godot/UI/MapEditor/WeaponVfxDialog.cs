@@ -700,7 +700,16 @@ public partial class WeaponVfxDialog : FloatingDialogBase
 
 				if (System.IO.File.Exists(fullPath))
 				{
-					if (fullPath.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase))
+					if (fullPath.EndsWith(".raud", StringComparison.OrdinalIgnoreCase))
+					{
+						byte[] raudBytes = System.IO.File.ReadAllBytes(fullPath);
+						byte[]? oggBytes = Realm.Shared.Audio.RaudFile.GetTrack(raudBytes, 0);
+						if (oggBytes != null && oggBytes.Length > 0)
+						{
+							stream = AudioStreamOggVorbis.LoadFromBuffer(oggBytes);
+						}
+					}
+					else if (fullPath.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase))
 					{
 						stream = AudioStreamOggVorbis.LoadFromFile(fullPath);
 					}

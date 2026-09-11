@@ -149,12 +149,12 @@ public static class AssetThumbnailProvider
 			return LoadRtexAlbedoThumbnail(asset.FilePath, asset.LastModifiedUtc);
 		}
 
-		if (ext == ".glb" || ext == ".gltf")
+		if (ext == ".rmod" || ext == ".glb" || ext == ".gltf")
 		{
 			return LoadGlbThumbnail(asset.FilePath, asset.LastModifiedUtc);
 		}
 
-		if (ext == ".ogg" || ext == ".wav" || ext == ".mp3")
+		if (ext == ".raud" || ext == ".ogg" || ext == ".wav" || ext == ".mp3")
 		{
 			return LoadAudioThumbnail(ext);
 		}

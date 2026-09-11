@@ -6,15 +6,17 @@ using System.Text.Json.Nodes;
 using CommandLine;
 using Realm.Shared;
 using Realm.Shared.Animation;
+using Realm.Shared.Audio;
 using Realm.Shared.Metadata;
+using Realm.Shared.ModelOptimization;
 using Realm.Shared.Textures;
 
 namespace Realm.Tools.Cli;
 
-[Verb("glb_optimize", HelpText = "Optimize glTF/GLB 3D model files with Draco compression, mesh decimation, and texture downsampling.")]
-public class GlbOptimizeOptions
+[Verb("model_convert", HelpText = "Convert and optimize 3D models (GLB, RMOD, OBJ, FBX) into Realm .rmod format (or export .rmod to .glb).")]
+public class ModelConvertOptions
 {
-	[Option('i', "input", Required = true, HelpText = "Path to .glb file or directory containing assets.")]
+	[Option('i', "input", Required = true, HelpText = "Path to 3D model file (.glb, .rmod, .obj, .fbx) or directory containing assets.")]
 	public string Input { get; set; } = string.Empty;
 
 	[Option('o', "output", Required = false, HelpText = "Output destination file or directory.")]
@@ -29,9 +31,15 @@ public class GlbOptimizeOptions
 	[Option('f', "force", Required = false, Default = false, HelpText = "Force re-optimization even if already optimized.")]
 	public bool Force { get; set; }
 
-	[Option('t', "type", Required = false, HelpText = "Asset type for GLB: Character, Building, Prop, Item. If specified, sets or updates the embedded asset_type metadata and determines automatic optimization parameters.")]
+	[Option('t', "type", Required = false, HelpText = "Asset type for model: Character, Building, Prop, Item.")]
 	public string? AssetType { get; set; }
+
+	[Option('a', "author", Required = false, HelpText = "Author tag to embed if not already present.")]
+	public string? Author { get; set; }
 }
+
+[Verb("glb_optimize", HelpText = "Legacy alias for model_convert.")]
+public class GlbOptimizeOptions : ModelConvertOptions { }
 
 [Verb("texture_convert", HelpText = "Convert textures between standard image formats and .rtex format.")]
 public class TextureConvertOptions
@@ -58,7 +66,7 @@ public class TextureConvertOptions
 	public bool Recursive { get; set; }
 }
 
-[Verb("audio_convert", HelpText = "Convert audio files (mp3, wav, flac, aac, etc.) to .ogg format.")]
+[Verb("audio_convert", HelpText = "Convert audio files (mp3, wav, flac, aac, ogg) to .raud format (or extract .raud to .ogg).")]
 public class AudioConvertOptions
 {
 	[Option('i', "input", Required = true, HelpText = "Path to input audio file or directory containing audio files.")]
@@ -66,6 +74,12 @@ public class AudioConvertOptions
 
 	[Option('o', "output", Required = false, HelpText = "Output destination file or directory.")]
 	public string? Output { get; set; }
+
+	[Option('t', "type", Required = false, HelpText = "Asset type for audio: Music, SoundEffect.")]
+	public string? AssetType { get; set; }
+
+	[Option('a', "author", Required = false, HelpText = "Author tag to embed if not already present.")]
+	public string? Author { get; set; }
 
 	[Option('r', "recursive", Required = false, Default = false, HelpText = "Process directories recursively.")]
 	public bool Recursive { get; set; }
@@ -118,7 +132,7 @@ public class RanimRenderOptions
 	public bool NoShadow { get; set; }
 }
 
-[Verb("metadata", HelpText = "Manage embedded Realm metadata (read, add, remove) in .glb, .rtex, .ranim, or .ogg files.")]
+[Verb("metadata", HelpText = "Manage embedded Realm metadata (read, add, remove) in .rmod, .raud, .rtex, .ranim, .glb, or .ogg files.")]
 public class MetadataOptions
 {
 	[Option('m', "mode", Required = false, Default = "read", HelpText = "Operation mode: read (default), add, update, remove.")]
@@ -132,6 +146,9 @@ public class MetadataOptions
 
 	[Option('t', "type", Required = false, HelpText = "Asset type to embed: Character, Building, Prop, Item, Decal, Icon, Noise, Ribbon, Skybox, Spritesheet, Terrain, vfx_radial, vfx_vertical, Animation, Music, SoundEffect.")]
 	public string? AssetType { get; set; }
+
+	[Option('a', "author", Required = false, HelpText = "Author tag to set in metadata.")]
+	public string? Author { get; set; }
 
 	[Option('o', "output", Required = false, HelpText = "Output destination file to write extracted JSON (for read mode).")]
 	public string? Output { get; set; }
@@ -153,13 +170,13 @@ public class Blake3Options
 	public bool Raw { get; set; }
 }
 
-[Verb("glb_player_color", HelpText = "Extract #FF00FF prompt artifacts from a .glb model, isolate the player-color area via 3D face-topology clustering, desaturate the albedo, and pack the mask into the Red channel of the ORM texture.")]
-public class GlbPlayerColorCliOptions
+[Verb("model_player_color", HelpText = "Extract #FF00FF prompt artifacts from a 3D model, isolate player-color area via face topology, desaturate albedo, pack mask into Red channel of ORM texture, and re-optimize.")]
+public class ModelPlayerColorCliOptions
 {
-	[Option('i', "input", Required = true, HelpText = "Path to .glb file or directory containing .glb files.")]
+	[Option('i', "input", Required = true, HelpText = "Path to .rmod or .glb file or directory containing model files.")]
 	public string Input { get; set; } = string.Empty;
 
-	[Option('o', "output", Required = false, HelpText = "Output destination file or directory. Defaults to <input>_masked.glb alongside the source.")]
+	[Option('o', "output", Required = false, HelpText = "Output destination file or directory.")]
 	public string? Output { get; set; }
 
 	[Option("in-place", Required = false, Default = false, HelpText = "Overwrite the source file directly.")]
@@ -184,14 +201,20 @@ public class GlbPlayerColorCliOptions
 	public int DilationRadius { get; set; } = 3;
 }
 
-[Verb("rig_humanoid", HelpText = "Auto-rig a humanoid .glb model with a Mixamo skeleton using the Make-It-Animatable pipeline.")]
+[Verb("glb_player_color", HelpText = "Legacy alias for model_player_color.")]
+public class GlbPlayerColorCliOptions : ModelPlayerColorCliOptions { }
+
+[Verb("rig_humanoid", HelpText = "Auto-rig a humanoid 3D model with a Mixamo skeleton using the Make-It-Animatable pipeline.")]
 public class RigHumanoidOptions
 {
-	[Option('i', "input", Required = true, HelpText = "Path to input .glb file.")]
+	[Option('i', "input", Required = true, HelpText = "Path to input .rmod or .glb file.")]
 	public string Input { get; set; } = string.Empty;
 
-	[Option('o', "output", Required = true, HelpText = "Path for output rigged .glb file.")]
-	public string Output { get; set; } = string.Empty;
+	[Option('o', "output", Required = false, HelpText = "Path for output rigged file.")]
+	public string? Output { get; set; }
+
+	[Option("in-place", Required = false, Default = false, HelpText = "Overwrite the source file directly.")]
+	public bool InPlace { get; set; }
 
 	[Option("no-fingers", Required = false, Default = true, HelpText = "Model does not have ten separate fingers (default: true).")]
 	public bool NoFingers { get; set; } = true;
@@ -216,16 +239,18 @@ public static class Program
 			args = args.Where(argument => !string.Equals(argument, "--eula-accept", StringComparison.OrdinalIgnoreCase)).ToArray();
 		}
 
-		return Parser.Default.ParseArguments<GlbOptimizeOptions, TextureConvertOptions, AudioConvertOptions, FbxToRanimOptions, RanimRenderOptions, MetadataOptions, Blake3Options, GlbPlayerColorCliOptions, RigHumanoidOptions>(args)
+		return Parser.Default.ParseArguments<ModelConvertOptions, GlbOptimizeOptions, TextureConvertOptions, AudioConvertOptions, FbxToRanimOptions, RanimRenderOptions, MetadataOptions, Blake3Options, ModelPlayerColorCliOptions, GlbPlayerColorCliOptions, RigHumanoidOptions>(args)
 			.MapResult(
-				(GlbOptimizeOptions options) => ExecuteGlbOptimize(options),
+				(ModelConvertOptions options) => ExecuteModelConvert(options),
+				(GlbOptimizeOptions options) => ExecuteModelConvert(options),
 				(TextureConvertOptions options) => ExecuteTextureConvert(options),
 				(AudioConvertOptions options) => ExecuteAudioConvert(options),
 				(FbxToRanimOptions options) => ExecuteFbxToRanim(options),
 				(RanimRenderOptions options) => ExecuteRanimRender(options),
 				(MetadataOptions options) => ExecuteMetadata(options),
 				(Blake3Options options) => ExecuteBlake3(options),
-				(GlbPlayerColorCliOptions options) => ExecuteGlbPlayerColor(options),
+				(ModelPlayerColorCliOptions options) => ExecuteModelPlayerColor(options),
+				(GlbPlayerColorCliOptions options) => ExecuteModelPlayerColor(options),
 				(RigHumanoidOptions options) => ExecuteRigHumanoid(options),
 				errors => 1);
 	}
@@ -349,9 +374,9 @@ public static class Program
 		if (File.Exists(options.Input))
 		{
 			string ext = Path.GetExtension(options.Input).ToLowerInvariant();
-			if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg"))
+			if (!RealmMetadataHelper.SupportsMetadata(ext))
 			{
-				Console.Error.WriteLine($"Error: Unsupported file format '{ext}' for metadata. Supported formats: .glb, .rtex, .ogg, .ranim");
+				Console.Error.WriteLine($"Error: Unsupported file format '{ext}' for metadata. Supported formats: .rmod, .raud, .rtex, .ranim, .glb, .ogg");
 				return 1;
 			}
 
@@ -402,7 +427,7 @@ public static class Program
 			foreach (var file in files)
 			{
 				string ext = Path.GetExtension(file).ToLowerInvariant();
-				if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg")) continue;
+				if (!RealmMetadataHelper.SupportsMetadata(ext)) continue;
 
 				string? rawMeta = RealmMetadataHelper.ExtractMetadata(file);
 				JsonObject metaObj;
@@ -445,7 +470,7 @@ public static class Program
 		}
 	}
 
-	private static bool PrepareMetadataJsonForFile(string targetPath, ref string inputJsonContent, bool isUpdate, string? explicitAssetType, out string error)
+	private static bool PrepareMetadataJsonForFile(string targetPath, ref string inputJsonContent, bool isUpdate, string? explicitAssetType, string? explicitAuthor, out string error)
 	{
 		error = string.Empty;
 		string ext = Path.GetExtension(targetPath).ToLowerInvariant();
@@ -474,6 +499,11 @@ public static class Program
 				}
 
 				inputObj["asset_type"] = canonical;
+			}
+
+			if (!string.IsNullOrWhiteSpace(explicitAuthor))
+			{
+				inputObj["author"] = explicitAuthor;
 			}
 
 			JsonObject finalObj;
@@ -523,13 +553,23 @@ public static class Program
 	{
 		if (string.IsNullOrEmpty(options.Data))
 		{
+			var jsonNode = new JsonObject();
 			if (!string.IsNullOrWhiteSpace(options.AssetType))
 			{
-				options.Data = new JsonObject { ["asset_type"] = options.AssetType }.ToJsonString();
+				jsonNode["asset_type"] = options.AssetType;
+			}
+			if (!string.IsNullOrWhiteSpace(options.Author))
+			{
+				jsonNode["author"] = options.Author;
+			}
+
+			if (jsonNode.Count > 0)
+			{
+				options.Data = jsonNode.ToJsonString();
 			}
 			else
 			{
-				Console.Error.WriteLine("Error: --data (-d) or --type (-t) option is required for add mode.");
+				Console.Error.WriteLine("Error: --data (-d), --type (-t), or --author (-a) option is required for add mode.");
 				return 1;
 			}
 		}
@@ -546,7 +586,7 @@ public static class Program
 		if (File.Exists(options.Input))
 		{
 			string processedJson = jsonContent;
-			if (!PrepareMetadataJsonForFile(options.Input, ref processedJson, isUpdate, options.AssetType, out string error))
+			if (!PrepareMetadataJsonForFile(options.Input, ref processedJson, isUpdate, options.AssetType, options.Author, out string error))
 			{
 				Console.Error.WriteLine($"Error: {error}");
 				return 1;
@@ -574,10 +614,10 @@ public static class Program
 			foreach (var file in files)
 			{
 				string ext = Path.GetExtension(file).ToLowerInvariant();
-				if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg")) continue;
+				if (!RealmMetadataHelper.SupportsMetadata(ext)) continue;
 
 				string fileJson = jsonContent;
-				if (!PrepareMetadataJsonForFile(file, ref fileJson, isUpdate, options.AssetType, out string error))
+				if (!PrepareMetadataJsonForFile(file, ref fileJson, isUpdate, options.AssetType, options.Author, out string error))
 				{
 					Console.Error.WriteLine($"Failed to add metadata to {file}: {error}");
 					failCount++;
@@ -611,9 +651,9 @@ public static class Program
 		if (File.Exists(options.Input))
 		{
 			string ext = Path.GetExtension(options.Input).ToLowerInvariant();
-			if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg"))
+			if (!RealmMetadataHelper.SupportsMetadata(ext))
 			{
-				Console.Error.WriteLine($"Error: Unsupported file format '{ext}' for metadata. Supported formats: .glb, .rtex, .ogg, .ranim");
+				Console.Error.WriteLine($"Error: Unsupported file format '{ext}' for metadata. Supported formats: .rmod, .raud, .rtex, .ranim, .glb, .ogg");
 				return 1;
 			}
 
@@ -643,7 +683,7 @@ public static class Program
 			foreach (var file in files)
 			{
 				string ext = Path.GetExtension(file).ToLowerInvariant();
-				if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg")) continue;
+				if (!RealmMetadataHelper.SupportsMetadata(ext)) continue;
 
 				RealmMetadataHelper.RemoveMetadata(file);
 				string canonicalBlake3 = RealmMetadataHelper.ComputeBlake3(file);
@@ -754,14 +794,27 @@ public static class Program
 	{
 		if (File.Exists(options.Input))
 		{
+			string fileExt = Path.GetExtension(options.Input).ToLowerInvariant();
+			string defaultExt = fileExt == ".raud" ? ".ogg" : ".raud";
+
 			string target = string.IsNullOrEmpty(options.Output)
-				? Path.ChangeExtension(options.Input, ".ogg")
+				? Path.ChangeExtension(options.Input, defaultExt)
 				: options.Output;
 
-			var res = Realm.Shared.Audio.AudioConverter.ConvertToOgg(options.Input, target);
+			if (fileExt == ".raud" && !Path.GetExtension(target).Equals(".raud", StringComparison.OrdinalIgnoreCase))
+			{
+				EnsureAssetAgreementAccepted();
+			}
+
+			var res = AudioConverter.ConvertAudioFile(
+				options.Input,
+				target,
+				options.AssetType,
+				options.Author);
+
 			if (res.Success)
 			{
-				if (Path.GetExtension(target).Equals(".ogg", StringComparison.OrdinalIgnoreCase))
+				if (Path.GetExtension(target).Equals(".raud", StringComparison.OrdinalIgnoreCase))
 				{
 					RealmMetadataHelper.SyncBlake3Metadata(target);
 				}
@@ -776,7 +829,18 @@ public static class Program
 		}
 		else if (Directory.Exists(options.Input))
 		{
-			return Realm.Shared.Audio.AudioConverter.ConvertAudioDirectory(options.Input, options.Output, options.Recursive);
+			var searchOpt = options.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+			if (Directory.EnumerateFiles(options.Input, "*.raud", searchOpt).Any())
+			{
+				EnsureAssetAgreementAccepted();
+			}
+
+			return AudioConverter.ConvertAudioDirectory(
+				options.Input,
+				options.Output,
+				options.Recursive,
+				options.AssetType,
+				options.Author);
 		}
 		else
 		{
@@ -827,158 +891,87 @@ public static class Program
 		}
 	}
 
-	private static int ExecuteGlbOptimize(GlbOptimizeOptions options)
+	private static int ExecuteModelConvert(ModelConvertOptions options)
 	{
 		if (!string.IsNullOrWhiteSpace(options.AssetType))
 		{
-			if (!RealmMetadataHelper.IsValidAssetTypeForExtension(".glb", options.AssetType, out string canonical, out var validTypes))
+			if (!RealmMetadataHelper.IsValidAssetTypeForExtension(".rmod", options.AssetType, out string canonical, out var validTypes))
 			{
-				Console.Error.WriteLine($"Error: Invalid asset_type '{options.AssetType}' for GLB. Valid asset_type values for .glb are: {string.Join(", ", validTypes)}.");
+				Console.Error.WriteLine($"Error: Invalid asset_type '{options.AssetType}' for 3D model. Valid asset_type values for .rmod/.glb are: {string.Join(", ", validTypes)}.");
 				return 1;
 			}
 			options.AssetType = canonical;
 		}
 
-		var optimizer = new GlbOptimizer();
-
 		if (File.Exists(options.Input))
 		{
-			return ProcessSingleFile(optimizer, options.Input, options.Output, options.InPlace, options.Force, options.AssetType);
+			string fileExt = Path.GetExtension(options.Input).ToLowerInvariant();
+			string defaultExt = fileExt == ".rmod" ? ".glb" : ".rmod";
+
+			string target = options.InPlace || string.IsNullOrEmpty(options.Output)
+				? (options.InPlace ? options.Input : Path.ChangeExtension(options.Input, defaultExt))
+				: options.Output;
+
+			if (fileExt == ".rmod" && !Path.GetExtension(target).Equals(".rmod", StringComparison.OrdinalIgnoreCase))
+			{
+				EnsureAssetAgreementAccepted();
+			}
+
+			if (Path.GetExtension(target).Equals(".glb", StringComparison.OrdinalIgnoreCase) && fileExt == ".rmod")
+			{
+				var res = ModelConverter.ExtractGlbFromRmod(options.Input, target);
+				if (res.Success)
+				{
+					Console.WriteLine($"Successfully extracted GLB: {options.Input} -> {target}");
+					return 0;
+				}
+				else
+				{
+					Console.Error.WriteLine($"Failed to extract GLB from {options.Input}: {res.ErrorMessage}");
+					return 1;
+				}
+			}
+			else
+			{
+				var res = ModelConverter.ConvertToRmod(
+					options.Input,
+					target,
+					options.AssetType,
+					options.Force,
+					author: options.Author);
+
+				if (res.Success)
+				{
+					Console.WriteLine($"Successfully converted model: {options.Input} -> {target} (Size: {res.OptimizedSize} bytes, TeamColor: {res.SupportsTeamColor})");
+					return 0;
+				}
+				else
+				{
+					Console.Error.WriteLine($"Failed to convert {options.Input}: {res.ErrorMessage}");
+					return 1;
+				}
+			}
 		}
 		else if (Directory.Exists(options.Input))
 		{
-			return ProcessDirectory(optimizer, options.Input, options.Output, options.InPlace, options.Recursive, options.Force, options.AssetType);
+			var searchOpt = options.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+			if (Directory.EnumerateFiles(options.Input, "*.rmod", searchOpt).Any() && !string.IsNullOrEmpty(options.Output) && !Path.GetExtension(options.Output).Equals(".rmod", StringComparison.OrdinalIgnoreCase))
+			{
+				EnsureAssetAgreementAccepted();
+			}
+
+			return ModelConverter.ConvertModelDirectory(
+				options.Input,
+				options.Output,
+				options.AssetType,
+				options.Recursive,
+				options.Force);
 		}
 		else
 		{
 			Console.Error.WriteLine($"Error: Input path does not exist: {options.Input}");
 			return 1;
 		}
-	}
-
-	private static OptimizationOptions GetAutomaticOptimizationOptions(string? assetType, bool forceReDecimate)
-	{
-		int maxRes = 1024;
-		if (string.Equals(assetType, "Item", StringComparison.OrdinalIgnoreCase))
-		{
-			maxRes = 512;
-		}
-
-		return new OptimizationOptions
-		{
-			SimplificationRatio = 0.5f,
-			MaxTextureResolution = maxRes,
-			ForceReDecimate = forceReDecimate
-		};
-	}
-
-	private static int ProcessSingleFile(
-		GlbOptimizer optimizer,
-		string filePath,
-		string? outputPath,
-		bool inPlace,
-		bool force,
-		string? assetType = null)
-	{
-		string target = inPlace || string.IsNullOrEmpty(outputPath) ? filePath : outputPath;
-
-		string? effectiveAssetType = assetType;
-		if (string.IsNullOrEmpty(effectiveAssetType))
-		{
-			string? embedded = RealmMetadataHelper.ExtractAssetType(filePath);
-			if (!string.IsNullOrEmpty(embedded) && RealmMetadataHelper.IsValidAssetTypeForExtension(".glb", embedded, out string canonical, out _))
-			{
-				effectiveAssetType = canonical;
-			}
-			else
-			{
-				string lower = filePath.ToLowerInvariant().Replace('\\', '/');
-				if (lower.Contains("/items/") || lower.Contains("/attachments/") || lower.Contains("/weapons/") || lower.Contains("/projectiles/"))
-				{
-					effectiveAssetType = "Item";
-				}
-				else if (lower.Contains("/units/") || lower.Contains("/characters/"))
-				{
-					effectiveAssetType = "Character";
-				}
-				else if (lower.Contains("/buildings/"))
-				{
-					effectiveAssetType = "Building";
-				}
-				else
-				{
-					effectiveAssetType = "Prop";
-				}
-			}
-		}
-
-		var optimizationOptions = GetAutomaticOptimizationOptions(effectiveAssetType, force);
-
-		Console.WriteLine($"Optimizing: {filePath} -> {target} [Type: {effectiveAssetType}, MaxRes: {optimizationOptions.MaxTextureResolution}, Ratio: {optimizationOptions.SimplificationRatio}]");
-		var result = optimizer.OptimizeFile(filePath, target, optimizationOptions);
-		if (result.Success)
-		{
-			if (!string.IsNullOrEmpty(effectiveAssetType))
-			{
-				RealmMetadataHelper.SetAssetType(target, effectiveAssetType);
-			}
-			else
-			{
-				RealmMetadataHelper.SyncBlake3Metadata(target);
-			}
-			if (result.DecimationSkipped)
-			{
-				Console.WriteLine($"Skipped (already optimized): {filePath}");
-			}
-			else
-			{
-				Console.WriteLine($"Successfully optimized: {target} ({result.OriginalSize} -> {result.OptimizedSize} bytes)");
-			}
-			return 0;
-		}
-		else
-		{
-			Console.Error.WriteLine($"Failed to optimize {filePath}: {result.ErrorMessage}");
-			return 1;
-		}
-	}
-
-	private static int ProcessDirectory(
-		GlbOptimizer optimizer,
-		string dirPath,
-		string? outputDir,
-		bool inPlace,
-		bool recursive,
-		bool force,
-		string? assetType = null)
-	{
-		var searchOpt = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
-		string[] files = Directory.GetFiles(dirPath, "*.glb", searchOpt);
-
-		Console.WriteLine($"Found {files.Length} .glb file(s) in {dirPath}");
-		int successCount = 0;
-		int failCount = 0;
-
-		foreach (var file in files)
-		{
-			string target;
-			if (inPlace || string.IsNullOrEmpty(outputDir))
-			{
-				target = file;
-			}
-			else
-			{
-				string rel = Path.GetRelativePath(dirPath, file);
-				target = Path.Combine(outputDir, rel);
-			}
-
-			int res = ProcessSingleFile(optimizer, file, target, false, force, assetType);
-			if (res == 0) successCount++;
-			else failCount++;
-		}
-
-		Console.WriteLine($"Finished. Processed: {successCount} succeeded, {failCount} failed.");
-		return failCount > 0 ? 1 : 0;
 	}
 
 	private static int ExecuteBlake3(Blake3Options options)
@@ -1013,7 +1006,7 @@ public static class Program
 		}
 	}
 
-	private static int ExecuteGlbPlayerColor(GlbPlayerColorCliOptions options)
+	private static int ExecuteModelPlayerColor(ModelPlayerColorCliOptions options)
 	{
 		var processorOptions = new Realm.Shared.GlbPlayerColorOptions
 		{
@@ -1027,13 +1020,15 @@ public static class Program
 		if (File.Exists(options.Input))
 		{
 			string target = ResolveOutputPath(options.Input, options.Output, options.InPlace);
-			return ProcessSingleGlbPlayerColor(options.Input, target, processorOptions);
+			return ProcessSingleModelPlayerColor(options.Input, target, processorOptions);
 		}
 		else if (Directory.Exists(options.Input))
 		{
 			var searchOpt = options.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
-			string[] files = Directory.GetFiles(options.Input, "*.glb", searchOpt);
-			Console.WriteLine($"Found {files.Length} .glb file(s) in {options.Input}");
+			string[] files = Directory.GetFiles(options.Input, "*.*", searchOpt)
+				.Where(f => f.EndsWith(".rmod", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+				.ToArray();
+			Console.WriteLine($"Found {files.Length} model file(s) in {options.Input}");
 
 			int successCount = 0;
 			int failCount = 0;
@@ -1051,7 +1046,7 @@ public static class Program
 					target = Path.Combine(options.Output, rel);
 				}
 
-				int res = ProcessSingleGlbPlayerColor(file, target, processorOptions);
+				int res = ProcessSingleModelPlayerColor(file, target, processorOptions);
 				if (res == 0) successCount++;
 				else failCount++;
 			}
@@ -1066,83 +1061,133 @@ public static class Program
 		}
 	}
 
-	private static int ProcessSingleGlbPlayerColor(
+	private static int ProcessSingleModelPlayerColor(
 		string inputPath,
 		string outputPath,
 		Realm.Shared.GlbPlayerColorOptions processorOptions)
 	{
 		Console.WriteLine($"Processing: {inputPath} -> {outputPath}");
 
+		string ext = Path.GetExtension(inputPath).ToLowerInvariant();
+		string outExt = Path.GetExtension(outputPath).ToLowerInvariant();
+		bool isRmod = ext == ".rmod";
+		bool outIsRmod = outExt == ".rmod";
+
 		var optimizer = new GlbOptimizer();
-
-		byte[] sourceBytes = File.ReadAllBytes(inputPath);
-		bool wasOptimized = optimizer.IsOptimized(sourceBytes);
-
-		string colorSourcePath = inputPath;
+		string? tempInputGlb = null;
+		string? tempColorResultGlb = null;
 		string? tempUnoptimizedPath = null;
+		string? existingMeta = null;
 
 		try
 		{
+			byte[] sourceGlbBytes;
+			if (isRmod)
+			{
+				byte[] rmodBytes = File.ReadAllBytes(inputPath);
+				var (meta, glbBytes, _) = RmodFile.Parse(rmodBytes);
+				existingMeta = meta;
+				sourceGlbBytes = glbBytes;
+			}
+			else
+			{
+				sourceGlbBytes = File.ReadAllBytes(inputPath);
+				existingMeta = RealmMetadataHelper.ExtractMetadataFromGlbBytes(sourceGlbBytes);
+			}
+
+			bool wasOptimized = optimizer.IsOptimized(sourceGlbBytes);
+			tempInputGlb = Path.Combine(Path.GetTempPath(), $"realm_pc_in_{Guid.NewGuid():N}.glb");
+			File.WriteAllBytes(tempInputGlb, sourceGlbBytes);
+
+			string colorSourcePath = tempInputGlb;
 			if (wasOptimized)
 			{
 				Console.WriteLine($"  Detected pre-optimized GLB — unoptimizing first to restore mesh topology...");
-				var unoptResult = optimizer.Unoptimize(sourceBytes);
+				var unoptResult = optimizer.Unoptimize(sourceGlbBytes);
 				if (!unoptResult.Success || unoptResult.OutputGlbBytes == null)
 				{
 					Console.Error.WriteLine($"  Failed to unoptimize {inputPath}: {unoptResult.ErrorMessage}");
 					return 1;
 				}
 
-				tempUnoptimizedPath = Path.Combine(
-					Path.GetDirectoryName(inputPath) ?? string.Empty,
-					$"__tmp_unopt_{Path.GetFileName(inputPath)}");
+				tempUnoptimizedPath = Path.Combine(Path.GetTempPath(), $"realm_pc_unopt_{Guid.NewGuid():N}.glb");
 				File.WriteAllBytes(tempUnoptimizedPath, unoptResult.OutputGlbBytes);
 				colorSourcePath = tempUnoptimizedPath;
 			}
 
-			var colorResult = Realm.Shared.GlbPlayerColorProcessor.ProcessFile(colorSourcePath, outputPath, processorOptions);
-			if (!colorResult.Success)
+			tempColorResultGlb = Path.Combine(Path.GetTempPath(), $"realm_pc_out_{Guid.NewGuid():N}.glb");
+			var colorResult = Realm.Shared.GlbPlayerColorProcessor.ProcessFile(colorSourcePath, tempColorResultGlb, processorOptions);
+			if (!colorResult.Success || !File.Exists(tempColorResultGlb))
 			{
 				Console.Error.WriteLine($"  Failed player-color processing: {colorResult.ErrorMessage}");
 				return 1;
 			}
 
 			Console.WriteLine($"  Player-color mask applied (masked faces: {colorResult.MaskedFaceCount}/{colorResult.TotalFaceCount})");
+
+			Console.WriteLine($"  Re-optimizing output (LODs regenerated from corrected textures)...");
+			byte[] processedGlbBytes = File.ReadAllBytes(tempColorResultGlb);
+
+			if (outIsRmod || isRmod)
+			{
+				string? targetAssetType = null;
+				string? targetAuthor = null;
+				if (!string.IsNullOrEmpty(existingMeta))
+				{
+					try
+					{
+						var node = JsonNode.Parse(existingMeta);
+						targetAssetType = node?["asset_type"]?.ToString();
+						targetAuthor = node?["author"]?.ToString();
+					}
+					catch { }
+				}
+
+				var convResult = ModelConverter.ConvertToRmod(
+					processedGlbBytes,
+					Path.GetFileName(inputPath),
+					targetAssetType,
+					force: true,
+					author: targetAuthor);
+
+				if (!convResult.Success || convResult.OutputBytes == null)
+				{
+					Console.Error.WriteLine($"  Failed to repack into RMOD: {convResult.ErrorMessage}");
+					return 1;
+				}
+
+				string? outDir = Path.GetDirectoryName(outputPath);
+				if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir)) Directory.CreateDirectory(outDir);
+				File.WriteAllBytes(outputPath, convResult.OutputBytes);
+				Console.WriteLine($"  Successfully saved RMOD: {outputPath} ({convResult.OptimizedSize} bytes)");
+				return 0;
+			}
+			else
+			{
+				var optimizeResult = optimizer.OptimizeFile(
+					tempColorResultGlb,
+					outputPath,
+					new OptimizationOptions { ForceReDecimate = true });
+
+				if (!optimizeResult.Success)
+				{
+					Console.Error.WriteLine($"  Warning: Re-optimization failed: {optimizeResult.ErrorMessage}");
+					File.Copy(tempColorResultGlb, outputPath, true);
+					Console.Error.WriteLine($"  Output saved without optimization: {outputPath}");
+					return 1;
+				}
+
+				RealmMetadataHelper.SetSupportsTeamColor(outputPath, true);
+				Console.WriteLine($"  Successfully optimized: {outputPath} ({optimizeResult.OriginalSize} -> {optimizeResult.OptimizedSize} bytes)");
+				return 0;
+			}
 		}
 		finally
 		{
-			if (tempUnoptimizedPath != null && File.Exists(tempUnoptimizedPath))
-			{
-				try { File.Delete(tempUnoptimizedPath); } catch { }
-			}
-
-			if (tempUnoptimizedPath != null)
-			{
-				string tempUnoptDir = Path.Combine(
-					Path.GetDirectoryName(tempUnoptimizedPath) ?? string.Empty,
-					Path.GetFileNameWithoutExtension(tempUnoptimizedPath));
-				if (Directory.Exists(tempUnoptDir))
-				{
-					try { Directory.Delete(tempUnoptDir, true); } catch { }
-				}
-			}
+			if (tempInputGlb != null && File.Exists(tempInputGlb)) try { File.Delete(tempInputGlb); } catch { }
+			if (tempColorResultGlb != null && File.Exists(tempColorResultGlb)) try { File.Delete(tempColorResultGlb); } catch { }
+			if (tempUnoptimizedPath != null && File.Exists(tempUnoptimizedPath)) try { File.Delete(tempUnoptimizedPath); } catch { }
 		}
-
-		Console.WriteLine($"  Re-optimizing output (LODs regenerated from corrected textures)...");
-		var optimizeResult = optimizer.OptimizeFile(
-			outputPath,
-			outputPath,
-			new OptimizationOptions { ForceReDecimate = true });
-
-		if (!optimizeResult.Success)
-		{
-			Console.Error.WriteLine($"  Warning: Re-optimization failed: {optimizeResult.ErrorMessage}");
-			Console.Error.WriteLine($"  Output saved without optimization: {outputPath}");
-			return 1;
-		}
-
-		Console.WriteLine($"  Successfully optimized: {outputPath} ({optimizeResult.OriginalSize} -> {optimizeResult.OptimizedSize} bytes)");
-		return 0;
 	}
 
 	private static string ResolveOutputPath(string inputPath, string? explicitOutput, bool inPlace)
@@ -1150,28 +1195,103 @@ public static class Program
 		if (inPlace) return inputPath;
 		if (!string.IsNullOrEmpty(explicitOutput)) return explicitOutput;
 		string dir = Path.GetDirectoryName(inputPath) ?? string.Empty;
+		string ext = Path.GetExtension(inputPath);
 		string nameWithoutExt = Path.GetFileNameWithoutExtension(inputPath);
-		return Path.Combine(dir, nameWithoutExt + "_masked.glb");
+		return Path.Combine(dir, $"{nameWithoutExt}_masked{ext}");
 	}
 
 	private static int ExecuteRigHumanoid(RigHumanoidOptions options)
 	{
-		var result = GlbAutoRigger.RigHumanoid(
-			options.Input,
-			options.Output,
-			new GlbAutoRiggerOptions
-			{
-				NoFingers = options.NoFingers,
-				UseNormals = options.UseNormals,
-				WeightPostprocess = options.WeightPostprocess
-			});
+		string inputPath = options.Input;
+		string ext = Path.GetExtension(inputPath).ToLowerInvariant();
+		bool isRmod = ext == ".rmod";
 
-		if (!result.Success)
+		string tempGlbInput = inputPath;
+		string? tempExtractedGlb = null;
+		string? existingMeta = null;
+
+		try
 		{
-			Console.Error.WriteLine($"Error: {result.ErrorMessage}");
-			return 1;
-		}
+			if (isRmod)
+			{
+				byte[] rmodBytes = File.ReadAllBytes(inputPath);
+				var (meta, glbBytes, _) = RmodFile.Parse(rmodBytes);
+				existingMeta = meta;
+				tempExtractedGlb = Path.Combine(Path.GetTempPath(), $"realm_rig_in_{Guid.NewGuid():N}.glb");
+				File.WriteAllBytes(tempExtractedGlb, glbBytes);
+				tempGlbInput = tempExtractedGlb;
+			}
 
-		return 0;
+			string targetOutput = options.InPlace || string.IsNullOrEmpty(options.Output)
+				? inputPath
+				: options.Output;
+
+			string tempGlbOutput = Path.Combine(Path.GetTempPath(), $"realm_rig_out_{Guid.NewGuid():N}.glb");
+
+			var result = GlbAutoRigger.RigHumanoid(
+				tempGlbInput,
+				tempGlbOutput,
+				new GlbAutoRiggerOptions
+				{
+					NoFingers = options.NoFingers,
+					UseNormals = options.UseNormals,
+					WeightPostprocess = options.WeightPostprocess
+				});
+
+			if (!result.Success || !File.Exists(tempGlbOutput))
+			{
+				Console.Error.WriteLine($"Error: {result.ErrorMessage}");
+				return 1;
+			}
+
+			bool targetIsRmod = Path.GetExtension(targetOutput).Equals(".rmod", StringComparison.OrdinalIgnoreCase) || isRmod;
+			if (targetIsRmod)
+			{
+				string? targetAssetType = "Character";
+				string? targetAuthor = null;
+				if (!string.IsNullOrEmpty(existingMeta))
+				{
+					try
+					{
+						var node = JsonNode.Parse(existingMeta);
+						targetAssetType = node?["asset_type"]?.ToString() ?? "Character";
+						targetAuthor = node?["author"]?.ToString();
+					}
+					catch { }
+				}
+
+				byte[] riggedGlb = File.ReadAllBytes(tempGlbOutput);
+				var convRes = ModelConverter.ConvertToRmod(
+					riggedGlb,
+					Path.GetFileName(inputPath),
+					targetAssetType,
+					force: true,
+					author: targetAuthor);
+
+				if (!convRes.Success || convRes.OutputBytes == null)
+				{
+					Console.Error.WriteLine($"Failed to pack rigged model to RMOD: {convRes.ErrorMessage}");
+					return 1;
+				}
+
+				string? outDir = Path.GetDirectoryName(targetOutput);
+				if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir)) Directory.CreateDirectory(outDir);
+				File.WriteAllBytes(targetOutput, convRes.OutputBytes);
+				Console.WriteLine($"Successfully rigged and saved RMOD: {targetOutput}");
+				return 0;
+			}
+			else
+			{
+				File.Copy(tempGlbOutput, targetOutput, true);
+				var optimizer = new GlbOptimizer();
+				optimizer.OptimizeFile(targetOutput, targetOutput, new OptimizationOptions { ForceReDecimate = true });
+				Console.WriteLine($"Successfully rigged: {targetOutput}");
+				return 0;
+			}
+		}
+		finally
+		{
+			if (tempExtractedGlb != null && File.Exists(tempExtractedGlb)) try { File.Delete(tempExtractedGlb); } catch { }
+		}
 	}
 }

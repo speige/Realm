@@ -347,8 +347,8 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 		{
 			assetName = Path.GetFileNameWithoutExtension(sourcePath).ToLowerInvariant().Replace(' ', '_');
 		}
-		string cleanBase = assetName.ToLowerInvariant().Replace(' ', '_').Replace(".glb", "");
-		string fileName = $"{cleanBase}.glb";
+		string cleanBase = assetName.ToLowerInvariant().Replace(' ', '_').Replace(".rmod", "").Replace(".glb", "");
+		string fileName = $"{cleanBase}.rmod";
 
 		string subCategory = _optSubCategory.Selected switch
 		{
@@ -418,25 +418,32 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 					currentPath = maskedPath;
 				}
 
-				SetProgressStatus(TranslationServer.Translate("Step 3/4: Optimizing geometry & textures..."), 40, false);
-				byte[] srcBytes = File.ReadAllBytes(currentPath);
-
+				SetProgressStatus(TranslationServer.Translate("Step 3/4: Optimizing geometry & packaging RMOD..."), 40, false);
 				int maxRes = subCategory is "attachments" or "items" ? 512 : 1024;
-				var glbOpt = new GlbOptimizer();
-				var res = glbOpt.Optimize(srcBytes, new Realm.Shared.OptimizationOptions
+				string canonicalAssetType = subCategory switch
 				{
-					SimplificationRatio = 0.5f,
-					MaxTextureResolution = maxRes,
-					ForceReDecimate = true
-				});
+					"units" => "Character",
+					"buildings" => "Building",
+					"attachments" or "items" => "Item",
+					_ => "Prop"
+				};
 
-				if (res.Success && res.OutputGlbBytes != null)
+				var convRes = Realm.Shared.ModelOptimization.ModelConverter.ConvertToRmod(
+					currentPath,
+					destPath,
+					canonicalAssetType,
+					force: true,
+					options: new Realm.Shared.OptimizationOptions
+					{
+						SimplificationRatio = 0.5f,
+						MaxTextureResolution = maxRes,
+						ForceReDecimate = true
+					});
+
+				if (!convRes.Success)
 				{
-					File.WriteAllBytes(destPath, res.OutputGlbBytes);
-				}
-				else
-				{
-					File.Copy(currentPath, destPath, true);
+					errorMessage = string.Format(TranslationServer.Translate("Conversion failed: {0}"), convRes.ErrorMessage);
+					return;
 				}
 
 				SetProgressStatus(TranslationServer.Translate("Step 4/4: Computing bounds & saving metadata..."), 80, false);
@@ -451,9 +458,9 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 					_ => 1.0f
 				};
 
-				byte[] finalBytes = File.ReadAllBytes(destPath);
-				string hash = RealmMetadataHelper.ComputeBlake3(finalBytes, ".glb");
-				RealmMetadataHelper.SyncBlake3Metadata(destPath);
+				string hash = convRes.OutputBytes != null
+					? RealmMetadataHelper.ComputeBlake3(convRes.OutputBytes, ".rmod")
+					: RealmMetadataHelper.ComputeBlake3(destPath);
 				bool isPropOrRes = subCategory == "resources" || subCategory == "props";
 
 				var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath) ?? new JsonObject();
@@ -470,7 +477,8 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 					["default_asset_type"] = subCategory,
 					["normal_mode"] = "Flat",
 					["normalize_luminance"] = true,
-					["ignore_player_color"] = isPropOrRes
+					["ignore_player_color"] = isPropOrRes,
+					["supports_team_color"] = convRes.SupportsTeamColor
 				};
 
 				glbObj[subCategory]![fileName] = modelEntry;

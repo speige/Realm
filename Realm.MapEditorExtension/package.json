@@ -45,6 +45,26 @@
                                                                    }
                                                                ],
                                                   "priority":  "default"
+                                              },
+                                              {
+                                                  "viewType":  "realm.rmodViewer",
+                                                  "displayName":  "Realm 3D Model Viewer",
+                                                  "selector":  [
+                                                                   {
+                                                                       "filenamePattern":  "*.rmod"
+                                                                   }
+                                                               ],
+                                                  "priority":  "default"
+                                              },
+                                              {
+                                                  "viewType":  "realm.raudViewer",
+                                                  "displayName":  "Realm Audio Player",
+                                                  "selector":  [
+                                                                   {
+                                                                       "filenamePattern":  "*.raud"
+                                                                   }
+                                                               ],
+                                                  "priority":  "default"
                                               }
                                           ],
                         "jsonValidation":  [

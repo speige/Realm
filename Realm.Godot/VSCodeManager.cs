@@ -1110,6 +1110,110 @@ public class VSCodeManager
 					responseObj["error"] = ex.Message;
 				}
 			}
+			else if (action == "convertRmod")
+			{
+				string inputPath = node["inputPath"]?.ToString() ?? node["filePath"]?.ToString() ?? "";
+				string outputPath = node["outputPath"]?.ToString() ?? "";
+				try
+				{
+					if (File.Exists(inputPath))
+					{
+						byte[] rmodBytes = File.ReadAllBytes(inputPath);
+						var (metaJson, glbBytes, _) = Realm.Shared.ModelOptimization.RmodFile.Parse(rmodBytes);
+						if (glbBytes.Length > 0)
+						{
+							if (!string.IsNullOrEmpty(outputPath))
+							{
+								string? dir = Path.GetDirectoryName(outputPath);
+								if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+								File.WriteAllBytes(outputPath, glbBytes);
+							}
+							responseObj["action"] = "convertRmodResult";
+							responseObj["type"] = "convertRmodResult";
+							responseObj["success"] = true;
+							responseObj["outputPath"] = outputPath;
+							if (!string.IsNullOrEmpty(metaJson))
+							{
+								responseObj["metadata"] = JsonNode.Parse(metaJson);
+							}
+						}
+						else
+						{
+							responseObj["action"] = "convertRmodResult";
+							responseObj["type"] = "convertRmodResult";
+							responseObj["success"] = false;
+							responseObj["error"] = "No GLB payload found in RMOD file.";
+						}
+					}
+					else
+					{
+						responseObj["action"] = "convertRmodResult";
+						responseObj["type"] = "convertRmodResult";
+						responseObj["success"] = false;
+						responseObj["error"] = $"RMOD file not found: {inputPath}";
+					}
+				}
+				catch (Exception ex)
+				{
+					responseObj["action"] = "convertRmodResult";
+					responseObj["type"] = "convertRmodResult";
+					responseObj["success"] = false;
+					responseObj["error"] = ex.Message;
+				}
+			}
+			else if (action == "convertRaud")
+			{
+				string inputPath = node["inputPath"]?.ToString() ?? node["filePath"]?.ToString() ?? "";
+				string outputPath = node["outputPath"]?.ToString() ?? "";
+				int trackIndex = node["trackIndex"] != null ? (int)node["trackIndex"] : 0;
+				try
+				{
+					if (File.Exists(inputPath))
+					{
+						byte[] raudBytes = File.ReadAllBytes(inputPath);
+						var (metaJson, tracks, _) = Realm.Shared.Audio.RaudFile.Parse(raudBytes);
+						if (tracks.Count > trackIndex && tracks[trackIndex].Length > 0)
+						{
+							if (!string.IsNullOrEmpty(outputPath))
+							{
+								string? dir = Path.GetDirectoryName(outputPath);
+								if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+								File.WriteAllBytes(outputPath, tracks[trackIndex]);
+							}
+							responseObj["action"] = "convertRaudResult";
+							responseObj["type"] = "convertRaudResult";
+							responseObj["success"] = true;
+							responseObj["outputPath"] = outputPath;
+							responseObj["trackCount"] = tracks.Count;
+							if (!string.IsNullOrEmpty(metaJson))
+							{
+								responseObj["metadata"] = JsonNode.Parse(metaJson);
+							}
+						}
+						else
+						{
+							responseObj["action"] = "convertRaudResult";
+							responseObj["type"] = "convertRaudResult";
+							responseObj["success"] = false;
+							responseObj["error"] = $"Audio track {trackIndex} not found in RAUD file.";
+						}
+					}
+					else
+					{
+						responseObj["action"] = "convertRaudResult";
+						responseObj["type"] = "convertRaudResult";
+						responseObj["success"] = false;
+						responseObj["error"] = $"RAUD file not found: {inputPath}";
+					}
+				}
+				catch (Exception ex)
+				{
+					responseObj["action"] = "convertRaudResult";
+					responseObj["type"] = "convertRaudResult";
+					responseObj["success"] = false;
+					responseObj["error"] = ex.Message;
+				}
+			}
 
 			string resJson = responseObj.ToJsonString();
 			byte[] resBytes = System.Text.Encoding.UTF8.GetBytes(resJson);
@@ -1247,7 +1351,7 @@ public class VSCodeManager
 				{
 					bool isControlPressed = (GetKeyState(0x11) & 0x8000) != 0;
 					bool isShiftPressed = (GetKeyState(0x10) & 0x8000) != 0;
-					if (isControlPressed && isShiftPressed && (args.VirtualKey == 0x49 || args.VirtualKey == 0x7B))
+					if (isControlPressed && isShiftPressed && args.VirtualKey == 0x49)
 					{
 						if (args.KeyEventKind == CoreWebView2KeyEventKind.KeyDown)
 						{

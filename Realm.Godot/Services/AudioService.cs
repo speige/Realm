@@ -91,7 +91,17 @@ public class AudioService
 				string fullPath = System.IO.Path.Combine(wsPath, "Assets", "audio", soundPath);
 				if (!System.IO.File.Exists(fullPath))
 				{
+					string candRaud = System.IO.Path.ChangeExtension(fullPath, ".raud");
+					if (System.IO.File.Exists(candRaud)) fullPath = candRaud;
+				}
+				if (!System.IO.File.Exists(fullPath))
+				{
 					fullPath = System.IO.Path.Combine(wsPath, soundPath);
+					if (!System.IO.File.Exists(fullPath))
+					{
+						string candRaud = System.IO.Path.ChangeExtension(fullPath, ".raud");
+						if (System.IO.File.Exists(candRaud)) fullPath = candRaud;
+					}
 				}
 				if (!System.IO.File.Exists(fullPath))
 				{
@@ -104,7 +114,16 @@ public class AudioService
 
 				if (System.IO.File.Exists(fullPath))
 				{
-					if (fullPath.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase))
+					if (fullPath.EndsWith(".raud", StringComparison.OrdinalIgnoreCase))
+					{
+						byte[] raudBytes = System.IO.File.ReadAllBytes(fullPath);
+						byte[]? oggBytes = Realm.Shared.Audio.RaudFile.GetTrack(raudBytes, 0);
+						if (oggBytes != null && oggBytes.Length > 0)
+						{
+							stream = AudioStreamOggVorbis.LoadFromBuffer(oggBytes);
+						}
+					}
+					else if (fullPath.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase))
 					{
 						stream = AudioStreamOggVorbis.LoadFromFile(fullPath);
 					}

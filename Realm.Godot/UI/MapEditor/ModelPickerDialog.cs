@@ -75,14 +75,14 @@ public partial class ModelPickerDialog : FloatingDialogBase
 
 		AddSectionHeader(BodyContainer, "📦 " + TranslationServer.Translate("MODEL ASSET SELECTION"), new Color(0.35f, 0.75f, 0.9f));
 
-		_chkShowAllFolders = AddCheckBox(BodyContainer, TranslationServer.Translate("Show all GLB assets (all folders)"), _showAllFolders, (val) =>
+		_chkShowAllFolders = AddCheckBox(BodyContainer, TranslationServer.Translate("Show all model assets (all folders)"), _showAllFolders, (val) =>
 		{
 			_showAllFolders = val;
-		}, "Include GLB models from all asset subdirectories");
+		}, "Include 3D models from all asset subdirectories");
 
 		(_txtModelPath, _setModelPathValue) = AddAssetFilterDropdown(
 			BodyContainer,
-			TranslationServer.Translate("Model Asset (.glb):"),
+			TranslationServer.Translate("Model Asset (.rmod / .glb):"),
 			_selectedModelPath,
 			(all) => ScanAvailableAssets("models", all || _showAllFolders, _domain),
 			(val) =>
@@ -90,7 +90,7 @@ public partial class ModelPickerDialog : FloatingDialogBase
 				_selectedModelPath = val ?? string.Empty;
 				LoadAndPreviewModel(_selectedModelPath);
 			},
-			TranslationServer.Translate("Select or search .glb asset..."),
+			TranslationServer.Translate("Select or search model asset..."),
 			140f
 		);
 
@@ -271,9 +271,18 @@ public partial class ModelPickerDialog : FloatingDialogBase
 
 			FrameCameraOnModel(_previewModelRoot);
 
+			string resolvedPath = ModelCache.ResolveModelPath(modelPath);
+			string details = "";
+			if (!string.IsNullOrEmpty(resolvedPath) && System.IO.File.Exists(resolvedPath))
+			{
+				bool teamCol = Realm.Shared.Metadata.RealmMetadataHelper.ExtractSupportsTeamColor(resolvedPath) == true;
+				string? author = Realm.Shared.Metadata.RealmMetadataHelper.ExtractAuthor(resolvedPath);
+				if (teamCol) details += " • TeamColor: Yes";
+				if (!string.IsNullOrEmpty(author)) details += $" • Author: {author}";
+			}
 			if (_lblStatus != null)
 			{
-				_lblStatus.Text = $"{TranslationServer.Translate("Loaded:")} {modelPath}";
+				_lblStatus.Text = $"{TranslationServer.Translate("Loaded:")} {modelPath}{details}";
 				_lblStatus.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
 			}
 		}

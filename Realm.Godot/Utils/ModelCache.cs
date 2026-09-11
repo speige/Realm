@@ -95,6 +95,7 @@ namespace Realm.Godot.Utils
 				return candUser;
 			}
 
+			string withRmod = cleanPath.EndsWith(".rmod", StringComparison.OrdinalIgnoreCase) ? cleanPath : $"{cleanPath}.rmod";
 			string withGlb = cleanPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) ? cleanPath : $"{cleanPath}.glb";
 			string[] subDirs = new[] { "attachments", "items", "projectiles", "weapons", "props", "resources", "units", "buildings" };
 
@@ -104,6 +105,8 @@ namespace Realm.Godot.Utils
 				if (string.IsNullOrEmpty(loc) || !System.IO.Directory.Exists(loc)) continue;
 				foreach (var sub in subDirs)
 				{
+					string candRmod = System.IO.Path.Combine(loc, "Assets", "models", sub, withRmod);
+					if (System.IO.File.Exists(candRmod)) return candRmod;
 					string cand = System.IO.Path.Combine(loc, "Assets", "models", sub, withGlb);
 					if (System.IO.File.Exists(cand)) return cand;
 				}
@@ -112,11 +115,19 @@ namespace Realm.Godot.Utils
 			string foundPath = PathUtils.FindPath(cleanPath);
 			if (System.IO.File.Exists(foundPath)) return foundPath;
 
+			string foundWithRmod = PathUtils.FindPath(withRmod);
+			if (System.IO.File.Exists(foundWithRmod)) return foundWithRmod;
+
 			string foundWithGlb = PathUtils.FindPath(withGlb);
 			if (System.IO.File.Exists(foundWithGlb)) return foundWithGlb;
 
 			foreach (var sub in subDirs)
 			{
+				string tPathRmod = PathUtils.FindPath($"MapTemplate/Assets/models/{sub}/{withRmod}");
+				if (System.IO.File.Exists(tPathRmod)) return tPathRmod;
+				string rPathRmod = PathUtils.FindPath($"Assets/models/{sub}/{withRmod}");
+				if (System.IO.File.Exists(rPathRmod)) return rPathRmod;
+
 				string tPath = PathUtils.FindPath($"MapTemplate/Assets/models/{sub}/{withGlb}");
 				if (System.IO.File.Exists(tPath)) return tPath;
 				string rPath = PathUtils.FindPath($"Assets/models/{sub}/{withGlb}");
@@ -173,7 +184,17 @@ namespace Realm.Godot.Utils
 				{
 					var doc = new GltfDocument();
 					var state = new GltfState();
-					var err = doc.AppendFromFile(targetPath, state);
+					Error err;
+					if (targetPath.EndsWith(".rmod", StringComparison.OrdinalIgnoreCase))
+					{
+						byte[] rmodBytes = System.IO.File.ReadAllBytes(targetPath);
+						byte[] glbBytes = Realm.Shared.ModelOptimization.RmodFile.GetGlbBytes(rmodBytes) ?? rmodBytes;
+						err = doc.AppendFromBuffer(glbBytes, "", state);
+					}
+					else
+					{
+						err = doc.AppendFromFile(targetPath, state);
+					}
 					if (err == Error.Ok)
 					{
 						Node generatedNode = doc.GenerateScene(state);
@@ -226,7 +247,17 @@ namespace Realm.Godot.Utils
 				{
 					var doc = new GltfDocument();
 					var state = new GltfState();
-					var err = doc.AppendFromFile(resolved, state);
+					Error err;
+					if (resolved.EndsWith(".rmod", StringComparison.OrdinalIgnoreCase))
+					{
+						byte[] rmodBytes = System.IO.File.ReadAllBytes(resolved);
+						byte[] glbBytes = Realm.Shared.ModelOptimization.RmodFile.GetGlbBytes(rmodBytes) ?? rmodBytes;
+						err = doc.AppendFromBuffer(glbBytes, "", state);
+					}
+					else
+					{
+						err = doc.AppendFromFile(resolved, state);
+					}
 					if (err == Error.Ok)
 					{
 						node = doc.GenerateScene(state);
