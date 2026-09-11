@@ -1,5 +1,6 @@
 .vs/
-.LLMPrompts/
+.llmPrompts/
+.jules_prompts/
 .jules/
 MapTemplate/lib/Realm.MapAPI.dll
 MapTemplate/lib/Realm.MapAPI.pdb
