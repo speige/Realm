@@ -19,23 +19,23 @@ $fallbackSourceExtensionDir = Join-Path $rootDir "Realm.Godot\vscode_extensions_
 $candidateExtensionDirs = [System.Collections.Generic.List[string]]::new()
 
 if ($env:APPDATA) {
-    $candidateExtensionDirs.Add((Join-Path $env:APPDATA "Godot\app_userdata\Realm.Godot\vscode\user-data-dir\extensions"))
+    $candidateExtensionDirs.Add((Join-Path $env:APPDATA "Godot\app_userdata\Realm\vscode\user-data-dir\extensions"))
 }
 
 $specialAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::ApplicationData)
 if ($specialAppData) {
-    $candidateExtensionDirs.Add((Join-Path $specialAppData "Godot\app_userdata\Realm.Godot\vscode\user-data-dir\extensions"))
+    $candidateExtensionDirs.Add((Join-Path $specialAppData "Godot\app_userdata\Realm\vscode\user-data-dir\extensions"))
 }
 
 $specialLocalAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
 if ($specialLocalAppData) {
-    $candidateExtensionDirs.Add((Join-Path $specialLocalAppData "godot\app_userdata\Realm.Godot\vscode\user-data-dir\extensions"))
+    $candidateExtensionDirs.Add((Join-Path $specialLocalAppData "godot\app_userdata\Realm\vscode\user-data-dir\extensions"))
 }
 
 $specialUserProfile = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
 if ($specialUserProfile) {
-    $candidateExtensionDirs.Add((Join-Path $specialUserProfile ".local\share\godot\app_userdata\Realm.Godot\vscode\user-data-dir\extensions"))
-    $candidateExtensionDirs.Add((Join-Path $specialUserProfile "Library\Application Support\Godot\app_userdata\Realm.Godot\vscode\user-data-dir\extensions"))
+    $candidateExtensionDirs.Add((Join-Path $specialUserProfile ".local\share\godot\app_userdata\Realm\vscode\user-data-dir\extensions"))
+    $candidateExtensionDirs.Add((Join-Path $specialUserProfile "Library\Application Support\Godot\app_userdata\Realm\vscode\user-data-dir\extensions"))
 }
 
 $uniqueExtensionDirs = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)

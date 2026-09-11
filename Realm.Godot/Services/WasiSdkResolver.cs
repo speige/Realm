@@ -42,13 +42,13 @@ public static class WasiSdkResolver
 		try
 		{
 			string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-			string appDataFallback = Path.Combine(appData, "Godot", "app_userdata", "Realm.Godot", "wasi_sdk", "wasi-sdk-34");
+			string appDataFallback = Path.Combine(appData, "Godot", "app_userdata", "Realm", "wasi_sdk", "wasi-sdk-34");
 			if (IsValidWasiSdkDirectory(appDataFallback))
 			{
 				return NormalizeDirectoryPath(appDataFallback);
 			}
 
-			string fallbackSdkParent = Path.Combine(appData, "Godot", "app_userdata", "Realm.Godot", "wasi_sdk");
+			string fallbackSdkParent = Path.Combine(appData, "Godot", "app_userdata", "Realm", "wasi_sdk");
 			if (Directory.Exists(fallbackSdkParent))
 			{
 				foreach (string candidate in System.Linq.Enumerable.OrderByDescending(Directory.GetDirectories(fallbackSdkParent, "wasi-sdk-*"), d => d))

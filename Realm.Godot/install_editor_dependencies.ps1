@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $godotDir = $PSScriptRoot
-$appDataDir = Join-Path $env:APPDATA "Godot\app_userdata\Realm.Godot"
+$appDataDir = Join-Path $env:APPDATA "Godot\app_userdata\Realm"
 $embedDir = Join-Path $appDataDir "vscode"
 $binDir = Join-Path $embedDir "bin"
 $userDataDir = Join-Path $embedDir "user-data-dir"

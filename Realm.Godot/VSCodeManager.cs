@@ -84,7 +84,7 @@ public class VSCodeManager
 		try
 		{
 			string appData = System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData);
-			string appDataFallback = Path.Combine(appData, "Godot", "app_userdata", "Realm.Godot", "vscode");
+			string appDataFallback = Path.Combine(appData, "Godot", "app_userdata", "Realm", "vscode");
 			if (Directory.Exists(appDataFallback))
 			{
 				return appDataFallback;
@@ -112,7 +112,7 @@ public class VSCodeManager
 		{
 		}
 
-		return Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData), "Godot", "app_userdata", "Realm.Godot", "vscode");
+		return Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData), "Godot", "app_userdata", "Realm", "vscode");
 	}
 
 	public static string GetRealmMapEditorVersion()

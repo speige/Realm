@@ -62,7 +62,7 @@ jobs:
         run: |
           $consoleExe = (Get-ChildItem -Path "C:\Users\runneradmin\godot" -Filter "*console.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName)
           if (-not $consoleExe) { $consoleExe = "godot" }
-          & $consoleExe --headless --path Realm.Godot --export-release "Windows Desktop" "$PWD\publish\Realm.Godot.exe"
+          & $consoleExe --headless --path Realm.Godot --export-release "Windows Desktop" "$PWD\publish\Realm.exe"
 
       - name: Copy Realm.Tools.Cli to Publish Directory
         if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
@@ -80,7 +80,7 @@ jobs:
           $osPlatform = "Windows"
           $systemArchitecture = "x64"
           $rawVersion = ""
-          $exePath = "$PWD\publish\Realm.Godot.exe"
+          $exePath = "$PWD\publish\Realm.exe"
           if (Test-Path $exePath) {
             $rawVersion = (Get-Item $exePath).VersionInfo.ProductVersion
             if (-not $rawVersion -or $rawVersion.Trim() -eq "") {

@@ -14,7 +14,7 @@ public static class PathUtils
 			return true;
 #else
 			string baseDir = AppDomain.CurrentDomain.BaseDirectory.Replace("\\", "/").TrimEnd('/');
-			if (baseDir.Contains("data_Realm.Godot_windows_x86_64", StringComparison.OrdinalIgnoreCase))
+			if (baseDir.Contains("data_Realm_windows_x86_64", StringComparison.OrdinalIgnoreCase))
 			{
 				return false;
 			}
