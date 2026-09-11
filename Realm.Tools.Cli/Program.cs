@@ -210,6 +210,12 @@ public static class Program
 {
 	public static int Main(string[] args)
 	{
+		if (args.Any(argument => string.Equals(argument, "--eula-accept", StringComparison.OrdinalIgnoreCase)))
+		{
+			_assetAgreementAccepted = true;
+			args = args.Where(argument => !string.Equals(argument, "--eula-accept", StringComparison.OrdinalIgnoreCase)).ToArray();
+		}
+
 		return Parser.Default.ParseArguments<GlbOptimizeOptions, TextureConvertOptions, AudioConvertOptions, FbxToRanimOptions, RanimRenderOptions, MetadataOptions, Blake3Options, GlbPlayerColorCliOptions, RigHumanoidOptions>(args)
 			.MapResult(
 				(GlbOptimizeOptions options) => ExecuteGlbOptimize(options),
