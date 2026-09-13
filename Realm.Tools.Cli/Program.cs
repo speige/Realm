@@ -122,6 +122,9 @@ public class RanimRenderOptions
 	[Option("scale", Required = false, Default = 1.0f, HelpText = "Model scale factor (default 1.0).")]
 	public float Scale { get; set; } = 1.0f;
 
+	[Option('m', "model", Required = false, HelpText = "Optional path to rigged humanoid .rmod or .glb model to render instead of skeleton.")]
+	public string? Model { get; set; }
+
 	[Option('r', "recursive", Required = false, Default = false, HelpText = "Process directories recursively.")]
 	public bool Recursive { get; set; }
 
@@ -304,7 +307,8 @@ public static class Program
 			Format = outputFormat,
 			Scale = options.Scale,
 			DrawBorder = !options.NoBorder,
-			DrawShadow = !options.NoShadow
+			DrawShadow = !options.NoShadow,
+			ModelPath = options.Model
 		};
 
 		if (File.Exists(options.Input))

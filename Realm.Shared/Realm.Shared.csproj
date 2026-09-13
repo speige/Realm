@@ -17,6 +17,7 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <EmbeddedResource Include="MiaSetup\**\*.*" />
+    <EmbeddedResource Include="BlenderSetup\**\*.*" />
   </ItemGroup>
 
   <ItemGroup>

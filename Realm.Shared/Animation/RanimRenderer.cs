@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
+using Realm.Shared.BlenderSetup;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Gif;
 using SixLabors.ImageSharp.PixelFormats;
@@ -24,6 +25,8 @@ public class RanimRenderOptions
 	public float Scale { get; set; } = 1.0f;
 	public bool DrawBorder { get; set; } = true;
 	public bool DrawShadow { get; set; } = true;
+	public string? ModelPath { get; set; }
+	public byte[]? ModelBytes { get; set; }
 }
 
 public class RanimRenderFrame
@@ -99,6 +102,11 @@ public static class RanimRenderer
 			return new RanimRenderResult();
 		}
 
+		if ((options.ModelBytes != null && options.ModelBytes.Length > 0) || !string.IsNullOrEmpty(options.ModelPath))
+		{
+			return BlenderRanimRenderer.RenderFrames(animData, options);
+		}
+
 		var trackMap = BuildTrackMap(animData);
 		float duration = animData.Duration > 0f ? animData.Duration : 1.0f;
 		float sampleFps = options.Fps > 0f ? options.Fps : 12.0f;
@@ -147,6 +155,7 @@ public static class RanimRenderer
 		foreach (float time in selectedTimes)
 		{
 			using var image = RenderSkeletonFrame(trackMap, time, options);
+
 			byte[] pixelBytes = new byte[options.Width * options.Height * 4];
 			image.CopyPixelDataTo(pixelBytes);
 
@@ -220,6 +229,11 @@ public static class RanimRenderer
 			return exportResult;
 		}
 
+		if ((renderOptions.ModelBytes != null && renderOptions.ModelBytes.Length > 0) || !string.IsNullOrEmpty(renderOptions.ModelPath))
+		{
+			return BlenderRanimRenderer.ExportToFile(animData, outputPath, renderOptions, inputPath);
+		}
+
 		var trackMap = BuildTrackMap(animData);
 		float duration = animData.Duration > 0f ? animData.Duration : 1.0f;
 		float sampleFps = renderOptions.Fps > 0f ? renderOptions.Fps : 12.0f;
@@ -264,7 +278,8 @@ public static class RanimRenderer
 		{
 			foreach (float time in selectedTimes)
 			{
-				frameImages.Add(RenderSkeletonFrame(trackMap, time, renderOptions));
+				var img = RenderSkeletonFrame(trackMap, time, renderOptions);
+				frameImages.Add(img);
 			}
 
 			string? directory = Path.GetDirectoryName(outputPath);
