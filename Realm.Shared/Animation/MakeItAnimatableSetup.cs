@@ -53,13 +53,14 @@ public static class MakeItAnimatableSetup
         }
 
         Directory.CreateDirectory(NodeDir);
-        ExtractWrapperFiles(Log);
 
         if (IsSetupComplete())
         {
             Log("[MIA] Make-It-Animatable environment is ready.");
             return;
         }
+
+        ExtractWrapperFiles(Log);
 
         Log("[MIA] First-time setup: initializing Make-It-Animatable environment.");
         Log($"[MIA] Install directory: {NodeDir}");
@@ -128,10 +129,17 @@ public static class MakeItAnimatableSetup
         string? dir = Path.GetDirectoryName(destPath);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
-        using (stream)
-        using (var fs = File.Create(destPath))
+        try
         {
-            stream.CopyTo(fs);
+            using (stream)
+            using (var fs = File.Create(destPath))
+            {
+                stream.CopyTo(fs);
+            }
+        }
+        catch (IOException) when (File.Exists(destPath))
+        {
+            // File is locked or in use by another running process; existing file will be used.
         }
     }
 

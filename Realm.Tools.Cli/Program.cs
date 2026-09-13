@@ -1208,6 +1208,7 @@ public static class Program
 
 		string tempGlbInput = inputPath;
 		string? tempExtractedGlb = null;
+		string? tempGlbOutput = null;
 		string? existingMeta = null;
 
 		try
@@ -1226,7 +1227,7 @@ public static class Program
 				? inputPath
 				: options.Output;
 
-			string tempGlbOutput = Path.Combine(Path.GetTempPath(), $"realm_rig_out_{Guid.NewGuid():N}.glb");
+			tempGlbOutput = Path.Combine(Path.GetTempPath(), $"realm_rig_out_{Guid.NewGuid():N}.glb");
 
 			var result = GlbAutoRigger.RigHumanoid(
 				tempGlbInput,
@@ -1292,6 +1293,7 @@ public static class Program
 		finally
 		{
 			if (tempExtractedGlb != null && File.Exists(tempExtractedGlb)) try { File.Delete(tempExtractedGlb); } catch { }
+			if (tempGlbOutput != null && File.Exists(tempGlbOutput)) try { File.Delete(tempGlbOutput); } catch { }
 		}
 	}
 }

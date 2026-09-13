@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json.Nodes;
+using System.Threading;
 
 namespace Realm.Shared.Animation;
 
@@ -22,6 +23,20 @@ public class GlbAutoRiggerResult
 
 public static class GlbAutoRigger
 {
+    private static readonly Mutex RiggingMutex = CreateGlobalMutex();
+
+    private static Mutex CreateGlobalMutex()
+    {
+        try
+        {
+            return new Mutex(false, @"Global\Realm_GlbAutoRigger_Mutex");
+        }
+        catch
+        {
+            return new Mutex(false, @"Local\Realm_GlbAutoRigger_Mutex");
+        }
+    }
+
     public static GlbAutoRiggerResult RigHumanoid(
         string inputPath,
         string outputPath,
@@ -47,114 +62,173 @@ public static class GlbAutoRigger
         string fullInputPath = Path.GetFullPath(inputPath);
         string fullOutputPath = Path.GetFullPath(outputPath);
 
+        bool hasLock = false;
         try
         {
-            MakeItAnimatableSetup.EnsureSetup(options.LogCallback);
-        }
-        catch (Exception ex)
-        {
-            return new GlbAutoRiggerResult
+            try
             {
-                Success = false,
-                ErrorMessage = $"Make-It-Animatable setup failed: {ex.Message}"
-            };
-        }
-
-        string? outputDir = Path.GetDirectoryName(fullOutputPath);
-        if (!string.IsNullOrEmpty(outputDir) && !Directory.Exists(outputDir))
-        {
-            Directory.CreateDirectory(outputDir);
-        }
-
-        var optimizer = new GlbOptimizer();
-        byte[] sourceBytes = File.ReadAllBytes(fullInputPath);
-        bool wasOptimized = optimizer.IsOptimized(sourceBytes);
-
-        string rigSourcePath = fullInputPath;
-        string? tempUnoptimizedPath = null;
-
-        try
-        {
-            if (wasOptimized)
+                hasLock = RiggingMutex.WaitOne(TimeSpan.FromMinutes(15));
+            }
+            catch (AbandonedMutexException)
             {
-                Log("  Detected pre-optimized GLB — unoptimizing first to restore mesh topology...");
-                var unoptResult = optimizer.Unoptimize(sourceBytes);
-                if (!unoptResult.Success || unoptResult.OutputGlbBytes == null)
+                hasLock = true;
+            }
+
+            if (!hasLock)
+            {
+                return new GlbAutoRiggerResult
+                {
+                    Success = false,
+                    ErrorMessage = "Timed out waiting for Make-It-Animatable GPU lock."
+                };
+            }
+
+            try
+            {
+                MakeItAnimatableSetup.EnsureSetup(options.LogCallback);
+            }
+            catch (Exception ex)
+            {
+                return new GlbAutoRiggerResult
+                {
+                    Success = false,
+                    ErrorMessage = $"Make-It-Animatable setup failed: {ex.Message}"
+                };
+            }
+
+            string? outputDir = Path.GetDirectoryName(fullOutputPath);
+            if (!string.IsNullOrEmpty(outputDir) && !Directory.Exists(outputDir))
+            {
+                Directory.CreateDirectory(outputDir);
+            }
+
+            var optimizer = new GlbOptimizer();
+            byte[] sourceBytes = File.ReadAllBytes(fullInputPath);
+            bool wasOptimized = optimizer.IsOptimized(sourceBytes);
+
+            string tempJobDir = Path.Combine(Path.GetTempPath(), $"realm_rig_job_{Guid.NewGuid():N}");
+            Directory.CreateDirectory(tempJobDir);
+            string rigSourcePath = Path.Combine(tempJobDir, "input_for_rigging.glb");
+
+            try
+            {
+                if (wasOptimized)
+                {
+                    Log("  Detected pre-optimized GLB — unoptimizing first to restore mesh topology...");
+                    var unoptResult = optimizer.Unoptimize(sourceBytes);
+                    if (!unoptResult.Success || unoptResult.OutputGlbBytes == null)
+                    {
+                        return new GlbAutoRiggerResult
+                        {
+                            Success = false,
+                            ErrorMessage = $"Failed to unoptimize {inputPath}: {unoptResult.ErrorMessage}"
+                        };
+                    }
+
+                    File.WriteAllBytes(rigSourcePath, unoptResult.OutputGlbBytes);
+                }
+                else
+                {
+                    File.Copy(fullInputPath, rigSourcePath, true);
+                }
+
+                var kwargs = new JsonObject
+                {
+                    ["is_gs"] = false,
+                    ["no_fingers"] = options.NoFingers,
+                    ["input_normal"] = options.UseNormals,
+                    ["bw_fix"] = options.WeightPostprocess,
+                    ["reset_to_rest"] = true,
+                    ["inplace"] = true,
+                    ["animation_file"] = JsonValue.Create<string?>(null)
+                };
+                string kwargsJson = kwargs.ToJsonString();
+
+                Log($"Rigging: {fullInputPath}");
+                Log($"  Output:             {fullOutputPath}");
+                Log($"  no_fingers:         {options.NoFingers}");
+                Log($"  use_normals:        {options.UseNormals}");
+                Log($"  weight_postprocess: {options.WeightPostprocess}");
+
+                var psi = new ProcessStartInfo
+                {
+                    FileName = MakeItAnimatableSetup.PythonExePath,
+                    WorkingDirectory = MakeItAnimatableSetup.NodeDir,
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardInput = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+                psi.Environment["PYTHONUNBUFFERED"] = "1";
+                psi.Environment["PYTHONIOENCODING"] = "utf-8";
+                psi.ArgumentList.Add("-u");
+                psi.ArgumentList.Add(MakeItAnimatableSetup.ServerScriptPath);
+                psi.ArgumentList.Add("--input");
+                psi.ArgumentList.Add(rigSourcePath);
+                psi.ArgumentList.Add("--output");
+                psi.ArgumentList.Add(fullOutputPath);
+                psi.ArgumentList.Add("--kwargs");
+                psi.ArgumentList.Add(kwargsJson);
+
+                int exitCode = RunPipelineProcess(psi, Log);
+
+                bool outputCreated = File.Exists(fullOutputPath) && new FileInfo(fullOutputPath).Length > 0;
+
+                if (exitCode != 0 && exitCode != -1073741819 && exitCode != unchecked((int)0xC0000005))
                 {
                     return new GlbAutoRiggerResult
                     {
                         Success = false,
-                        ErrorMessage = $"Failed to unoptimize {inputPath}: {unoptResult.ErrorMessage}"
+                        ErrorMessage = $"Make-It-Animatable pipeline exited with code {exitCode}."
                     };
                 }
 
-                tempUnoptimizedPath = Path.Combine(
-                    Path.GetDirectoryName(fullInputPath) ?? string.Empty,
-                    $"__tmp_unopt_rig_{Path.GetFileName(fullInputPath)}");
-                File.WriteAllBytes(tempUnoptimizedPath, unoptResult.OutputGlbBytes);
-                rigSourcePath = tempUnoptimizedPath;
+                if (!outputCreated)
+                {
+                    return new GlbAutoRiggerResult
+                    {
+                        Success = false,
+                        ErrorMessage = $"Output rigged file was not created: {fullOutputPath}"
+                    };
+                }
+            }
+            finally
+            {
+                try
+                {
+                    if (Directory.Exists(tempJobDir))
+                    {
+                        Directory.Delete(tempJobDir, true);
+                    }
+                }
+                catch { }
             }
 
-            var kwargs = new JsonObject
+            Log("  Re-optimizing output (LODs regenerated from rigged bone structure)...");
+            var optimizeResult = optimizer.OptimizeFile(
+                fullOutputPath,
+                fullOutputPath,
+                new OptimizationOptions { ForceReDecimate = true });
+
+            if (!optimizeResult.Success)
             {
-                ["is_gs"] = false,
-                ["no_fingers"] = options.NoFingers,
-                ["input_normal"] = options.UseNormals,
-                ["bw_fix"] = options.WeightPostprocess,
-                ["reset_to_rest"] = true,
-                ["inplace"] = true,
-                ["animation_file"] = JsonValue.Create<string?>(null)
-            };
-            string kwargsJson = kwargs.ToJsonString();
-
-            Log($"Rigging: {fullInputPath}");
-            Log($"  Output:             {fullOutputPath}");
-            Log($"  no_fingers:         {options.NoFingers}");
-            Log($"  use_normals:        {options.UseNormals}");
-            Log($"  weight_postprocess: {options.WeightPostprocess}");
-
-            var psi = new ProcessStartInfo
-            {
-                FileName = MakeItAnimatableSetup.PythonExePath,
-                WorkingDirectory = MakeItAnimatableSetup.NodeDir,
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardInput = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-            psi.Environment["PYTHONUNBUFFERED"] = "1";
-            psi.Environment["PYTHONIOENCODING"] = "utf-8";
-            psi.ArgumentList.Add("-u");
-            psi.ArgumentList.Add(MakeItAnimatableSetup.ServerScriptPath);
-            psi.ArgumentList.Add("--input");
-            psi.ArgumentList.Add(rigSourcePath);
-            psi.ArgumentList.Add("--output");
-            psi.ArgumentList.Add(fullOutputPath);
-            psi.ArgumentList.Add("--kwargs");
-            psi.ArgumentList.Add(kwargsJson);
-
-            int exitCode = RunPipelineProcess(psi, Log);
-
-            bool outputCreated = File.Exists(fullOutputPath) && new FileInfo(fullOutputPath).Length > 0;
-
-            if (exitCode != 0 && exitCode != -1073741819 && exitCode != unchecked((int)0xC0000005))
-            {
+                Log($"  Warning: Re-optimization failed: {optimizeResult.ErrorMessage}");
                 return new GlbAutoRiggerResult
                 {
-                    Success = false,
-                    ErrorMessage = $"Make-It-Animatable pipeline exited with code {exitCode}."
+                    Success = true,
+                    OutputPath = fullOutputPath,
+                    ErrorMessage = $"Rigged successfully, but re-optimization warning: {optimizeResult.ErrorMessage}"
                 };
             }
 
-            if (!outputCreated)
+            Log($"  Successfully rigged and optimized: {fullOutputPath} ({optimizeResult.OriginalSize} -> {optimizeResult.OptimizedSize} bytes)");
+
+            return new GlbAutoRiggerResult
             {
-                return new GlbAutoRiggerResult
-                {
-                    Success = false,
-                    ErrorMessage = $"Output rigged file was not created: {fullOutputPath}"
-                };
-            }
+                Success = true,
+                OutputPath = fullOutputPath
+            };
         }
         catch (Exception ex)
         {
@@ -166,55 +240,11 @@ public static class GlbAutoRigger
         }
         finally
         {
-            if (tempUnoptimizedPath != null && File.Exists(tempUnoptimizedPath))
+            if (hasLock)
             {
-                try { File.Delete(tempUnoptimizedPath); } catch { }
-            }
-
-            if (tempUnoptimizedPath != null)
-            {
-                string tempUnoptDir = Path.Combine(
-                    Path.GetDirectoryName(tempUnoptimizedPath) ?? string.Empty,
-                    Path.GetFileNameWithoutExtension(tempUnoptimizedPath));
-                if (Directory.Exists(tempUnoptDir))
-                {
-                    try { Directory.Delete(tempUnoptDir, true); } catch { }
-                }
-            }
-
-            string inputDirWithoutExt = Path.Combine(
-                Path.GetDirectoryName(fullInputPath) ?? string.Empty,
-                Path.GetFileNameWithoutExtension(fullInputPath));
-            if (Directory.Exists(inputDirWithoutExt))
-            {
-                try { Directory.Delete(inputDirWithoutExt, true); } catch { }
+                try { RiggingMutex.ReleaseMutex(); } catch { }
             }
         }
-
-        Log("  Re-optimizing output (LODs regenerated from rigged bone structure)...");
-        var optimizeResult = optimizer.OptimizeFile(
-            fullOutputPath,
-            fullOutputPath,
-            new OptimizationOptions { ForceReDecimate = true });
-
-        if (!optimizeResult.Success)
-        {
-            Log($"  Warning: Re-optimization failed: {optimizeResult.ErrorMessage}");
-            return new GlbAutoRiggerResult
-            {
-                Success = true,
-                OutputPath = fullOutputPath,
-                ErrorMessage = $"Rigged successfully, but re-optimization warning: {optimizeResult.ErrorMessage}"
-            };
-        }
-
-        Log($"  Successfully rigged and optimized: {fullOutputPath} ({optimizeResult.OriginalSize} -> {optimizeResult.OptimizedSize} bytes)");
-
-        return new GlbAutoRiggerResult
-        {
-            Success = true,
-            OutputPath = fullOutputPath
-        };
     }
 
     private static int RunPipelineProcess(ProcessStartInfo psi, Action<string> log)
