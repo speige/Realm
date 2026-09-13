@@ -47,11 +47,11 @@
                                                   "priority":  "default"
                                               },
                                               {
-                                                  "viewType":  "realm.rmodViewer",
-                                                  "displayName":  "Realm 3D Model Viewer",
+                                                  "viewType":  "realm.rmeshViewer",
+                                                  "displayName":  "Realm 3D Mesh Viewer",
                                                   "selector":  [
                                                                    {
-                                                                       "filenamePattern":  "*.rmod"
+                                                                       "filenamePattern":  "*.rmesh"
                                                                    }
                                                                ],
                                                   "priority":  "default"

@@ -347,8 +347,8 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 		{
 			assetName = Path.GetFileNameWithoutExtension(sourcePath).ToLowerInvariant().Replace(' ', '_');
 		}
-		string cleanBase = assetName.ToLowerInvariant().Replace(' ', '_').Replace(".rmod", "").Replace(".glb", "");
-		string fileName = $"{cleanBase}.rmod";
+		string cleanBase = assetName.ToLowerInvariant().Replace(' ', '_').Replace(".rmesh", "").Replace(".glb", "");
+		string fileName = $"{cleanBase}.rmesh";
 
 		string subCategory = _optSubCategory.Selected switch
 		{
@@ -418,7 +418,7 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 					currentPath = maskedPath;
 				}
 
-				SetProgressStatus(TranslationServer.Translate("Step 3/4: Optimizing geometry & packaging RMOD..."), 40, false);
+				SetProgressStatus(TranslationServer.Translate("Step 3/4: Optimizing geometry & packaging RMESH..."), 40, false);
 				int maxRes = subCategory is "attachments" or "items" ? 512 : 1024;
 				string canonicalAssetType = subCategory switch
 				{
@@ -428,7 +428,7 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 					_ => "Prop"
 				};
 
-				var convRes = Realm.Shared.ModelOptimization.ModelConverter.ConvertToRmod(
+				var convRes = Realm.Shared.ModelOptimization.ModelConverter.ConvertToRmesh(
 					currentPath,
 					destPath,
 					canonicalAssetType,
@@ -459,7 +459,7 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 				};
 
 				string hash = convRes.OutputBytes != null
-					? RealmMetadataHelper.ComputeBlake3(convRes.OutputBytes, ".rmod")
+					? RealmMetadataHelper.ComputeBlake3(convRes.OutputBytes, ".rmesh")
 					: RealmMetadataHelper.ComputeBlake3(destPath);
 				bool isPropOrRes = subCategory == "resources" || subCategory == "props";
 

@@ -44,7 +44,7 @@ public static class RealmMetadataHelper
 	{
 		string ext = Path.GetExtension(extensionOrPath).ToLowerInvariant();
 		if (string.IsNullOrEmpty(ext) && extensionOrPath.StartsWith('.')) ext = extensionOrPath.ToLowerInvariant();
-		return ext is ".glb" or ".rtex" or ".ranim" or ".ogg" or ".rmod" or ".raud";
+		return ext is ".glb" or ".rtex" or ".ranim" or ".ogg" or ".rmesh" or ".raud";
 	}
 
 	public static string? ExtractMetadata(string filePath)
@@ -54,7 +54,7 @@ public static class RealmMetadataHelper
 		return ext switch
 		{
 			".glb" => ExtractMetadataFromGlb(filePath),
-			".rmod" => ExtractMetadataFromRmod(filePath),
+			".rmesh" => ExtractMetadataFromRmesh(filePath),
 			".rtex" => ExtractMetadataFromRtex(filePath),
 			".ranim" => ExtractMetadataFromRanim(filePath),
 			".ogg" => ExtractMetadataFromOgg(filePath),
@@ -118,7 +118,7 @@ public static class RealmMetadataHelper
 	{
 		[".rtex"] = new[] { "Decal", "Icon", "Noise", "Ribbon", "Skybox", "Spritesheet", "Terrain", "vfx_radial", "vfx_vertical" },
 		[".glb"] = new[] { "Character", "Building", "Prop", "Item" },
-		[".rmod"] = new[] { "Character", "Building", "Prop", "Item" },
+		[".rmesh"] = new[] { "Character", "Building", "Prop", "Item" },
 		[".ranim"] = new[] { "Animation" },
 		[".ogg"] = new[] { "Music", "SoundEffect" },
 		[".raud"] = new[] { "Music", "SoundEffect" }
@@ -159,7 +159,7 @@ public static class RealmMetadataHelper
 			if (norm.Contains("sprite") || norm.Contains("vfx") || norm.Contains("spell")) { canonicalType = "Spritesheet"; return true; }
 			return false;
 		}
-		else if (ext is ".glb" or ".rmod")
+		else if (ext is ".glb" or ".rmesh")
 		{
 			if (norm.Contains("character") || norm.Contains("unit")) { canonicalType = "Character"; return true; }
 			if (norm.Contains("building") || norm.Contains("structure")) { canonicalType = "Building"; return true; }
@@ -438,7 +438,7 @@ public static class RealmMetadataHelper
 	{
 		if (!File.Exists(filePath)) return false;
 		string ext = Path.GetExtension(filePath).ToLowerInvariant();
-		if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg" or ".rmod" or ".raud")) return false;
+		if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg" or ".rmesh" or ".raud")) return false;
 
 		string? existingMeta = ExtractMetadata(filePath);
 		JsonObject metaObj;
@@ -481,8 +481,8 @@ public static class RealmMetadataHelper
 			case ".glb":
 				AddMetadataToGlb(filePath, realmMetadataJson);
 				return true;
-			case ".rmod":
-				AddMetadataToRmod(filePath, realmMetadataJson);
+			case ".rmesh":
+				AddMetadataToRmesh(filePath, realmMetadataJson);
 				return true;
 			case ".rtex":
 				AddMetadataToRtex(filePath, realmMetadataJson);
@@ -497,7 +497,7 @@ public static class RealmMetadataHelper
 				AddMetadataToRaud(filePath, realmMetadataJson);
 				return true;
 			default:
-				throw new NotSupportedException($"Unsupported file format '{ext}' for metadata. Supported formats: .glb, .rmod, .rtex, .ogg, .raud, .ranim");
+				throw new NotSupportedException($"Unsupported file format '{ext}' for metadata. Supported formats: .glb, .rmesh, .rtex, .ogg, .raud, .ranim");
 		}
 	}
 
@@ -510,8 +510,8 @@ public static class RealmMetadataHelper
 			case ".glb":
 				RemoveMetadataFromGlb(filePath);
 				return true;
-			case ".rmod":
-				RemoveMetadataFromRmod(filePath);
+			case ".rmesh":
+				RemoveMetadataFromRmesh(filePath);
 				return true;
 			case ".rtex":
 				RemoveMetadataFromRtex(filePath);
@@ -526,7 +526,7 @@ public static class RealmMetadataHelper
 				RemoveMetadataFromRaud(filePath);
 				return true;
 			default:
-				throw new NotSupportedException($"Unsupported file format '{ext}' for metadata. Supported formats: .glb, .rmod, .rtex, .ogg, .raud, .ranim");
+				throw new NotSupportedException($"Unsupported file format '{ext}' for metadata. Supported formats: .glb, .rmesh, .rtex, .ogg, .raud, .ranim");
 		}
 	}
 
@@ -720,24 +720,24 @@ public static class RealmMetadataHelper
 
 
 
-	public static string? ExtractMetadataFromRmod(string filePath)
+	public static string? ExtractMetadataFromRmesh(string filePath)
 	{
 		if (!File.Exists(filePath)) return null;
 		byte[] bytes = File.ReadAllBytes(filePath);
-		return RmodFile.ExtractMetadata(bytes);
+		return RmeshFile.ExtractMetadata(bytes);
 	}
 
-	public static void AddMetadataToRmod(string filePath, string realmMetadataJson)
+	public static void AddMetadataToRmesh(string filePath, string realmMetadataJson)
 	{
 		byte[] bytes = File.ReadAllBytes(filePath);
-		byte[] updated = RmodFile.SetMetadata(bytes, realmMetadataJson);
+		byte[] updated = RmeshFile.SetMetadata(bytes, realmMetadataJson);
 		File.WriteAllBytes(filePath, updated);
 	}
 
-	public static void RemoveMetadataFromRmod(string filePath)
+	public static void RemoveMetadataFromRmesh(string filePath)
 	{
 		byte[] bytes = File.ReadAllBytes(filePath);
-		byte[] updated = RmodFile.SetMetadata(bytes, null);
+		byte[] updated = RmeshFile.SetMetadata(bytes, null);
 		File.WriteAllBytes(filePath, updated);
 	}
 
@@ -1572,9 +1572,9 @@ public static class RealmMetadataHelper
 		return BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(0, 4)) == 0x46546C67;
 	}
 
-	public static bool IsRmodBytes(ReadOnlySpan<byte> bytes)
+	public static bool IsRmeshBytes(ReadOnlySpan<byte> bytes)
 	{
-		return RmodFile.IsRmodBytes(bytes);
+		return RmeshFile.IsRmeshBytes(bytes);
 	}
 
 	public static bool IsRtexBytes(ReadOnlySpan<byte> bytes)
@@ -1640,9 +1640,9 @@ public static class RealmMetadataHelper
 
 		try
 		{
-			if (extension == ".rmod" || ((string.IsNullOrEmpty(extension) || extension == ".bin") && IsRmodBytes(bytes)))
+			if (extension == ".rmesh" || ((string.IsNullOrEmpty(extension) || extension == ".bin") && IsRmeshBytes(bytes)))
 			{
-				return RmodFile.SetMetadata(bytes, null);
+				return RmeshFile.SetMetadata(bytes, null);
 			}
 			if (extension == ".raud" || ((string.IsNullOrEmpty(extension) || extension == ".bin") && IsRaudBytes(bytes)))
 			{
@@ -1710,7 +1710,7 @@ public static class RealmMetadataHelper
 	{
 		if (!File.Exists(filePath)) return false;
 		string ext = Path.GetExtension(filePath).ToLowerInvariant();
-		if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg" or ".rmod" or ".raud")) return false;
+		if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg" or ".rmesh" or ".raud")) return false;
 
 		try
 		{
@@ -1749,14 +1749,14 @@ public static class RealmMetadataHelper
 		if (bytes == null || bytes.Length == 0) return bytes ?? Array.Empty<byte>();
 		string ext = Path.GetExtension(extensionOrPath).ToLowerInvariant();
 		if (string.IsNullOrEmpty(ext) && extensionOrPath.StartsWith('.')) ext = extensionOrPath.ToLowerInvariant();
-		if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg" or ".rmod" or ".raud")) return bytes;
+		if (ext is not (".glb" or ".rtex" or ".ranim" or ".ogg" or ".rmesh" or ".raud")) return bytes;
 
 		try
 		{
 			string canonicalBlake3 = ComputeBlake3(bytes, ext);
 			string? existingMeta = null;
 			if (ext == ".glb") existingMeta = ExtractMetadataFromGlbBytes(bytes);
-			else if (ext == ".rmod") existingMeta = RmodFile.ExtractMetadata(bytes);
+			else if (ext == ".rmesh") existingMeta = RmeshFile.ExtractMetadata(bytes);
 			else if (ext == ".rtex") existingMeta = RtexFile.ExtractMetadata(bytes);
 			else if (ext == ".ranim") existingMeta = ExtractMetadataFromRanimBytes(bytes);
 			else if (ext == ".ogg") existingMeta = ExtractMetadataFromOggBytes(bytes);
@@ -1787,7 +1787,7 @@ public static class RealmMetadataHelper
 			return ext switch
 			{
 				".glb" => AddMetadataToGlbBytes(bytes, newMetaJson),
-				".rmod" => RmodFile.SetMetadata(bytes, newMetaJson),
+				".rmesh" => RmeshFile.SetMetadata(bytes, newMetaJson),
 				".rtex" => RtexFile.SetMetadata(bytes, newMetaJson),
 				".ranim" => AddMetadataToRanimBytes(bytes, newMetaJson),
 				".ogg" => AddMetadataToOggBytes(bytes, newMetaJson),

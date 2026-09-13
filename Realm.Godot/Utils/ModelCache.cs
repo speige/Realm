@@ -95,7 +95,7 @@ namespace Realm.Godot.Utils
 				return candUser;
 			}
 
-			string withRmod = cleanPath.EndsWith(".rmod", StringComparison.OrdinalIgnoreCase) ? cleanPath : $"{cleanPath}.rmod";
+			string withRmesh = cleanPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) ? cleanPath : $"{cleanPath}.rmesh";
 			string withGlb = cleanPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) ? cleanPath : $"{cleanPath}.glb";
 			string[] subDirs = new[] { "attachments", "items", "projectiles", "weapons", "props", "resources", "units", "buildings" };
 
@@ -105,8 +105,8 @@ namespace Realm.Godot.Utils
 				if (string.IsNullOrEmpty(loc) || !System.IO.Directory.Exists(loc)) continue;
 				foreach (var sub in subDirs)
 				{
-					string candRmod = System.IO.Path.Combine(loc, "Assets", "models", sub, withRmod);
-					if (System.IO.File.Exists(candRmod)) return candRmod;
+					string candRmesh = System.IO.Path.Combine(loc, "Assets", "models", sub, withRmesh);
+					if (System.IO.File.Exists(candRmesh)) return candRmesh;
 					string cand = System.IO.Path.Combine(loc, "Assets", "models", sub, withGlb);
 					if (System.IO.File.Exists(cand)) return cand;
 				}
@@ -115,18 +115,18 @@ namespace Realm.Godot.Utils
 			string foundPath = PathUtils.FindPath(cleanPath);
 			if (System.IO.File.Exists(foundPath)) return foundPath;
 
-			string foundWithRmod = PathUtils.FindPath(withRmod);
-			if (System.IO.File.Exists(foundWithRmod)) return foundWithRmod;
+			string foundWithRmesh = PathUtils.FindPath(withRmesh);
+			if (System.IO.File.Exists(foundWithRmesh)) return foundWithRmesh;
 
 			string foundWithGlb = PathUtils.FindPath(withGlb);
 			if (System.IO.File.Exists(foundWithGlb)) return foundWithGlb;
 
 			foreach (var sub in subDirs)
 			{
-				string tPathRmod = PathUtils.FindPath($"MapTemplate/Assets/models/{sub}/{withRmod}");
-				if (System.IO.File.Exists(tPathRmod)) return tPathRmod;
-				string rPathRmod = PathUtils.FindPath($"Assets/models/{sub}/{withRmod}");
-				if (System.IO.File.Exists(rPathRmod)) return rPathRmod;
+				string tPathRmesh = PathUtils.FindPath($"MapTemplate/Assets/models/{sub}/{withRmesh}");
+				if (System.IO.File.Exists(tPathRmesh)) return tPathRmesh;
+				string rPathRmesh = PathUtils.FindPath($"Assets/models/{sub}/{withRmesh}");
+				if (System.IO.File.Exists(rPathRmesh)) return rPathRmesh;
 
 				string tPath = PathUtils.FindPath($"MapTemplate/Assets/models/{sub}/{withGlb}");
 				if (System.IO.File.Exists(tPath)) return tPath;
@@ -185,10 +185,10 @@ namespace Realm.Godot.Utils
 					var doc = new GltfDocument();
 					var state = new GltfState();
 					Error err;
-					if (targetPath.EndsWith(".rmod", StringComparison.OrdinalIgnoreCase))
+					if (targetPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
 					{
-						byte[] rmodBytes = System.IO.File.ReadAllBytes(targetPath);
-						byte[] glbBytes = Realm.Shared.ModelOptimization.RmodFile.GetGlbBytes(rmodBytes) ?? rmodBytes;
+						byte[] rmeshBytes = System.IO.File.ReadAllBytes(targetPath);
+						byte[] glbBytes = Realm.Shared.ModelOptimization.RmeshFile.GetGlbBytes(rmeshBytes) ?? rmeshBytes;
 						err = doc.AppendFromBuffer(glbBytes, "", state);
 					}
 					else
@@ -248,10 +248,10 @@ namespace Realm.Godot.Utils
 					var doc = new GltfDocument();
 					var state = new GltfState();
 					Error err;
-					if (resolved.EndsWith(".rmod", StringComparison.OrdinalIgnoreCase))
+					if (resolved.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
 					{
-						byte[] rmodBytes = System.IO.File.ReadAllBytes(resolved);
-						byte[] glbBytes = Realm.Shared.ModelOptimization.RmodFile.GetGlbBytes(rmodBytes) ?? rmodBytes;
+						byte[] rmeshBytes = System.IO.File.ReadAllBytes(resolved);
+						byte[] glbBytes = Realm.Shared.ModelOptimization.RmeshFile.GetGlbBytes(rmeshBytes) ?? rmeshBytes;
 						err = doc.AppendFromBuffer(glbBytes, "", state);
 					}
 					else

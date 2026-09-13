@@ -5,14 +5,14 @@ import * as http from 'http';
 import { RealmMapEditorProvider } from './editorProvider';
 import { RealmRtexViewerProvider } from './rtexEditorProvider';
 import { RealmRanimViewerProvider } from './ranimEditorProvider';
-import { RealmRmodViewerProvider } from './rmodEditorProvider';
+import { RealmRmeshViewerProvider } from './rmeshEditorProvider';
 import { RealmRaudViewerProvider } from './raudEditorProvider';
 
 export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(RealmMapEditorProvider.register(context));
     context.subscriptions.push(RealmRtexViewerProvider.register(context));
     context.subscriptions.push(RealmRanimViewerProvider.register(context));
-    context.subscriptions.push(RealmRmodViewerProvider.register(context));
+    context.subscriptions.push(RealmRmeshViewerProvider.register(context));
     context.subscriptions.push(RealmRaudViewerProvider.register(context));
 
     context.subscriptions.push(

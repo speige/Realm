@@ -1110,7 +1110,7 @@ public class VSCodeManager
 					responseObj["error"] = ex.Message;
 				}
 			}
-			else if (action == "convertRmod")
+			else if (action == "convertRmesh")
 			{
 				string inputPath = node["inputPath"]?.ToString() ?? node["filePath"]?.ToString() ?? "";
 				string outputPath = node["outputPath"]?.ToString() ?? "";
@@ -1118,8 +1118,8 @@ public class VSCodeManager
 				{
 					if (File.Exists(inputPath))
 					{
-						byte[] rmodBytes = File.ReadAllBytes(inputPath);
-						var (metaJson, glbBytes, _) = Realm.Shared.ModelOptimization.RmodFile.Parse(rmodBytes);
+						byte[] rmeshBytes = File.ReadAllBytes(inputPath);
+						var (metaJson, glbBytes, _) = Realm.Shared.ModelOptimization.RmeshFile.Parse(rmeshBytes);
 						if (glbBytes.Length > 0)
 						{
 							if (!string.IsNullOrEmpty(outputPath))
@@ -1128,8 +1128,8 @@ public class VSCodeManager
 								if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
 								File.WriteAllBytes(outputPath, glbBytes);
 							}
-							responseObj["action"] = "convertRmodResult";
-							responseObj["type"] = "convertRmodResult";
+							responseObj["action"] = "convertRmeshResult";
+							responseObj["type"] = "convertRmeshResult";
 							responseObj["success"] = true;
 							responseObj["outputPath"] = outputPath;
 							if (!string.IsNullOrEmpty(metaJson))
@@ -1139,24 +1139,24 @@ public class VSCodeManager
 						}
 						else
 						{
-							responseObj["action"] = "convertRmodResult";
-							responseObj["type"] = "convertRmodResult";
+							responseObj["action"] = "convertRmeshResult";
+							responseObj["type"] = "convertRmeshResult";
 							responseObj["success"] = false;
-							responseObj["error"] = "No GLB payload found in RMOD file.";
+							responseObj["error"] = "No GLB payload found in RMESH file.";
 						}
 					}
 					else
 					{
-						responseObj["action"] = "convertRmodResult";
-						responseObj["type"] = "convertRmodResult";
+						responseObj["action"] = "convertRmeshResult";
+						responseObj["type"] = "convertRmeshResult";
 						responseObj["success"] = false;
-						responseObj["error"] = $"RMOD file not found: {inputPath}";
+						responseObj["error"] = $"RMESH file not found: {inputPath}";
 					}
 				}
 				catch (Exception ex)
 				{
-					responseObj["action"] = "convertRmodResult";
-					responseObj["type"] = "convertRmodResult";
+					responseObj["action"] = "convertRmeshResult";
+					responseObj["type"] = "convertRmeshResult";
 					responseObj["success"] = false;
 					responseObj["error"] = ex.Message;
 				}

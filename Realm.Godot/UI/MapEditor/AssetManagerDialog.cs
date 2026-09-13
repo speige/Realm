@@ -626,7 +626,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		}
 
 		string ext = Path.GetExtension(fileName).ToLowerInvariant();
-		if (ext is ".glb" or ".rmod")
+		if (ext is ".glb" or ".rmesh")
 		{
 			return subCategoryOrFolder switch
 			{
@@ -668,7 +668,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	private string ResolveAssetFilePath(string wsPath, string fileName, string subCategoryOrFolder)
 	{
 		string ext = Path.GetExtension(fileName).ToLowerInvariant();
-		if (ext is ".glb" or ".rmod")
+		if (ext is ".glb" or ".rmesh")
 		{
 			string path = Path.Combine(wsPath, "Assets", "models", subCategoryOrFolder, fileName);
 			if (File.Exists(path)) return path;

@@ -5,7 +5,7 @@ import math
 import struct
 import argparse
 from pathlib import Path
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 CANONICAL_BONE_MAP = {
     "hips": ["mixamorig:Hips", "Hips", "mixamorig_Hips", "pelvis", "root", "bip01_hips", "bip01 hips"],
@@ -146,21 +146,25 @@ def draw_shadow(img, ground_y=None):
     center_x = w // 2
     draw.ellipse(
         [center_x - radius_x, target_ground_y - radius_y, center_x + radius_x, target_ground_y + radius_y],
-        fill=(10, 13, 18, 178)
+        fill=(10, 13, 18, 180)
     )
+    blur_radius = max(1, int(round(2.5 * (w / 128.0))))
+    shadow_img = shadow_img.filter(ImageFilter.GaussianBlur(radius=blur_radius))
     img.alpha_composite(shadow_img)
 
 def main():
     parser = argparse.ArgumentParser(description="Render animated humanoid GLB with .ranim keyframes using bpy")
     parser.add_argument("--model", required=True, help="Path to .glb model")
     parser.add_argument("--anim", required=True, help="Path to .ranim JSON file")
-    parser.add_argument("--output", required=True, help="Output destination (.gif or .png)")
-    parser.add_argument("--format", default="gif", choices=["gif", "spritesheet", "png"], help="Output format")
+    parser.add_argument("--output", required=True, help="Output destination (.gif, .png, or .webp)")
+    parser.add_argument("--format", default="gif", choices=["gif", "spritesheet", "webp"], help="Output format (gif, spritesheet, webp)")
     parser.add_argument("--fps", type=float, default=12.0, help="Frames per second")
     parser.add_argument("--max-frames", type=int, default=None, help="Maximum frame count")
     parser.add_argument("--width", type=int, default=128, help="Frame width")
     parser.add_argument("--height", type=int, default=128, help="Frame height")
     parser.add_argument("--scale", type=float, default=1.0, help="Model scale factor")
+    parser.add_argument("--quality", type=int, default=95, help="WebP quality factor (1-100)")
+    parser.add_argument("--lossless", action="store_true", help="Use lossless WebP compression")
     parser.add_argument("--no-border", action="store_true", help="Disable border")
     parser.add_argument("--no-shadow", action="store_true", help="Disable floor shadow")
     args = parser.parse_args()
@@ -397,30 +401,70 @@ def main():
     cam_obj.rotation_quaternion = rot_quat
 
     key_light_data = bpy.data.lights.new("KeySun", type="SUN")
-    key_light_data.energy = 2.8
+    key_light_data.energy = 3.2
     key_light_data.color = (1.0, 0.98, 0.95)
     key_light_obj = bpy.data.objects.new("KeySun", key_light_data)
     bpy.context.collection.objects.link(key_light_obj)
     key_light_obj.rotation_euler = (math.radians(45), math.radians(15), math.radians(35))
 
     fill_light_data = bpy.data.lights.new("FillSun", type="SUN")
-    fill_light_data.energy = 1.2
+    fill_light_data.energy = 1.4
     fill_light_data.color = (0.7, 0.8, 1.0)
     fill_light_obj = bpy.data.objects.new("FillSun", fill_light_data)
     bpy.context.collection.objects.link(fill_light_obj)
     fill_light_obj.rotation_euler = (math.radians(-30), math.radians(20), math.radians(-145))
 
-    bpy.context.scene.render.resolution_x = args.width
-    bpy.context.scene.render.resolution_y = args.height
+    rim_light_data = bpy.data.lights.new("RimSun", type="SUN")
+    rim_light_data.energy = 1.8
+    rim_light_data.color = (0.85, 0.92, 1.0)
+    rim_light_obj = bpy.data.objects.new("RimSun", rim_light_data)
+    bpy.context.collection.objects.link(rim_light_obj)
+    rim_light_obj.rotation_euler = (math.radians(-40), math.radians(-30), math.radians(45))
+
+    render_scale = 2
+    bpy.context.scene.render.resolution_x = args.width * render_scale
+    bpy.context.scene.render.resolution_y = args.height * render_scale
     bpy.context.scene.render.image_settings.file_format = "PNG"
     bpy.context.scene.render.image_settings.color_mode = "RGBA"
     bpy.context.scene.render.film_transparent = True
+
+    try:
+        engines = [e.identifier for e in bpy.types.RenderSettings.bl_rna.properties['engine'].enum_items]
+        if "BLENDER_EEVEE_NEXT" in engines:
+            bpy.context.scene.render.engine = "BLENDER_EEVEE_NEXT"
+        elif "BLENDER_EEVEE" in engines:
+            bpy.context.scene.render.engine = "BLENDER_EEVEE"
+    except Exception:
+        pass
+
+    if hasattr(bpy.context.scene, "eevee"):
+        eevee = bpy.context.scene.eevee
+        if hasattr(eevee, "taa_render_samples"):
+            eevee.taa_render_samples = 64
+        if hasattr(eevee, "render_samples"):
+            eevee.render_samples = 64
+        if hasattr(eevee, "use_gtao"):
+            eevee.use_gtao = True
+        if hasattr(eevee, "use_ssr"):
+            eevee.use_ssr = True
+
+    if hasattr(bpy.context.scene, "view_settings"):
+        try:
+            bpy.context.scene.view_settings.view_transform = "Standard"
+        except Exception:
+            pass
+        try:
+            bpy.context.scene.view_settings.look = "None"
+        except Exception:
+            pass
 
     computed_ground_y = int(round(args.height * (0.5 + ((center_z - min_z) * math.cos(elevation)) / cam_data.ortho_scale)))
     computed_ground_y = min(args.height - 4, max(4, computed_ground_y))
 
     temp_dir = Path(output_path).parent / f"bpy_tmp_{os.getpid()}"
     temp_dir.mkdir(parents=True, exist_ok=True)
+
+    resample_filter = getattr(Image, "Resampling", Image).LANCZOS
 
     rendered_images = []
     try:
@@ -433,9 +477,13 @@ def main():
             bpy.ops.render.render(write_still=True)
 
             if frame_file.exists():
-                img = Image.open(str(frame_file)).convert("RGBA")
+                raw_img = Image.open(str(frame_file)).convert("RGBA")
+                if render_scale > 1:
+                    img = raw_img.resize((args.width, args.height), resample_filter)
+                else:
+                    img = raw_img
 
-                bg = Image.new("RGBA", img.size, (20, 23, 31, 255))
+                bg = Image.new("RGBA", (args.width, args.height), (20, 23, 31, 255))
                 if not args.no_shadow:
                     draw_shadow(bg, ground_y=computed_ground_y)
                 bg.alpha_composite(img)
@@ -451,8 +499,13 @@ def main():
         out_dir = Path(output_path).parent
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        is_webp = (
+            args.format.lower() == "webp" or
+            output_path.lower().endswith(".webp")
+        )
         is_spritesheet = (
-            args.format.lower() in ("spritesheet", "png") or
+            is_webp or
+            args.format.lower() == "spritesheet" or
             output_path.lower().endswith(".png")
         )
 
@@ -462,13 +515,29 @@ def main():
             spritesheet = Image.new("RGBA", (sheet_width, sheet_height), (0, 0, 0, 0))
             for i, frame in enumerate(rendered_images):
                 spritesheet.paste(frame, (i * args.width, 0))
-            spritesheet.save(output_path, "PNG")
+
+            if is_webp:
+                spritesheet.save(
+                    output_path,
+                    "WEBP",
+                    quality=args.quality,
+                    lossless=args.lossless,
+                    method=6
+                )
+            else:
+                spritesheet.save(output_path, "PNG", optimize=True)
         else:
             frame_duration_ms = max(20, int(round((duration / len(rendered_images)) * 1000.0)))
-            rendered_images[0].save(
+            gif_frames = []
+            for frame in rendered_images:
+                rgb_frame = frame.convert("RGB")
+                p_frame = rgb_frame.convert("P", palette=Image.Palette.ADAPTIVE, colors=256)
+                gif_frames.append(p_frame)
+
+            gif_frames[0].save(
                 output_path,
                 save_all=True,
-                append_images=rendered_images[1:],
+                append_images=gif_frames[1:],
                 duration=frame_duration_ms,
                 loop=0,
                 disposal=2

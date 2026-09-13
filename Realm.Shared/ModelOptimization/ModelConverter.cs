@@ -24,7 +24,7 @@ public static class ModelConverter
 {
 	public static readonly string[] SupportedModelExtensions =
 	[
-		".glb", ".gltf", ".rmod", ".fbx", ".obj"
+		".glb", ".gltf", ".rmesh", ".fbx", ".obj"
 	];
 
 	public static bool IsModelFile(string filePath)
@@ -68,7 +68,7 @@ public static class ModelConverter
 		return "Prop";
 	}
 
-	public static ModelConversionResult ConvertToRmod(
+	public static ModelConversionResult ConvertToRmesh(
 		string inputPath,
 		string? outputPath = null,
 		string? assetType = null,
@@ -86,10 +86,10 @@ public static class ModelConverter
 			return result;
 		}
 
-		string targetRmod = !string.IsNullOrEmpty(outputPath)
+		string targetRmesh = !string.IsNullOrEmpty(outputPath)
 			? Path.GetFullPath(outputPath)
-			: Path.ChangeExtension(fullInput, ".rmod");
-		result.OutputPath = targetRmod;
+			: Path.ChangeExtension(fullInput, ".rmesh");
+		result.OutputPath = targetRmesh;
 
 		try
 		{
@@ -97,7 +97,7 @@ public static class ModelConverter
 			result.OriginalSize = inputBytes.Length;
 
 			string fileName = Path.GetFileName(fullInput);
-			var convRes = ConvertToRmod(inputBytes, fileName, assetType, force, options, author);
+			var convRes = ConvertToRmesh(inputBytes, fileName, assetType, force, options, author);
 			if (!convRes.Success || convRes.OutputBytes == null)
 			{
 				result.Success = false;
@@ -105,13 +105,13 @@ public static class ModelConverter
 				return result;
 			}
 
-			string? targetDir = Path.GetDirectoryName(targetRmod);
+			string? targetDir = Path.GetDirectoryName(targetRmesh);
 			if (!string.IsNullOrEmpty(targetDir) && !Directory.Exists(targetDir))
 			{
 				Directory.CreateDirectory(targetDir);
 			}
 
-			File.WriteAllBytes(targetRmod, convRes.OutputBytes);
+			File.WriteAllBytes(targetRmesh, convRes.OutputBytes);
 
 			result.Success = true;
 			result.OutputBytes = convRes.OutputBytes;
@@ -130,7 +130,7 @@ public static class ModelConverter
 		}
 	}
 
-	public static ModelConversionResult ConvertToRmod(
+	public static ModelConversionResult ConvertToRmesh(
 		ReadOnlySpan<byte> inputBytes,
 		string? inputFileName = null,
 		string? assetType = null,
@@ -155,9 +155,9 @@ public static class ModelConverter
 			byte[] rawGlbBytes;
 			string? existingMetaJson = null;
 
-			if (RmodFile.IsRmodBytes(inputBytes))
+			if (RmeshFile.IsRmeshBytes(inputBytes))
 			{
-				var (parsedMeta, parsedGlb, _) = RmodFile.Parse(inputBytes);
+				var (parsedMeta, parsedGlb, _) = RmeshFile.Parse(inputBytes);
 				existingMetaJson = parsedMeta;
 				rawGlbBytes = parsedGlb;
 			}
@@ -188,7 +188,7 @@ public static class ModelConverter
 			if (string.IsNullOrEmpty(effectiveAssetType))
 			{
 				string? existingType = metaObj["asset_type"]?.ToString() ?? metaObj["default_asset_type"]?.ToString() ?? metaObj["type"]?.ToString();
-				if (!string.IsNullOrEmpty(existingType) && RealmMetadataHelper.IsValidAssetTypeForExtension(".rmod", existingType, out string canonical, out _))
+				if (!string.IsNullOrEmpty(existingType) && RealmMetadataHelper.IsValidAssetTypeForExtension(".rmesh", existingType, out string canonical, out _))
 				{
 					effectiveAssetType = canonical;
 				}
@@ -217,7 +217,7 @@ public static class ModelConverter
 				metaObj["created_utc"] = DateTime.UtcNow.ToString("O");
 			}
 
-			metaObj["format"] = "rmod";
+			metaObj["format"] = "rmesh";
 			metaObj["asset_type"] = effectiveAssetType;
 			metaObj["supports_team_color"] = supportsTeamColor;
 
@@ -234,11 +234,11 @@ public static class ModelConverter
 			string blake3Hash = RealmMetadataHelper.ComputeBlake3(finalGlbBytes, ".glb");
 			metaObj["blake3"] = blake3Hash;
 
-			byte[] rmodBytes = RmodFile.Build(metaObj.ToJsonString(), finalGlbBytes);
+			byte[] rmeshBytes = RmeshFile.Build(metaObj.ToJsonString(), finalGlbBytes);
 
 			result.Success = true;
-			result.OutputBytes = rmodBytes;
-			result.OptimizedSize = rmodBytes.Length;
+			result.OutputBytes = rmeshBytes;
+			result.OptimizedSize = rmeshBytes.Length;
 			result.SupportsTeamColor = supportsTeamColor;
 			result.AssetType = effectiveAssetType;
 			result.Author = metaObj["author"]?.ToString();
@@ -253,20 +253,20 @@ public static class ModelConverter
 		}
 	}
 
-	public static byte[]? ExtractGlbFromRmod(ReadOnlySpan<byte> rmodBytes)
+	public static byte[]? ExtractGlbFromRmesh(ReadOnlySpan<byte> rmeshBytes)
 	{
-		return RmodFile.GetGlbBytes(rmodBytes);
+		return RmeshFile.GetGlbBytes(rmeshBytes);
 	}
 
-	public static ModelConversionResult ExtractGlbFromRmod(string inputRmodPath, string? outputGlbPath = null)
+	public static ModelConversionResult ExtractGlbFromRmesh(string inputRmeshPath, string? outputGlbPath = null)
 	{
-		string fullInput = Path.GetFullPath(inputRmodPath);
+		string fullInput = Path.GetFullPath(inputRmeshPath);
 		var result = new ModelConversionResult { InputPath = fullInput };
 
 		if (!File.Exists(fullInput))
 		{
 			result.Success = false;
-			result.ErrorMessage = $"Input RMOD file not found: {inputRmodPath}";
+			result.ErrorMessage = $"Input RMESH file not found: {inputRmeshPath}";
 			return result;
 		}
 
@@ -277,14 +277,14 @@ public static class ModelConverter
 
 		try
 		{
-			byte[] rmodBytes = File.ReadAllBytes(fullInput);
-			result.OriginalSize = rmodBytes.Length;
+			byte[] rmeshBytes = File.ReadAllBytes(fullInput);
+			result.OriginalSize = rmeshBytes.Length;
 
-			byte[]? glbBytes = ExtractGlbFromRmod(rmodBytes);
+			byte[]? glbBytes = ExtractGlbFromRmesh(rmeshBytes);
 			if (glbBytes == null || glbBytes.Length == 0)
 			{
 				result.Success = false;
-				result.ErrorMessage = "Failed to extract GLB payload from RMOD file.";
+				result.ErrorMessage = "Failed to extract GLB payload from RMESH file.";
 				return result;
 			}
 
@@ -331,15 +331,15 @@ public static class ModelConverter
 			string target;
 			if (string.IsNullOrEmpty(fullOutputDir))
 			{
-				target = Path.ChangeExtension(file, ".rmod");
+				target = Path.ChangeExtension(file, ".rmesh");
 			}
 			else
 			{
 				string rel = Path.GetRelativePath(fullInputDir, file);
-				target = Path.Combine(fullOutputDir, Path.ChangeExtension(rel, ".rmod"));
+				target = Path.Combine(fullOutputDir, Path.ChangeExtension(rel, ".rmesh"));
 			}
 
-			var res = ConvertToRmod(file, target, assetType, force);
+			var res = ConvertToRmesh(file, target, assetType, force);
 			if (res.Success)
 			{
 				Console.WriteLine($"Converted: {file} -> {target}");

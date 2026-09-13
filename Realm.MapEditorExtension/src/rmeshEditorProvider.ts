@@ -4,12 +4,12 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { sendGodotIpc } from './extension';
 
-export class RealmRmodViewerProvider implements vscode.CustomReadonlyEditorProvider {
-    public static readonly viewType = 'realm.rmodViewer';
+export class RealmRmeshViewerProvider implements vscode.CustomReadonlyEditorProvider {
+    public static readonly viewType = 'realm.rmeshViewer';
 
     public static register(context: vscode.ExtensionContext): vscode.Disposable {
-        const provider = new RealmRmodViewerProvider(context);
-        return vscode.window.registerCustomEditorProvider(RealmRmodViewerProvider.viewType, provider, {
+        const provider = new RealmRmeshViewerProvider(context);
+        return vscode.window.registerCustomEditorProvider(RealmRmeshViewerProvider.viewType, provider, {
             supportsMultipleEditorsPerDocument: false
         });
     }
@@ -38,7 +38,7 @@ export class RealmRmodViewerProvider implements vscode.CustomReadonlyEditorProvi
             enableScripts: true
         };
 
-        const rmodPath = document.uri.fsPath;
+        const rmeshPath = document.uri.fsPath;
 
         webviewPanel.webview.onDidReceiveMessage(async message => {
             if (message.command === 'exportGlb') {
@@ -51,7 +51,7 @@ export class RealmRmodViewerProvider implements vscode.CustomReadonlyEditorProvi
 
                 if (confirmed === 'Yes, Export GLB') {
                     try {
-                        const defaultUri = vscode.Uri.file(path.join(path.dirname(rmodPath), `${path.basename(rmodPath, '.rmod')}.glb`));
+                        const defaultUri = vscode.Uri.file(path.join(path.dirname(rmeshPath), `${path.basename(rmeshPath, path.extname(rmeshPath))}.glb`));
                         const targetUri = await vscode.window.showSaveDialog({
                             defaultUri,
                             filters: { 'GLTF Binary Model': ['glb'] },
@@ -59,13 +59,13 @@ export class RealmRmodViewerProvider implements vscode.CustomReadonlyEditorProvi
                         });
 
                         if (targetUri) {
-                            const buffer = fs.readFileSync(rmodPath);
-                            const parsed = this.parseRmod(buffer);
+                            const buffer = fs.readFileSync(rmeshPath);
+                            const parsed = this.parseRmesh(buffer);
                             if (parsed && parsed.glbBytes) {
                                 fs.writeFileSync(targetUri.fsPath, parsed.glbBytes);
                                 vscode.window.showInformationMessage(`Successfully exported GLB to: ${targetUri.fsPath}`);
                             } else {
-                                vscode.window.showErrorMessage('Failed to extract GLB payload from RMOD file.');
+                                vscode.window.showErrorMessage('Failed to extract GLB payload from RMESH file.');
                             }
                         }
                     } catch (err: any) {
@@ -76,26 +76,26 @@ export class RealmRmodViewerProvider implements vscode.CustomReadonlyEditorProvi
         });
 
         try {
-            const fileBuffer = fs.readFileSync(rmodPath);
-            const parsed = this.parseRmod(fileBuffer);
-            const stats = fs.statSync(rmodPath);
+            const fileBuffer = fs.readFileSync(rmeshPath);
+            const parsed = this.parseRmesh(fileBuffer);
+            const stats = fs.statSync(rmeshPath);
 
             webviewPanel.webview.html = this.getPreviewHtml(
                 webviewPanel.webview,
-                path.basename(rmodPath),
+                path.basename(rmeshPath),
                 stats.size,
                 parsed?.metadata || {},
                 parsed?.glbBytes?.length || 0
             );
         } catch (error: any) {
-            webviewPanel.webview.html = this.getErrorHtml(error?.message || 'Failed to load RMOD file.');
+            webviewPanel.webview.html = this.getErrorHtml(error?.message || 'Failed to load RMESH file.');
         }
     }
 
-    private parseRmod(buffer: Buffer): { metadata: any; glbBytes: Buffer } | null {
+    private parseRmesh(buffer: Buffer): { metadata: any; glbBytes: Buffer } | null {
         if (buffer.length < 16) return null;
         const magic = buffer.toString('ascii', 0, 4);
-        if (magic !== 'RMOD') return null;
+        if (magic !== 'RMSH') return null;
 
         const version = buffer.readUInt32LE(4);
         const metaLen = buffer.readUInt32LE(8);
@@ -231,7 +231,7 @@ export class RealmRmodViewerProvider implements vscode.CustomReadonlyEditorProvi
             <div class="icon">📦</div>
             <div class="title-group">
                 <h1>${fileName}</h1>
-                <p class="subtitle">Realm 3D Model Container (.rmod)</p>
+                <p class="subtitle">Realm 3D Mesh Container (.rmesh)</p>
             </div>
         </div>
 
@@ -288,7 +288,7 @@ export class RealmRmodViewerProvider implements vscode.CustomReadonlyEditorProvi
 </head>
 <body>
     <div class="error-box">
-        <strong>Error Loading .rmod:</strong><br/>
+        <strong>Error Loading .rmesh:</strong><br/>
         ${errorMessage}
     </div>
 </body>

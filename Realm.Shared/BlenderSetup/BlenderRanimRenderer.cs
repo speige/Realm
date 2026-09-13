@@ -46,8 +46,8 @@ public static class BlenderRanimRenderer
 
 			if (renderOptions.ModelBytes != null && renderOptions.ModelBytes.Length > 0)
 			{
-				byte[] modelBytes = RmodFile.IsRmodBytes(renderOptions.ModelBytes)
-					? (RmodFile.GetGlbBytes(renderOptions.ModelBytes) ?? renderOptions.ModelBytes)
+				byte[] modelBytes = RmeshFile.IsRmeshBytes(renderOptions.ModelBytes)
+					? (RmeshFile.GetGlbBytes(renderOptions.ModelBytes) ?? renderOptions.ModelBytes)
 					: renderOptions.ModelBytes;
 
 				temporaryModelFile = Path.Combine(Path.GetTempPath(), $"realm_model_{Guid.NewGuid():N}.glb");
@@ -56,10 +56,10 @@ public static class BlenderRanimRenderer
 			}
 			else if (!string.IsNullOrEmpty(renderOptions.ModelPath) && File.Exists(renderOptions.ModelPath))
 			{
-				if (renderOptions.ModelPath.EndsWith(".rmod", StringComparison.OrdinalIgnoreCase))
+				if (renderOptions.ModelPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
 				{
 					byte[] rawBytes = File.ReadAllBytes(renderOptions.ModelPath);
-					byte[]? glbBytes = RmodFile.GetGlbBytes(rawBytes);
+					byte[]? glbBytes = RmeshFile.GetGlbBytes(rawBytes);
 					temporaryModelFile = Path.Combine(Path.GetTempPath(), $"realm_model_{Guid.NewGuid():N}.glb");
 					File.WriteAllBytes(temporaryModelFile, glbBytes ?? rawBytes);
 					resolvedModelPath = temporaryModelFile;
@@ -86,7 +86,14 @@ public static class BlenderRanimRenderer
 				Directory.CreateDirectory(destinationDirectory);
 			}
 
-			string formatArgument = renderOptions.Format == RanimOutputFormat.Spritesheet ? "spritesheet" : "gif";
+			string formatArgument = renderOptions.Format switch
+			{
+				RanimOutputFormat.Webp => "webp",
+				RanimOutputFormat.Spritesheet => "spritesheet",
+				_ => outputPath.EndsWith(".webp", StringComparison.OrdinalIgnoreCase) ? "webp"
+					: outputPath.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ? "spritesheet"
+					: "gif"
+			};
 
 			var processStartInfo = new ProcessStartInfo
 			{
@@ -115,6 +122,13 @@ public static class BlenderRanimRenderer
 			processStartInfo.ArgumentList.Add(renderOptions.Height.ToString());
 			processStartInfo.ArgumentList.Add("--scale");
 			processStartInfo.ArgumentList.Add(renderOptions.Scale.ToString(CultureInfo.InvariantCulture));
+			processStartInfo.ArgumentList.Add("--quality");
+			processStartInfo.ArgumentList.Add(Math.Clamp(renderOptions.Quality, 1, 100).ToString(CultureInfo.InvariantCulture));
+
+			if (renderOptions.Lossless)
+			{
+				processStartInfo.ArgumentList.Add("--lossless");
+			}
 
 			if (renderOptions.MaxFrameCount.HasValue && renderOptions.MaxFrameCount.Value > 0)
 			{
@@ -226,7 +240,9 @@ public static class BlenderRanimRenderer
 			DrawBorder = renderOptions.DrawBorder,
 			DrawShadow = renderOptions.DrawShadow,
 			ModelPath = renderOptions.ModelPath,
-			ModelBytes = renderOptions.ModelBytes
+			ModelBytes = renderOptions.ModelBytes,
+			Quality = renderOptions.Quality,
+			Lossless = renderOptions.Lossless
 		};
 
 		try

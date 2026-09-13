@@ -149,7 +149,7 @@ public static class AssetThumbnailProvider
 			return LoadRtexAlbedoThumbnail(asset.FilePath, asset.LastModifiedUtc);
 		}
 
-		if (ext == ".rmod" || ext == ".glb" || ext == ".gltf")
+		if (ext == ".rmesh" || ext == ".glb" || ext == ".gltf")
 		{
 			return LoadGlbThumbnail(asset.FilePath, asset.LastModifiedUtc);
 		}

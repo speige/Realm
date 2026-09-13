@@ -248,10 +248,10 @@ public partial class GlbThumbnailRenderer : Node
 			var doc = new GltfDocument();
 			var state = new GltfState();
 			Error err;
-			if (request.FilePath.EndsWith(".rmod", StringComparison.OrdinalIgnoreCase))
+			if (request.FilePath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
 			{
-				byte[] rmodBytes = File.ReadAllBytes(request.FilePath);
-				byte[] glbBytes = Realm.Shared.ModelOptimization.RmodFile.GetGlbBytes(rmodBytes) ?? rmodBytes;
+				byte[] rmeshBytes = File.ReadAllBytes(request.FilePath);
+				byte[] glbBytes = Realm.Shared.ModelOptimization.RmeshFile.GetGlbBytes(rmeshBytes) ?? rmeshBytes;
 				err = doc.AppendFromBuffer(glbBytes, "", state);
 			}
 			else

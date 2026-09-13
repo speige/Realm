@@ -13,10 +13,10 @@ using Realm.Shared.Textures;
 
 namespace Realm.Tools.Cli;
 
-[Verb("model_convert", HelpText = "Convert and optimize 3D models (GLB, RMOD, OBJ, FBX) into Realm .rmod format (or export .rmod to .glb).")]
-public class ModelConvertOptions
+[Verb("mesh_convert", HelpText = "Convert and optimize 3D models (GLB, RMESH, OBJ, FBX) into Realm .rmesh format (or export .rmesh to .glb).")]
+public class MeshConvertOptions
 {
-	[Option('i', "input", Required = true, HelpText = "Path to 3D model file (.glb, .rmod, .obj, .fbx) or directory containing assets.")]
+	[Option('i', "input", Required = true, HelpText = "Path to 3D model file (.glb, .rmesh, .obj, .fbx) or directory containing assets.")]
 	public string Input { get; set; } = string.Empty;
 
 	[Option('o', "output", Required = false, HelpText = "Output destination file or directory.")]
@@ -37,9 +37,6 @@ public class ModelConvertOptions
 	[Option('a', "author", Required = false, HelpText = "Author tag to embed if not already present.")]
 	public string? Author { get; set; }
 }
-
-[Verb("glb_optimize", HelpText = "Legacy alias for model_convert.")]
-public class GlbOptimizeOptions : ModelConvertOptions { }
 
 [Verb("texture_convert", HelpText = "Convert textures between standard image formats and .rtex format.")]
 public class TextureConvertOptions
@@ -98,7 +95,7 @@ public class FbxToRanimOptions
 	public bool Recursive { get; set; }
 }
 
-[Verb("ranim_render", HelpText = "Render .ranim skeletal animation files to animated GIF or PNG spritesheet.")]
+[Verb("ranim_render", HelpText = "Render .ranim skeletal animation files to animated GIF, PNG spritesheet, or high-quality WebP spritesheet.")]
 public class RanimRenderOptions
 {
 	[Option('i', "input", Required = true, HelpText = "Path to input .ranim file or directory.")]
@@ -107,7 +104,7 @@ public class RanimRenderOptions
 	[Option('o', "output", Required = false, HelpText = "Output destination file or directory.")]
 	public string? Output { get; set; }
 
-	[Option('f', "format", Required = false, Default = "auto", HelpText = "Output format: auto (default), gif, spritesheet.")]
+	[Option('f', "format", Required = false, Default = "auto", HelpText = "Output format: auto (default), gif, spritesheet, webp.")]
 	public string Format { get; set; } = "auto";
 
 	[Option("fps", Required = false, Default = 12.0f, HelpText = "Target frames per second (default 12).")]
@@ -122,7 +119,7 @@ public class RanimRenderOptions
 	[Option("scale", Required = false, Default = 1.0f, HelpText = "Model scale factor (default 1.0).")]
 	public float Scale { get; set; } = 1.0f;
 
-	[Option('m', "model", Required = false, HelpText = "Optional path to rigged humanoid .rmod or .glb model to render instead of skeleton.")]
+	[Option('m', "model", Required = false, HelpText = "Optional path to rigged humanoid .rmesh or .glb model to render instead of skeleton.")]
 	public string? Model { get; set; }
 
 	[Option('r', "recursive", Required = false, Default = false, HelpText = "Process directories recursively.")]
@@ -133,9 +130,15 @@ public class RanimRenderOptions
 
 	[Option("no-shadow", Required = false, Default = false, HelpText = "Disable floor shadow.")]
 	public bool NoShadow { get; set; }
+
+	[Option('q', "quality", Required = false, Default = 95, HelpText = "Encoding quality for WebP output (1-100, default 95).")]
+	public int Quality { get; set; } = 95;
+
+	[Option("lossless", Required = false, Default = false, HelpText = "Use lossless compression for WebP spritesheet output.")]
+	public bool Lossless { get; set; }
 }
 
-[Verb("metadata", HelpText = "Manage embedded Realm metadata (read, add, remove) in .rmod, .raud, .rtex, .ranim, .glb, or .ogg files.")]
+[Verb("metadata", HelpText = "Manage embedded Realm metadata (read, add, remove) in .rmesh, .raud, .rtex, .ranim, .glb, or .ogg files.")]
 public class MetadataOptions
 {
 	[Option('m', "mode", Required = false, Default = "read", HelpText = "Operation mode: read (default), add, update, remove.")]
@@ -173,10 +176,10 @@ public class Blake3Options
 	public bool Raw { get; set; }
 }
 
-[Verb("model_player_color", HelpText = "Extract #FF00FF prompt artifacts from a 3D model, isolate player-color area via face topology, desaturate albedo, pack mask into Red channel of ORM texture, and re-optimize.")]
-public class ModelPlayerColorCliOptions
+[Verb("mesh_player_color", HelpText = "Extract #FF00FF prompt artifacts from a 3D model, isolate player-color area via face topology, desaturate albedo, pack mask into Red channel of ORM texture, and re-optimize.")]
+public class MeshPlayerColorCliOptions
 {
-	[Option('i', "input", Required = true, HelpText = "Path to .rmod or .glb file or directory containing model files.")]
+	[Option('i', "input", Required = true, HelpText = "Path to .rmesh or .glb file or directory containing model files.")]
 	public string Input { get; set; } = string.Empty;
 
 	[Option('o', "output", Required = false, HelpText = "Output destination file or directory.")]
@@ -204,13 +207,10 @@ public class ModelPlayerColorCliOptions
 	public int DilationRadius { get; set; } = 3;
 }
 
-[Verb("glb_player_color", HelpText = "Legacy alias for model_player_color.")]
-public class GlbPlayerColorCliOptions : ModelPlayerColorCliOptions { }
-
 [Verb("rig_humanoid", HelpText = "Auto-rig a humanoid 3D model with a Mixamo skeleton using the Make-It-Animatable pipeline.")]
 public class RigHumanoidOptions
 {
-	[Option('i', "input", Required = true, HelpText = "Path to input .rmod or .glb file.")]
+	[Option('i', "input", Required = true, HelpText = "Path to input .rmesh or .glb file.")]
 	public string Input { get; set; } = string.Empty;
 
 	[Option('o', "output", Required = false, HelpText = "Path for output rigged file.")]
@@ -242,18 +242,16 @@ public static class Program
 			args = args.Where(argument => !string.Equals(argument, "--eula-accept", StringComparison.OrdinalIgnoreCase)).ToArray();
 		}
 
-		return Parser.Default.ParseArguments<ModelConvertOptions, GlbOptimizeOptions, TextureConvertOptions, AudioConvertOptions, FbxToRanimOptions, RanimRenderOptions, MetadataOptions, Blake3Options, ModelPlayerColorCliOptions, GlbPlayerColorCliOptions, RigHumanoidOptions>(args)
+		return Parser.Default.ParseArguments<MeshConvertOptions, TextureConvertOptions, AudioConvertOptions, FbxToRanimOptions, RanimRenderOptions, MetadataOptions, Blake3Options, MeshPlayerColorCliOptions, RigHumanoidOptions>(args)
 			.MapResult(
-				(ModelConvertOptions options) => ExecuteModelConvert(options),
-				(GlbOptimizeOptions options) => ExecuteModelConvert(options),
+				(MeshConvertOptions options) => ExecuteMeshConvert(options),
 				(TextureConvertOptions options) => ExecuteTextureConvert(options),
 				(AudioConvertOptions options) => ExecuteAudioConvert(options),
 				(FbxToRanimOptions options) => ExecuteFbxToRanim(options),
 				(RanimRenderOptions options) => ExecuteRanimRender(options),
 				(MetadataOptions options) => ExecuteMetadata(options),
 				(Blake3Options options) => ExecuteBlake3(options),
-				(ModelPlayerColorCliOptions options) => ExecuteModelPlayerColor(options),
-				(GlbPlayerColorCliOptions options) => ExecuteModelPlayerColor(options),
+				(MeshPlayerColorCliOptions options) => ExecuteMeshPlayerColor(options),
 				(RigHumanoidOptions options) => ExecuteRigHumanoid(options),
 				errors => 1);
 	}
@@ -279,16 +277,28 @@ public static class Program
 
 	private static int ExecuteRanimRender(RanimRenderOptions options)
 	{
-		EnsureAssetAgreementAccepted();
-
 		RanimOutputFormat outputFormat = RanimOutputFormat.Gif;
-		if (options.Format.Equals("spritesheet", StringComparison.OrdinalIgnoreCase) || options.Format.Equals("png", StringComparison.OrdinalIgnoreCase))
+		string formatLower = options.Format.Trim().ToLowerInvariant();
+
+		if (formatLower == "webp")
+		{
+			outputFormat = RanimOutputFormat.Webp;
+		}
+		else if (formatLower == "spritesheet" || formatLower == "png")
 		{
 			outputFormat = RanimOutputFormat.Spritesheet;
 		}
-		else if (options.Format.Equals("auto", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(options.Output))
+		else if (formatLower == "gif")
 		{
-			if (options.Output.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+			outputFormat = RanimOutputFormat.Gif;
+		}
+		else if (formatLower == "auto" && !string.IsNullOrEmpty(options.Output))
+		{
+			if (options.Output.EndsWith(".webp", StringComparison.OrdinalIgnoreCase))
+			{
+				outputFormat = RanimOutputFormat.Webp;
+			}
+			else if (options.Output.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
 			{
 				outputFormat = RanimOutputFormat.Spritesheet;
 			}
@@ -308,12 +318,20 @@ public static class Program
 			Scale = options.Scale,
 			DrawBorder = !options.NoBorder,
 			DrawShadow = !options.NoShadow,
-			ModelPath = options.Model
+			ModelPath = options.Model,
+			Quality = options.Quality,
+			Lossless = options.Lossless
 		};
 
 		if (File.Exists(options.Input))
 		{
-			string extension = outputFormat == RanimOutputFormat.Spritesheet ? ".png" : ".gif";
+			string extension = outputFormat switch
+			{
+				RanimOutputFormat.Webp => ".webp",
+				RanimOutputFormat.Spritesheet => ".png",
+				_ => ".gif"
+			};
+
 			string target = string.IsNullOrEmpty(options.Output)
 				? Path.ChangeExtension(options.Input, extension)
 				: options.Output;
@@ -380,7 +398,7 @@ public static class Program
 			string ext = Path.GetExtension(options.Input).ToLowerInvariant();
 			if (!RealmMetadataHelper.SupportsMetadata(ext))
 			{
-				Console.Error.WriteLine($"Error: Unsupported file format '{ext}' for metadata. Supported formats: .rmod, .raud, .rtex, .ranim, .glb, .ogg");
+				Console.Error.WriteLine($"Error: Unsupported file format '{ext}' for metadata. Supported formats: .rmesh, .raud, .rtex, .ranim, .glb, .ogg");
 				return 1;
 			}
 
@@ -657,7 +675,7 @@ public static class Program
 			string ext = Path.GetExtension(options.Input).ToLowerInvariant();
 			if (!RealmMetadataHelper.SupportsMetadata(ext))
 			{
-				Console.Error.WriteLine($"Error: Unsupported file format '{ext}' for metadata. Supported formats: .rmod, .raud, .rtex, .ranim, .glb, .ogg");
+				Console.Error.WriteLine($"Error: Unsupported file format '{ext}' for metadata. Supported formats: .rmesh, .raud, .rtex, .ranim, .glb, .ogg");
 				return 1;
 			}
 
@@ -768,7 +786,7 @@ public static class Program
 			else if (Directory.Exists(options.Input))
 			{
 				var searchOpt = options.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
-				if (Directory.EnumerateFiles(options.Input, "*.rtex", searchOpt).Any())
+				if (Directory.EnumerateFiles(options.Input, "*.rtex", searchOpt).Any() && !string.IsNullOrEmpty(options.Output) && !Path.GetExtension(options.Output).Equals(".rtex", StringComparison.OrdinalIgnoreCase))
 				{
 					EnsureAssetAgreementAccepted();
 				}
@@ -834,7 +852,7 @@ public static class Program
 		else if (Directory.Exists(options.Input))
 		{
 			var searchOpt = options.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
-			if (Directory.EnumerateFiles(options.Input, "*.raud", searchOpt).Any())
+			if (Directory.EnumerateFiles(options.Input, "*.raud", searchOpt).Any() && !string.IsNullOrEmpty(options.Output) && !Path.GetExtension(options.Output).Equals(".raud", StringComparison.OrdinalIgnoreCase))
 			{
 				EnsureAssetAgreementAccepted();
 			}
@@ -895,13 +913,13 @@ public static class Program
 		}
 	}
 
-	private static int ExecuteModelConvert(ModelConvertOptions options)
+	private static int ExecuteMeshConvert(MeshConvertOptions options)
 	{
 		if (!string.IsNullOrWhiteSpace(options.AssetType))
 		{
-			if (!RealmMetadataHelper.IsValidAssetTypeForExtension(".rmod", options.AssetType, out string canonical, out var validTypes))
+			if (!RealmMetadataHelper.IsValidAssetTypeForExtension(".rmesh", options.AssetType, out string canonical, out var validTypes))
 			{
-				Console.Error.WriteLine($"Error: Invalid asset_type '{options.AssetType}' for 3D model. Valid asset_type values for .rmod/.glb are: {string.Join(", ", validTypes)}.");
+				Console.Error.WriteLine($"Error: Invalid asset_type '{options.AssetType}' for 3D model. Valid asset_type values for .rmesh/.glb are: {string.Join(", ", validTypes)}.");
 				return 1;
 			}
 			options.AssetType = canonical;
@@ -910,20 +928,20 @@ public static class Program
 		if (File.Exists(options.Input))
 		{
 			string fileExt = Path.GetExtension(options.Input).ToLowerInvariant();
-			string defaultExt = fileExt == ".rmod" ? ".glb" : ".rmod";
+			string defaultExt = fileExt == ".rmesh" ? ".glb" : ".rmesh";
 
 			string target = options.InPlace || string.IsNullOrEmpty(options.Output)
 				? (options.InPlace ? options.Input : Path.ChangeExtension(options.Input, defaultExt))
 				: options.Output;
 
-			if (fileExt == ".rmod" && !Path.GetExtension(target).Equals(".rmod", StringComparison.OrdinalIgnoreCase))
+			if (fileExt == ".rmesh" && !Path.GetExtension(target).Equals(".rmesh", StringComparison.OrdinalIgnoreCase))
 			{
 				EnsureAssetAgreementAccepted();
 			}
 
-			if (Path.GetExtension(target).Equals(".glb", StringComparison.OrdinalIgnoreCase) && fileExt == ".rmod")
+			if (Path.GetExtension(target).Equals(".glb", StringComparison.OrdinalIgnoreCase) && fileExt == ".rmesh")
 			{
-				var res = ModelConverter.ExtractGlbFromRmod(options.Input, target);
+				var res = ModelConverter.ExtractGlbFromRmesh(options.Input, target);
 				if (res.Success)
 				{
 					Console.WriteLine($"Successfully extracted GLB: {options.Input} -> {target}");
@@ -937,7 +955,7 @@ public static class Program
 			}
 			else
 			{
-				var res = ModelConverter.ConvertToRmod(
+				var res = ModelConverter.ConvertToRmesh(
 					options.Input,
 					target,
 					options.AssetType,
@@ -959,7 +977,7 @@ public static class Program
 		else if (Directory.Exists(options.Input))
 		{
 			var searchOpt = options.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
-			if (Directory.EnumerateFiles(options.Input, "*.rmod", searchOpt).Any() && !string.IsNullOrEmpty(options.Output) && !Path.GetExtension(options.Output).Equals(".rmod", StringComparison.OrdinalIgnoreCase))
+			if (Directory.EnumerateFiles(options.Input, "*.rmesh", searchOpt).Any() && !string.IsNullOrEmpty(options.Output) && !Path.GetExtension(options.Output).Equals(".rmesh", StringComparison.OrdinalIgnoreCase))
 			{
 				EnsureAssetAgreementAccepted();
 			}
@@ -1010,7 +1028,7 @@ public static class Program
 		}
 	}
 
-	private static int ExecuteModelPlayerColor(ModelPlayerColorCliOptions options)
+	private static int ExecuteMeshPlayerColor(MeshPlayerColorCliOptions options)
 	{
 		var processorOptions = new Realm.Shared.GlbPlayerColorOptions
 		{
@@ -1024,13 +1042,13 @@ public static class Program
 		if (File.Exists(options.Input))
 		{
 			string target = ResolveOutputPath(options.Input, options.Output, options.InPlace);
-			return ProcessSingleModelPlayerColor(options.Input, target, processorOptions);
+			return ProcessSingleMeshPlayerColor(options.Input, target, processorOptions);
 		}
 		else if (Directory.Exists(options.Input))
 		{
 			var searchOpt = options.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
 			string[] files = Directory.GetFiles(options.Input, "*.*", searchOpt)
-				.Where(f => f.EndsWith(".rmod", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+				.Where(f => f.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
 				.ToArray();
 			Console.WriteLine($"Found {files.Length} model file(s) in {options.Input}");
 
@@ -1050,7 +1068,7 @@ public static class Program
 					target = Path.Combine(options.Output, rel);
 				}
 
-				int res = ProcessSingleModelPlayerColor(file, target, processorOptions);
+				int res = ProcessSingleMeshPlayerColor(file, target, processorOptions);
 				if (res == 0) successCount++;
 				else failCount++;
 			}
@@ -1065,7 +1083,7 @@ public static class Program
 		}
 	}
 
-	private static int ProcessSingleModelPlayerColor(
+	private static int ProcessSingleMeshPlayerColor(
 		string inputPath,
 		string outputPath,
 		Realm.Shared.GlbPlayerColorOptions processorOptions)
@@ -1074,8 +1092,8 @@ public static class Program
 
 		string ext = Path.GetExtension(inputPath).ToLowerInvariant();
 		string outExt = Path.GetExtension(outputPath).ToLowerInvariant();
-		bool isRmod = ext == ".rmod";
-		bool outIsRmod = outExt == ".rmod";
+		bool isRmesh = ext == ".rmesh";
+		bool outIsRmesh = outExt == ".rmesh";
 
 		var optimizer = new GlbOptimizer();
 		string? tempInputGlb = null;
@@ -1086,10 +1104,10 @@ public static class Program
 		try
 		{
 			byte[] sourceGlbBytes;
-			if (isRmod)
+			if (isRmesh)
 			{
-				byte[] rmodBytes = File.ReadAllBytes(inputPath);
-				var (meta, glbBytes, _) = RmodFile.Parse(rmodBytes);
+				byte[] rmeshBytes = File.ReadAllBytes(inputPath);
+				var (meta, glbBytes, _) = RmeshFile.Parse(rmeshBytes);
 				existingMeta = meta;
 				sourceGlbBytes = glbBytes;
 			}
@@ -1132,7 +1150,7 @@ public static class Program
 			Console.WriteLine($"  Re-optimizing output (LODs regenerated from corrected textures)...");
 			byte[] processedGlbBytes = File.ReadAllBytes(tempColorResultGlb);
 
-			if (outIsRmod || isRmod)
+			if (outIsRmesh || isRmesh)
 			{
 				string? targetAssetType = null;
 				string? targetAuthor = null;
@@ -1147,7 +1165,7 @@ public static class Program
 					catch { }
 				}
 
-				var convResult = ModelConverter.ConvertToRmod(
+				var convResult = ModelConverter.ConvertToRmesh(
 					processedGlbBytes,
 					Path.GetFileName(inputPath),
 					targetAssetType,
@@ -1156,14 +1174,14 @@ public static class Program
 
 				if (!convResult.Success || convResult.OutputBytes == null)
 				{
-					Console.Error.WriteLine($"  Failed to repack into RMOD: {convResult.ErrorMessage}");
+					Console.Error.WriteLine($"  Failed to repack into RMESH: {convResult.ErrorMessage}");
 					return 1;
 				}
 
 				string? outDir = Path.GetDirectoryName(outputPath);
 				if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir)) Directory.CreateDirectory(outDir);
 				File.WriteAllBytes(outputPath, convResult.OutputBytes);
-				Console.WriteLine($"  Successfully saved RMOD: {outputPath} ({convResult.OptimizedSize} bytes)");
+				Console.WriteLine($"  Successfully saved RMESH: {outputPath} ({convResult.OptimizedSize} bytes)");
 				return 0;
 			}
 			else
@@ -1208,7 +1226,7 @@ public static class Program
 	{
 		string inputPath = options.Input;
 		string ext = Path.GetExtension(inputPath).ToLowerInvariant();
-		bool isRmod = ext == ".rmod";
+		bool isRmesh = ext == ".rmesh";
 
 		string tempGlbInput = inputPath;
 		string? tempExtractedGlb = null;
@@ -1217,10 +1235,10 @@ public static class Program
 
 		try
 		{
-			if (isRmod)
+			if (isRmesh)
 			{
-				byte[] rmodBytes = File.ReadAllBytes(inputPath);
-				var (meta, glbBytes, _) = RmodFile.Parse(rmodBytes);
+				byte[] rmeshBytes = File.ReadAllBytes(inputPath);
+				var (meta, glbBytes, _) = RmeshFile.Parse(rmeshBytes);
 				existingMeta = meta;
 				tempExtractedGlb = Path.Combine(Path.GetTempPath(), $"realm_rig_in_{Guid.NewGuid():N}.glb");
 				File.WriteAllBytes(tempExtractedGlb, glbBytes);
@@ -1249,8 +1267,8 @@ public static class Program
 				return 1;
 			}
 
-			bool targetIsRmod = Path.GetExtension(targetOutput).Equals(".rmod", StringComparison.OrdinalIgnoreCase) || isRmod;
-			if (targetIsRmod)
+			bool targetIsRmesh = Path.GetExtension(targetOutput).Equals(".rmesh", StringComparison.OrdinalIgnoreCase) || isRmesh;
+			if (targetIsRmesh)
 			{
 				string? targetAssetType = "Character";
 				string? targetAuthor = null;
@@ -1266,7 +1284,7 @@ public static class Program
 				}
 
 				byte[] riggedGlb = File.ReadAllBytes(tempGlbOutput);
-				var convRes = ModelConverter.ConvertToRmod(
+				var convRes = ModelConverter.ConvertToRmesh(
 					riggedGlb,
 					Path.GetFileName(inputPath),
 					targetAssetType,
@@ -1275,14 +1293,14 @@ public static class Program
 
 				if (!convRes.Success || convRes.OutputBytes == null)
 				{
-					Console.Error.WriteLine($"Failed to pack rigged model to RMOD: {convRes.ErrorMessage}");
+					Console.Error.WriteLine($"Failed to pack rigged model to RMESH: {convRes.ErrorMessage}");
 					return 1;
 				}
 
 				string? outDir = Path.GetDirectoryName(targetOutput);
 				if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir)) Directory.CreateDirectory(outDir);
 				File.WriteAllBytes(targetOutput, convRes.OutputBytes);
-				Console.WriteLine($"Successfully rigged and saved RMOD: {targetOutput}");
+				Console.WriteLine($"Successfully rigged and saved RMESH: {targetOutput}");
 				return 0;
 			}
 			else

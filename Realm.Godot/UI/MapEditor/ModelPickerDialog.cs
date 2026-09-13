@@ -82,7 +82,7 @@ public partial class ModelPickerDialog : FloatingDialogBase
 
 		(_txtModelPath, _setModelPathValue) = AddAssetFilterDropdown(
 			BodyContainer,
-			TranslationServer.Translate("Model Asset (.rmod / .glb):"),
+			TranslationServer.Translate("Model Asset (.rmesh / .glb):"),
 			_selectedModelPath,
 			(all) => ScanAvailableAssets("models", all || _showAllFolders, _domain),
 			(val) =>

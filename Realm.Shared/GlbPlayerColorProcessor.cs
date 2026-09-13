@@ -44,21 +44,21 @@ public static class GlbPlayerColorProcessor
         }
     }
 
-    public static bool DetectSupportsTeamColor(ReadOnlySpan<byte> glbOrRmodBytes)
+    public static bool DetectSupportsTeamColor(ReadOnlySpan<byte> glbOrRmeshBytes)
     {
-        if (glbOrRmodBytes.Length == 0) return false;
+        if (glbOrRmeshBytes.Length == 0) return false;
         try
         {
             byte[] glbBytes;
-            if (RmodFile.IsRmodBytes(glbOrRmodBytes))
+            if (RmeshFile.IsRmeshBytes(glbOrRmeshBytes))
             {
-                byte[]? extractedGlb = RmodFile.GetGlbBytes(glbOrRmodBytes);
+                byte[]? extractedGlb = RmeshFile.GetGlbBytes(glbOrRmeshBytes);
                 if (extractedGlb == null || extractedGlb.Length == 0) return false;
                 glbBytes = extractedGlb;
             }
             else
             {
-                glbBytes = glbOrRmodBytes.ToArray();
+                glbBytes = glbOrRmeshBytes.ToArray();
             }
 
             var (jsonNode, binChunk, _) = GlbManifestUtils.ParseGlb(glbBytes);
