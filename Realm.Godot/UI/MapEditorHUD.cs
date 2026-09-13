@@ -9141,7 +9141,7 @@ public partial class MapEditorHUD : Control
 	public Realm.Godot.Services.ModelOptimization.ModelOptimizerService.OptimizationResult OptimizeAndImportGlbDirect(
 		byte[] glbBytes,
 		int maxTextureResolution = 1024,
-		float creaseAngleDegrees = 45.0f,
+		float creaseAngleDegrees = 60.0f,
 		float allowedPixelError = 1.5f,
 		bool forceReDecimate = false)
 	{

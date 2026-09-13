@@ -40,42 +40,47 @@ public static unsafe class GlbLodGenerator
 				return (false, inputGlbBytes, "Failed to parse glTF JSON root");
 			}
 
-			// Early-out: if the model already contains MSFT_lod in extensions, do not duplicate or re-simplify
 			if (root["extensionsUsed"] is JsonArray extUsedEarly)
 			{
-				foreach (var ext in extUsedEarly)
+				for (int i = extUsedEarly.Count - 1; i >= 0; i--)
 				{
-					if (ext?.GetValue<string>() == "MSFT_lod") return (true, inputGlbBytes, string.Empty);
+					if (extUsedEarly[i]?.GetValue<string>() == "MSFT_lod")
+					{
+						extUsedEarly.RemoveAt(i);
+					}
 				}
 			}
 			if (root["extensionsRequired"] is JsonArray extReqEarly)
 			{
-				foreach (var ext in extReqEarly)
+				for (int i = extReqEarly.Count - 1; i >= 0; i--)
 				{
-					if (ext?.GetValue<string>() == "MSFT_lod") return (true, inputGlbBytes, string.Empty);
+					if (extReqEarly[i]?.GetValue<string>() == "MSFT_lod")
+					{
+						extReqEarly.RemoveAt(i);
+					}
 				}
 			}
-
-			// Early-out: if any node ends with _LOD0..3 or has MSFT_lod extension
-			if (root["nodes"] is JsonArray allNodes)
+			if (root["nodes"] is JsonArray existingNodes)
 			{
-				foreach (var node in allNodes)
+				for (int i = existingNodes.Count - 1; i >= 0; i--)
 				{
-					if (node is JsonObject nodeObj)
+					if (existingNodes[i] is JsonObject nodeObj)
 					{
 						string nodeName = nodeObj["name"]?.GetValue<string>() ?? string.Empty;
-						if (nodeName.EndsWith("_LOD0", StringComparison.OrdinalIgnoreCase) ||
-							nodeName.EndsWith("_LOD1", StringComparison.OrdinalIgnoreCase) ||
+						if (nodeName.EndsWith("_LOD1", StringComparison.OrdinalIgnoreCase) ||
 							nodeName.EndsWith("_LOD2", StringComparison.OrdinalIgnoreCase) ||
 							nodeName.EndsWith("_LOD3", StringComparison.OrdinalIgnoreCase))
 						{
-							return (true, inputGlbBytes, string.Empty);
+							existingNodes.RemoveAt(i);
+							continue;
 						}
-
-						if (nodeObj.TryGetPropertyValue("extensions", out var extNode) && extNode is JsonObject nodeExts &&
-							nodeExts.ContainsKey("MSFT_lod"))
+						if (nodeName.EndsWith("_LOD0", StringComparison.OrdinalIgnoreCase))
 						{
-							return (true, inputGlbBytes, string.Empty);
+							nodeObj["name"] = nodeName.Substring(0, nodeName.Length - 5);
+						}
+						if (nodeObj.TryGetPropertyValue("extensions", out var extNode) && extNode is JsonObject nodeExts)
+						{
+							nodeExts.Remove("MSFT_lod");
 						}
 					}
 				}
@@ -283,6 +288,7 @@ public static unsafe class GlbLodGenerator
 									pPos,
 									(nuint)posCount,
 									(nuint)posStride,
+									null,
 									(nuint)targetIndexCount,
 									0.05f * t,
 									&resultError);

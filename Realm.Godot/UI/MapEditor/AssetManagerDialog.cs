@@ -2330,53 +2330,45 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				subCat = glbSub;
 			}
 
-			string destDir = Path.Combine(wsPath, "Assets", "glb", subCat);
+			string destDir = Path.Combine(wsPath, "Assets", "models", subCat);
 			Directory.CreateDirectory(destDir);
-			string destPath = Path.Combine(destDir, $"{cleanBase}.glb");
+			string destPath = Path.Combine(destDir, $"{cleanBase}.rmesh");
 
-			byte[] srcBytes = File.ReadAllBytes(sourceFilePath);
-			var optimizer = ServiceLocator.TryGet<ModelOptimizerService>()
-				?? new ModelOptimizerService(ServiceLocator.TryGet<WorldAccessor>());
-
-			var optResult = optimizer.OptimizeGlb(srcBytes, new ModelOptimizerService.OptimizationOptions
+			int maxRes = subCat is "attachments" or "items" ? 512 : 1024;
+			string canonicalAssetType = subCat switch
 			{
-				AllowedPixelError = 1.5f,
-				CreaseAngleDegrees = 45.0f,
-				MaxTextureResolution = 1024,
-				ForceReDecimate = true
-			});
+				"units" => "Character",
+				"buildings" => "Building",
+				"attachments" or "items" => "Item",
+				_ => "Prop"
+			};
 
-			if (!optResult.Success || optResult.OptimizedGlbBytes == null)
-			{
-				var glbOpt = new Realm.Shared.GlbOptimizer();
-				var res = glbOpt.Optimize(srcBytes, new Realm.Shared.OptimizationOptions
+			var convRes = Realm.Shared.ModelOptimization.ModelConverter.ConvertToRmesh(
+				sourceFilePath,
+				destPath,
+				canonicalAssetType,
+				force: true,
+				options: new Realm.Shared.OptimizationOptions
 				{
 					SimplificationRatio = 0.5f,
-					MaxTextureResolution = 1024,
+					MaxTextureResolution = maxRes,
 					ForceReDecimate = true
 				});
-				if (res.Success && res.OutputGlbBytes != null)
-				{
-					File.WriteAllBytes(destPath, res.OutputGlbBytes);
-				}
-				else
-				{
-					Hud?.ShowFeedback($"Failed to optimize model: {optResult.ErrorMessage ?? res.ErrorMessage}");
-					return;
-				}
-			}
-			else
+
+			if (!convRes.Success)
 			{
-				File.WriteAllBytes(destPath, optResult.OptimizedGlbBytes);
+				Hud?.ShowFeedback($"Failed to optimize model: {convRes.ErrorMessage}");
+				return;
 			}
 
-			var assetsObj = MapAssetHelper.LoadUnionedAssets(wsPath);
+			var assetsObj = MapAssetHelper.LoadUnionedAssets(wsPath) ?? new JsonObject();
 			if (!assetsObj.ContainsKey("glb") || assetsObj["glb"] == null) assetsObj["glb"] = new JsonObject();
 			var glbObj = assetsObj["glb"]!.AsObject();
 			if (!glbObj.ContainsKey(subCat) || glbObj[subCat] == null) glbObj[subCat] = new JsonObject();
 
-			byte[] finalBytes = File.ReadAllBytes(destPath);
-			string hash = Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(finalBytes, ".glb");
+			string hash = convRes.OutputBytes != null
+				? Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(convRes.OutputBytes, ".rmesh")
+				: Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(destPath);
 
 			float defaultScale = subCat switch
 			{
@@ -2384,6 +2376,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				"buildings" => 1.5f,
 				"props" => 1.25f,
 				"units" => 1.0f,
+				"attachments" or "items" => 1.0f,
 				_ => 1.0f
 			};
 
@@ -2399,16 +2392,17 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				["default_asset_type"] = subCat,
 				["normal_mode"] = "Flat",
 				["normalize_luminance"] = true,
-				["ignore_player_color"] = isPropOrRes
+				["ignore_player_color"] = isPropOrRes,
+				["supports_team_color"] = convRes.SupportsTeamColor
 			};
-			glbObj[subCat].AsObject()[$"{cleanBase}.glb"] = glbMetaObj;
+			glbObj[subCat]![$"{cleanBase}.rmesh"] = glbMetaObj;
 
 			string unitId = cleanBase;
 
 			MetadataService.Instance.UpdateMetadata(wsPath, meta =>
 			{
-				meta.SetModelYOffset($"{cleanBase}.glb", autoYOffset);
-				meta.SetModelScale($"{cleanBase}.glb", defaultScale);
+				meta.SetModelYOffset($"{cleanBase}.rmesh", autoYOffset);
+				meta.SetModelScale($"{cleanBase}.rmesh", defaultScale);
 
 				switch (subCat)
 				{
@@ -2425,7 +2419,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 								UnitId = unitId,
 								Name = unitId,
 								Description = "",
-								ModelPath = $"{cleanBase}.glb",
+								ModelPath = $"{cleanBase}.rmesh",
 								Scale = defaultScale,
 								YOffset = autoYOffset,
 								PathingType = 9,
@@ -2447,7 +2441,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 								UnitId = unitId,
 								Name = unitId,
 								Description = "",
-								ModelPath = $"{cleanBase}.glb",
+								ModelPath = $"{cleanBase}.rmesh",
 								Scale = defaultScale,
 								YOffset = autoYOffset,
 								PathingType = 32,
@@ -2469,7 +2463,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 								UnitId = unitId,
 								Name = unitId,
 								Description = "",
-								ModelPath = $"{cleanBase}.glb",
+								ModelPath = $"{cleanBase}.rmesh",
 								Scale = defaultScale,
 								YOffset = autoYOffset,
 								PathingType = 255,
@@ -2492,7 +2486,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 								UnitId = unitId,
 								Name = unitId,
 								Description = "",
-								ModelPath = $"{cleanBase}.glb",
+								ModelPath = $"{cleanBase}.rmesh",
 								Scale = defaultScale,
 								YOffset = autoYOffset,
 								PathingType = 255,
@@ -2505,11 +2499,11 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				}
 			});
 
-			GameHost.Instance?.SetModelYOffset($"{cleanBase}.glb", autoYOffset);
-			GameHost.Instance?.SetModelScale($"{cleanBase}.glb", defaultScale);
+			GameHost.Instance?.SetModelYOffset($"{cleanBase}.rmesh", autoYOffset);
+			GameHost.Instance?.SetModelScale($"{cleanBase}.rmesh", defaultScale);
 
 			MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj);
-			Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Converted and imported 3D model {0}.glb"), cleanBase));
+			Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Converted and imported 3D model {0}.rmesh"), cleanBase));
 
 			RefreshAssetList();
 		}
@@ -2567,7 +2561,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 			if (IsGlbCategory(_currentCategory, out string subCategory))
 			{
-				if (!ModelOptimizerService.HasOptimizationCompletedFlag(sourceFilePath))
+				if (!sourceExtension.Equals(".rmesh", StringComparison.OrdinalIgnoreCase))
 				{
 					Hud?.OpenConvertGlbDialog(sourceFilePath, subCategory, (_) => RefreshAssetList());
 					return;
@@ -2578,7 +2572,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				File.Copy(sourceFilePath, destPath, true);
 				Realm.Shared.Metadata.RealmMetadataHelper.EnsureMetadata(destPath);
 				byte[] finalBytes = File.ReadAllBytes(destPath);
-				hash = Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(finalBytes, ".glb");
+				hash = Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(finalBytes, ".rmesh");
 
 				float defaultScale = subCategory switch
 				{
@@ -2586,6 +2580,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 					"buildings" => 1.5f,
 					"props" => 1.25f,
 					"units" => 1.0f,
+					"attachments" or "items" => 1.0f,
 					_ => 1.0f
 				};
 

@@ -46,26 +46,8 @@ public static class ModelConverter
 		{
 			SimplificationRatio = 0.5f,
 			MaxTextureResolution = maxRes,
-			ForceReDecimate = forceReDecimate
+			ForceReDecimate = true
 		};
-	}
-
-	public static string InferAssetTypeFromPath(string filePath)
-	{
-		string lower = filePath.ToLowerInvariant().Replace('\\', '/');
-		if (lower.Contains("/items/") || lower.Contains("/attachments/") || lower.Contains("/weapons/") || lower.Contains("/projectiles/"))
-		{
-			return "Item";
-		}
-		if (lower.Contains("/units/") || lower.Contains("/characters/"))
-		{
-			return "Character";
-		}
-		if (lower.Contains("/buildings/"))
-		{
-			return "Building";
-		}
-		return "Prop";
 	}
 
 	public static ModelConversionResult ConvertToRmesh(
@@ -93,11 +75,32 @@ public static class ModelConverter
 
 		try
 		{
-			byte[] inputBytes = File.ReadAllBytes(fullInput);
+			byte[] inputBytes;
+			string ext = Path.GetExtension(fullInput).ToLowerInvariant();
+			if (ext is ".obj" or ".fbx" or ".dae")
+			{
+				using var importer = new Assimp.AssimpContext();
+				var scene = importer.ImportFile(fullInput, Assimp.PostProcessSteps.Triangulate | Assimp.PostProcessSteps.GenerateNormals | Assimp.PostProcessSteps.MakeLeftHanded | Assimp.PostProcessSteps.FlipUVs);
+				string tempGlb = Path.Combine(Path.GetTempPath(), $"realm_import_{Guid.NewGuid():N}.glb");
+				try
+				{
+					importer.ExportFile(scene, tempGlb, "glb2");
+					inputBytes = File.ReadAllBytes(tempGlb);
+				}
+				finally
+				{
+					if (File.Exists(tempGlb)) try { File.Delete(tempGlb); } catch { }
+				}
+			}
+			else
+			{
+				inputBytes = File.ReadAllBytes(fullInput);
+			}
+
 			result.OriginalSize = inputBytes.Length;
 
 			string fileName = Path.GetFileName(fullInput);
-			var convRes = ConvertToRmesh(inputBytes, fileName, assetType, force, options, author);
+			var convRes = ConvertToRmesh(inputBytes, fullInput, assetType, force, options, author);
 			if (!convRes.Success || convRes.OutputBytes == null)
 			{
 				result.Success = false;
@@ -167,6 +170,9 @@ public static class ModelConverter
 				existingMetaJson = RealmMetadataHelper.ExtractMetadataFromGlbBytes(rawGlbBytes);
 			}
 
+			rawGlbBytes = GlbManifestUtils.StripOptimizationMetadata(rawGlbBytes).UnoptimizedBytes;
+			rawGlbBytes = GlbMeshSmoother.SmoothMesh(rawGlbBytes);
+
 			JsonObject metaObj;
 			if (!string.IsNullOrWhiteSpace(existingMetaJson))
 			{
@@ -184,31 +190,46 @@ public static class ModelConverter
 				metaObj = new JsonObject();
 			}
 
-			string? effectiveAssetType = assetType;
-			if (string.IsNullOrEmpty(effectiveAssetType))
+			string? effectiveAssetType = null;
+			if (!string.IsNullOrEmpty(assetType) && RealmMetadataHelper.IsValidAssetTypeForExtension(".rmesh", assetType, out string canonicalInput, out _))
+			{
+				effectiveAssetType = canonicalInput;
+			}
+			else if (!string.IsNullOrEmpty(assetType))
+			{
+				effectiveAssetType = assetType;
+			}
+			else
 			{
 				string? existingType = metaObj["asset_type"]?.ToString() ?? metaObj["default_asset_type"]?.ToString() ?? metaObj["type"]?.ToString();
-				if (!string.IsNullOrEmpty(existingType) && RealmMetadataHelper.IsValidAssetTypeForExtension(".rmesh", existingType, out string canonical, out _))
+				if (!string.IsNullOrEmpty(existingType) && RealmMetadataHelper.IsValidAssetTypeForExtension(".rmesh", existingType, out string canonicalMeta, out _))
 				{
-					effectiveAssetType = canonical;
+					effectiveAssetType = canonicalMeta;
 				}
-				else if (!string.IsNullOrEmpty(inputFileName))
+				else if (!string.IsNullOrEmpty(existingType))
 				{
-					effectiveAssetType = InferAssetTypeFromPath(inputFileName);
+					effectiveAssetType = existingType;
 				}
-				else
-				{
-					effectiveAssetType = "Prop";
-				}
+			}
+
+			if (string.IsNullOrWhiteSpace(effectiveAssetType))
+			{
+				result.Success = false;
+				result.ErrorMessage = "Asset type must be specified (Character, Building, Prop, Item) or present in model metadata.";
+				return result;
 			}
 
 			var opt = options ?? GetAutomaticOptimizationOptions(effectiveAssetType, force);
 			var optimizer = new GlbOptimizer();
 			var optResult = optimizer.Optimize(rawGlbBytes, opt);
+			if (!optResult.Success || optResult.OutputGlbBytes == null)
+			{
+				result.Success = false;
+				result.ErrorMessage = optResult.ErrorMessage ?? "Optimization failed.";
+				return result;
+			}
 
-			byte[] finalGlbBytes = (optResult.Success && optResult.OutputGlbBytes != null)
-				? optResult.OutputGlbBytes
-				: rawGlbBytes;
+			byte[] finalGlbBytes = optResult.OutputGlbBytes;
 
 			bool supportsTeamColor = GlbPlayerColorProcessor.DetectSupportsTeamColor(finalGlbBytes);
 
@@ -309,6 +330,30 @@ public static class ModelConverter
 		}
 	}
 
+	public static ModelConversionResult ConvertModelFile(
+		string inputPath,
+		string? outputPath = null,
+		string? assetType = null,
+		bool force = false,
+		OptimizationOptions? options = null,
+		string? author = null)
+	{
+		string fullInput = Path.GetFullPath(inputPath);
+		string ext = Path.GetExtension(fullInput).ToLowerInvariant();
+		string defaultExt = ext == ".rmesh" ? ".glb" : ".rmesh";
+
+		string target = !string.IsNullOrEmpty(outputPath)
+			? Path.GetFullPath(outputPath)
+			: Path.ChangeExtension(fullInput, defaultExt);
+
+		if (ext == ".rmesh" && Path.GetExtension(target).Equals(".glb", StringComparison.OrdinalIgnoreCase))
+		{
+			return ExtractGlbFromRmesh(fullInput, target);
+		}
+
+		return ConvertToRmesh(fullInput, target, assetType, force, options, author);
+	}
+
 	public static int ConvertModelDirectory(
 		string inputDir,
 		string? outputDir = null,
@@ -328,18 +373,21 @@ public static class ModelConverter
 		{
 			if (!IsModelFile(file)) continue;
 
+			string fileExt = Path.GetExtension(file).ToLowerInvariant();
+			string defaultExt = fileExt == ".rmesh" ? ".glb" : ".rmesh";
+
 			string target;
 			if (string.IsNullOrEmpty(fullOutputDir))
 			{
-				target = Path.ChangeExtension(file, ".rmesh");
+				target = Path.ChangeExtension(file, defaultExt);
 			}
 			else
 			{
 				string rel = Path.GetRelativePath(fullInputDir, file);
-				target = Path.Combine(fullOutputDir, Path.ChangeExtension(rel, ".rmesh"));
+				target = Path.Combine(fullOutputDir, Path.ChangeExtension(rel, defaultExt));
 			}
 
-			var res = ConvertToRmesh(file, target, assetType, force);
+			var res = ConvertModelFile(file, target, assetType, force);
 			if (res.Success)
 			{
 				Console.WriteLine($"Converted: {file} -> {target}");
