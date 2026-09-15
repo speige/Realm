@@ -62,6 +62,7 @@ public static unsafe class GlbLodGenerator
 			}
 			if (root["nodes"] is JsonArray existingNodes)
 			{
+				var removedIndices = new HashSet<int>();
 				for (int i = existingNodes.Count - 1; i >= 0; i--)
 				{
 					if (existingNodes[i] is JsonObject nodeObj)
@@ -72,6 +73,7 @@ public static unsafe class GlbLodGenerator
 							nodeName.EndsWith("_LOD3", StringComparison.OrdinalIgnoreCase))
 						{
 							existingNodes.RemoveAt(i);
+							removedIndices.Add(i);
 							continue;
 						}
 						if (nodeName.EndsWith("_LOD0", StringComparison.OrdinalIgnoreCase))
@@ -81,6 +83,26 @@ public static unsafe class GlbLodGenerator
 						if (nodeObj.TryGetPropertyValue("extensions", out var extNode) && extNode is JsonObject nodeExts)
 						{
 							nodeExts.Remove("MSFT_lod");
+						}
+					}
+				}
+
+				if (root["scenes"] is JsonArray earlyScenes)
+				{
+					foreach (var sc in earlyScenes)
+					{
+						if (sc is JsonObject scObj && scObj["nodes"] is JsonArray scNodes)
+						{
+							var cleanNodes = new JsonArray();
+							var seen = new HashSet<int>();
+							foreach (var item in scNodes)
+							{
+								if (item is JsonValue jv && jv.TryGetValue(out int nodeIdx) && !removedIndices.Contains(nodeIdx) && nodeIdx >= 0 && nodeIdx < existingNodes.Count && seen.Add(nodeIdx))
+								{
+									cleanNodes.Add(nodeIdx);
+								}
+							}
+							scObj["nodes"] = cleanNodes;
 						}
 					}
 				}
@@ -483,7 +505,19 @@ public static unsafe class GlbLodGenerator
 										{
 											if (scNodes[sn]?.GetValue<int>() == n)
 											{
-												scNodes.Add(newLodNodeIdx);
+												bool alreadyPresent = false;
+												for (int k = 0; k < scNodes.Count; k++)
+												{
+													if (scNodes[k]?.GetValue<int>() == newLodNodeIdx)
+													{
+														alreadyPresent = true;
+														break;
+													}
+												}
+												if (!alreadyPresent)
+												{
+													scNodes.Add(newLodNodeIdx);
+												}
 												break;
 											}
 										}
@@ -509,6 +543,27 @@ public static unsafe class GlbLodGenerator
 						}
 						nExtras["visibility_range_begin"] = visBegins[0];
 						nExtras["visibility_range_end"] = visEnds[0];
+					}
+				}
+			}
+
+			// Final sanity check: ensure no duplicate or out-of-bounds node indices in any scene
+			if (root["scenes"] is JsonArray finalScenes && root["nodes"] is JsonArray finalNodes)
+			{
+				foreach (var sc in finalScenes)
+				{
+					if (sc is JsonObject scObj && scObj["nodes"] is JsonArray scNodes)
+					{
+						var distinctNodes = new JsonArray();
+						var seen = new HashSet<int>();
+						foreach (var item in scNodes)
+						{
+							if (item is JsonValue jv && jv.TryGetValue(out int nodeIdx) && nodeIdx >= 0 && nodeIdx < finalNodes.Count && seen.Add(nodeIdx))
+							{
+								distinctNodes.Add(nodeIdx);
+							}
+						}
+						scObj["nodes"] = distinctNodes;
 					}
 				}
 			}
