@@ -202,6 +202,28 @@ public class MeshPlayerColorCliOptions
 	public int DilationRadius { get; set; } = 3;
 }
 
+[Verb("revert_mesh_player_color", HelpText = "Revert player-color mask on a pre-baked 3D model by un-baking the mask back to the original model (painting target color onto albedo mixed with the red ORM channel, and clearing the red ORM channel).")]
+public class RevertMeshPlayerColorCliOptions
+{
+	[Option('i', "input", Required = true, HelpText = "Path to .rmesh or .glb file or directory containing model files.")]
+	public string Input { get; set; } = string.Empty;
+
+	[Option('o', "output", Required = false, HelpText = "Output destination file or directory.")]
+	public string? Output { get; set; }
+
+	[Option("in-place", Required = false, Default = false, HelpText = "Overwrite the source file directly.")]
+	public bool InPlace { get; set; }
+
+	[Option('r', "recursive", Required = false, Default = false, HelpText = "Process directories recursively.")]
+	public bool Recursive { get; set; }
+
+	[Option('t', "type", Required = false, HelpText = "Asset type for model: Character, Building, Prop, Item.")]
+	public string? AssetType { get; set; }
+
+	[Option("target-hex", Required = false, Default = "#FF00FF", HelpText = "Target prompt/tint color in hex (default: #FF00FF).")]
+	public string TargetHex { get; set; } = "#FF00FF";
+}
+
 [Verb("rig_humanoid", HelpText = "Auto-rig a humanoid 3D model with a Mixamo skeleton using the Make-It-Animatable pipeline and optimize into .rmesh.")]
 public class RigHumanoidOptions
 {
@@ -243,7 +265,7 @@ public static class Program
 			args = args.Where(argument => !string.Equals(argument, "--eula-accept", StringComparison.OrdinalIgnoreCase)).ToArray();
 		}
 
-		return Parser.Default.ParseArguments<MeshConvertOptions, TextureConvertOptions, AudioConvertOptions, FbxToRanimOptions, RanimRenderOptions, MetadataOptions, Blake3Options, MeshPlayerColorCliOptions, RigHumanoidOptions>(args)
+		return Parser.Default.ParseArguments<MeshConvertOptions, TextureConvertOptions, AudioConvertOptions, FbxToRanimOptions, RanimRenderOptions, MetadataOptions, Blake3Options, MeshPlayerColorCliOptions, RevertMeshPlayerColorCliOptions, RigHumanoidOptions>(args)
 			.MapResult(
 				(MeshConvertOptions options) => ExecuteMeshConvert(options),
 				(TextureConvertOptions options) => ExecuteTextureConvert(options),
@@ -253,6 +275,7 @@ public static class Program
 				(MetadataOptions options) => ExecuteMetadata(options),
 				(Blake3Options options) => ExecuteBlake3(options),
 				(MeshPlayerColorCliOptions options) => ExecuteMeshPlayerColor(options),
+				(RevertMeshPlayerColorCliOptions options) => ExecuteRevertMeshPlayerColor(options),
 				(RigHumanoidOptions options) => ExecuteRigHumanoid(options),
 				errors => 1);
 	}
@@ -1248,6 +1271,194 @@ public static class Program
 		string dir = Path.GetDirectoryName(inputPath) ?? string.Empty;
 		string nameWithoutExtDefault = Path.GetFileNameWithoutExtension(inputPath);
 		return Path.Combine(dir, $"{nameWithoutExtDefault}_masked.rmesh");
+	}
+
+	private static int ExecuteRevertMeshPlayerColor(RevertMeshPlayerColorCliOptions options)
+	{
+		if (!string.IsNullOrWhiteSpace(options.AssetType))
+		{
+			if (!RealmMetadataHelper.IsValidAssetTypeForExtension(".rmesh", options.AssetType, out string canonical, out var validTypes))
+			{
+				Console.Error.WriteLine($"Error: Invalid asset_type '{options.AssetType}' for 3D model. Valid asset_type values for .rmesh/.glb are: {string.Join(", ", validTypes)}.");
+				return 1;
+			}
+			options.AssetType = canonical;
+		}
+
+		var processorOptions = new Realm.Shared.GlbRevertPlayerColorOptions
+		{
+			TargetHex = options.TargetHex
+		};
+
+		return ProcessTraversedFiles(
+			options.Input,
+			options.Output,
+			options.Recursive,
+			options.InPlace,
+			file => file.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".glb", StringComparison.OrdinalIgnoreCase),
+			_ => ".rmesh",
+			(inputFile, targetFile) => ProcessSingleRevertMeshPlayerColor(inputFile, targetFile, processorOptions, options.AssetType, options.InPlace),
+			customPathResolver: (inputRoot, currentFile) =>
+			{
+				if (Directory.Exists(inputRoot))
+				{
+					if (options.InPlace || string.IsNullOrEmpty(options.Output))
+					{
+						return ResolveRevertMeshPlayerColorOutputPath(currentFile, null, options.InPlace);
+					}
+
+					string relativePath = Path.GetRelativePath(inputRoot, currentFile);
+					string relativeRmesh = Path.ChangeExtension(relativePath, ".rmesh");
+					return Path.Combine(options.Output, relativeRmesh);
+				}
+
+				return ResolveRevertMeshPlayerColorOutputPath(currentFile, options.Output, options.InPlace);
+			},
+			summaryActionName: "revert mesh player color processing");
+	}
+
+	private static int ProcessSingleRevertMeshPlayerColor(
+		string inputPath,
+		string outputPath,
+		Realm.Shared.GlbRevertPlayerColorOptions processorOptions,
+		string? assetType = null,
+		bool inPlace = false)
+	{
+		outputPath = Path.ChangeExtension(outputPath, ".rmesh");
+		Console.WriteLine($"Processing: {inputPath} -> {outputPath}");
+
+		string ext = Path.GetExtension(inputPath).ToLowerInvariant();
+		bool isRmesh = ext == ".rmesh";
+
+		var optimizer = new GlbOptimizer();
+		string? tempInputGlb = null;
+		string? tempColorResultGlb = null;
+		string? tempUnoptimizedPath = null;
+		string? existingMeta = null;
+
+		try
+		{
+			byte[] sourceGlbBytes;
+			if (isRmesh)
+			{
+				byte[] rmeshBytes = File.ReadAllBytes(inputPath);
+				var (meta, glbBytes, _) = RmeshFile.Parse(rmeshBytes);
+				existingMeta = meta;
+				sourceGlbBytes = glbBytes;
+			}
+			else
+			{
+				sourceGlbBytes = File.ReadAllBytes(inputPath);
+				existingMeta = RealmMetadataHelper.ExtractMetadataFromGlbBytes(sourceGlbBytes);
+			}
+
+			bool wasOptimized = optimizer.IsOptimized(sourceGlbBytes);
+			tempInputGlb = Path.Combine(Path.GetTempPath(), $"realm_rpc_in_{Guid.NewGuid():N}.glb");
+			File.WriteAllBytes(tempInputGlb, sourceGlbBytes);
+
+			string colorSourcePath = tempInputGlb;
+			if (wasOptimized)
+			{
+				Console.WriteLine($"  Detected pre-optimized GLB — unoptimizing first...");
+				var unoptResult = optimizer.Unoptimize(sourceGlbBytes);
+				if (!unoptResult.Success || unoptResult.OutputGlbBytes == null)
+				{
+					Console.Error.WriteLine($"  Failed to unoptimize {inputPath}: {unoptResult.ErrorMessage}");
+					return 1;
+				}
+
+				tempUnoptimizedPath = Path.Combine(Path.GetTempPath(), $"realm_rpc_unopt_{Guid.NewGuid():N}.glb");
+				File.WriteAllBytes(tempUnoptimizedPath, unoptResult.OutputGlbBytes);
+				colorSourcePath = tempUnoptimizedPath;
+			}
+
+			tempColorResultGlb = Path.Combine(Path.GetTempPath(), $"realm_rpc_out_{Guid.NewGuid():N}.glb");
+			var colorResult = Realm.Shared.GlbPlayerColorProcessor.RevertFile(colorSourcePath, tempColorResultGlb, processorOptions);
+			if (!colorResult.Success || !File.Exists(tempColorResultGlb))
+			{
+				Console.Error.WriteLine($"  Failed reverting player-color: {colorResult.ErrorMessage}");
+				return 1;
+			}
+
+			Console.WriteLine($"  Player-color mask reverted (restored texels: {colorResult.RestoredTexelCount})");
+
+			Console.WriteLine($"  Re-optimizing output (LODs regenerated from restored textures)...");
+			byte[] processedGlbBytes = File.ReadAllBytes(tempColorResultGlb);
+
+			string? targetAssetType = !string.IsNullOrWhiteSpace(assetType)
+				? assetType
+				: null;
+			string? targetAuthor = null;
+			if (!string.IsNullOrEmpty(existingMeta))
+			{
+				try
+				{
+					var node = JsonNode.Parse(existingMeta);
+					targetAssetType ??= node?["asset_type"]?.ToString() ?? node?["default_asset_type"]?.ToString();
+					targetAuthor = node?["author"]?.ToString();
+				}
+				catch { }
+			}
+
+			var convResult = ModelConverter.ConvertToRmesh(
+				processedGlbBytes,
+				inputPath,
+				targetAssetType,
+				force: true,
+				author: targetAuthor);
+
+			if (!convResult.Success || convResult.OutputBytes == null)
+			{
+				Console.Error.WriteLine($"  Failed to repack into RMESH: {convResult.ErrorMessage}");
+				return 1;
+			}
+
+			string? outDir = Path.GetDirectoryName(outputPath);
+			if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir)) Directory.CreateDirectory(outDir);
+
+			File.WriteAllBytes(outputPath, convResult.OutputBytes);
+			Console.WriteLine($"  Successfully saved RMESH: {outputPath} ({convResult.OptimizedSize} bytes)");
+
+			if (inPlace && !string.Equals(inputPath, outputPath, StringComparison.OrdinalIgnoreCase) && File.Exists(inputPath))
+			{
+				try { File.Delete(inputPath); } catch { }
+			}
+
+			return 0;
+		}
+		finally
+		{
+			if (tempInputGlb != null && File.Exists(tempInputGlb)) try { File.Delete(tempInputGlb); } catch { }
+			if (tempColorResultGlb != null && File.Exists(tempColorResultGlb)) try { File.Delete(tempColorResultGlb); } catch { }
+			if (tempUnoptimizedPath != null && File.Exists(tempUnoptimizedPath)) try { File.Delete(tempUnoptimizedPath); } catch { }
+		}
+	}
+
+	private static string ResolveRevertMeshPlayerColorOutputPath(string inputPath, string? explicitOutput, bool inPlace)
+	{
+		if (inPlace) return Path.ChangeExtension(inputPath, ".rmesh");
+		if (!string.IsNullOrEmpty(explicitOutput))
+		{
+			if (Directory.Exists(explicitOutput) ||
+			    explicitOutput.EndsWith(Path.DirectorySeparatorChar) ||
+			    explicitOutput.EndsWith(Path.AltDirectorySeparatorChar))
+			{
+				string nameWithoutExt = Path.GetFileNameWithoutExtension(inputPath);
+				if (nameWithoutExt.EndsWith("_masked", StringComparison.OrdinalIgnoreCase))
+				{
+					nameWithoutExt = nameWithoutExt[..^7];
+				}
+				return Path.Combine(explicitOutput, $"{nameWithoutExt}_unmasked.rmesh");
+			}
+			return Path.ChangeExtension(explicitOutput, ".rmesh");
+		}
+		string dir = Path.GetDirectoryName(inputPath) ?? string.Empty;
+		string nameWithoutExtDefault = Path.GetFileNameWithoutExtension(inputPath);
+		if (nameWithoutExtDefault.EndsWith("_masked", StringComparison.OrdinalIgnoreCase))
+		{
+			nameWithoutExtDefault = nameWithoutExtDefault[..^7];
+		}
+		return Path.Combine(dir, $"{nameWithoutExtDefault}_unmasked.rmesh");
 	}
 
 	private static int ExecuteRigHumanoid(RigHumanoidOptions options)

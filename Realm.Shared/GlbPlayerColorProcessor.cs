@@ -28,6 +28,19 @@ public class GlbPlayerColorOptions
     public int DilationRadius { get; set; } = 3;
 }
 
+public class GlbRevertPlayerColorResult
+{
+    public bool Success { get; set; }
+    public string? ErrorMessage { get; set; }
+    public string? OutputFilePath { get; set; }
+    public int RestoredTexelCount { get; set; }
+}
+
+public class GlbRevertPlayerColorOptions
+{
+    public string TargetHex { get; set; } = "#FF00FF";
+}
+
 public static class GlbPlayerColorProcessor
 {
     public static bool DetectSupportsTeamColor(string filePath)
@@ -278,9 +291,224 @@ public static class GlbPlayerColorProcessor
         return (true, outputBytes, null, maskedFaces, totalFaces);
     }
 
+    public static GlbRevertPlayerColorResult RevertFile(
+        string inputPath,
+        string outputPath,
+        GlbRevertPlayerColorOptions options)
+    {
+        if (!File.Exists(inputPath))
+        {
+            return new GlbRevertPlayerColorResult
+            {
+                Success = false,
+                ErrorMessage = $"Input file does not exist: {inputPath}"
+            };
+        }
+
+        try
+        {
+            byte[] inputBytes = File.ReadAllBytes(inputPath);
+            var (success, outputBytes, errorMessage, restoredTexels) = RevertBytes(inputBytes, options);
+
+            if (!success)
+            {
+                return new GlbRevertPlayerColorResult { Success = false, ErrorMessage = errorMessage };
+            }
+
+            string? dir = Path.GetDirectoryName(outputPath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            File.WriteAllBytes(outputPath, outputBytes!);
+            RealmMetadataHelper.SyncBlake3Metadata(outputPath);
+
+            return new GlbRevertPlayerColorResult
+            {
+                Success = true,
+                OutputFilePath = outputPath,
+                RestoredTexelCount = restoredTexels
+            };
+        }
+        catch (Exception ex)
+        {
+            return new GlbRevertPlayerColorResult { Success = false, ErrorMessage = ex.Message };
+        }
+    }
+
+    public static (bool Success, byte[]? OutputBytes, string? ErrorMessage, int RestoredTexels) RevertBytes(
+        byte[] glbBytes,
+        GlbRevertPlayerColorOptions options)
+    {
+        var (jsonNode, binChunk, glbVersion) = GlbManifestUtils.ParseGlb(glbBytes);
+
+        if (jsonNode is not JsonObject root || binChunk == null)
+        {
+            return (false, null, "Failed to parse GLB: missing JSON or BIN chunk.", 0);
+        }
+
+        var bufferViews = root["bufferViews"] as JsonArray;
+        var materials = root["materials"] as JsonArray;
+        var images = root["images"] as JsonArray;
+        var textures = root["textures"] as JsonArray;
+
+        if (bufferViews == null || images == null || textures == null || materials == null)
+        {
+            return (false, null, "GLB lacks required image/texture/material data.", 0);
+        }
+
+        int albedoImageIndex = FindAlbedoImageIndex(textures, materials);
+        if (albedoImageIndex < 0)
+        {
+            return (false, null, "No albedo/base-color texture found in the GLB.", 0);
+        }
+
+        int ormImageIndex = FindOrmImageIndex(textures, materials);
+        if (ormImageIndex < 0)
+        {
+            return (true, glbBytes, null, 0);
+        }
+
+        byte[] albedoRaw = ExtractImageBytes(albedoImageIndex, images, bufferViews, binChunk);
+        if (albedoRaw.Length == 0)
+        {
+            return (false, null, "Albedo image data could not be extracted from GLB.", 0);
+        }
+
+        byte[] ormRaw = ExtractImageBytes(ormImageIndex, images, bufferViews, binChunk);
+        if (ormRaw.Length == 0)
+        {
+            return (true, glbBytes, null, 0);
+        }
+
+        using var albedoImg = Image.Load<Rgba32>(albedoRaw);
+        using var ormImg = Image.Load<Rgba32>(ormRaw);
+
+        (float targetR, float targetG, float targetB) = HexToRgb(options.TargetHex);
+        float targetLum = 0.299f * targetR + 0.587f * targetG + 0.114f * targetB;
+
+        int albedoW = albedoImg.Width;
+        int albedoH = albedoImg.Height;
+        int ormW = ormImg.Width;
+        int ormH = ormImg.Height;
+        int restoredTexels = 0;
+
+        albedoImg.ProcessPixelRows(accessor =>
+        {
+            for (int y = 0; y < accessor.Height; y++)
+            {
+                var row = accessor.GetRowSpan(y);
+                int ormY = Math.Clamp((int)((y / (float)albedoH) * ormH), 0, ormH - 1);
+
+                for (int x = 0; x < accessor.Width; x++)
+                {
+                    int ormX = Math.Clamp((int)((x / (float)albedoW) * ormW), 0, ormW - 1);
+                    byte maskByte = ormImg[ormX, ormY].R;
+                    if (maskByte <= 2) continue;
+
+                    float mask = maskByte / 255.0f;
+                    var pixel = row[x];
+                    float r = pixel.R / 255.0f;
+                    float g = pixel.G / 255.0f;
+                    float b = pixel.B / 255.0f;
+                    float pixelLum = 0.299f * r + 0.587f * g + 0.114f * b;
+
+                    float colR, colG, colB;
+                    if (targetLum <= 0.0001f || targetLum >= 0.9999f)
+                    {
+                        colR = pixelLum;
+                        colG = pixelLum;
+                        colB = pixelLum;
+                    }
+                    else if (pixelLum <= targetLum)
+                    {
+                        float t = pixelLum / targetLum;
+                        colR = t * targetR;
+                        colG = t * targetG;
+                        colB = t * targetB;
+                    }
+                    else
+                    {
+                        float h = (pixelLum - targetLum) / (1.0f - targetLum);
+                        colR = targetR + h * (1.0f - targetR);
+                        colG = targetG + h * (1.0f - targetG);
+                        colB = targetB + h * (1.0f - targetB);
+                    }
+
+                    byte newR = (byte)Math.Clamp((int)(((1.0f - mask) * r + mask * colR) * 255.0f + 0.5f), 0, 255);
+                    byte newG = (byte)Math.Clamp((int)(((1.0f - mask) * g + mask * colG) * 255.0f + 0.5f), 0, 255);
+                    byte newB = (byte)Math.Clamp((int)(((1.0f - mask) * b + mask * colB) * 255.0f + 0.5f), 0, 255);
+
+                    row[x] = new Rgba32(newR, newG, newB, pixel.A);
+                    restoredTexels++;
+                }
+            }
+        });
+
+        ormImg.ProcessPixelRows(accessor =>
+        {
+            for (int y = 0; y < accessor.Height; y++)
+            {
+                var row = accessor.GetRowSpan(y);
+                for (int x = 0; x < accessor.Width; x++)
+                {
+                    var pixel = row[x];
+                    row[x] = new Rgba32(0, pixel.G, pixel.B, pixel.A);
+                }
+            }
+        });
+
+        using var newBinStream = new MemoryStream();
+        var newBufferViewsList = CloneNonImageBufferViews(bufferViews, binChunk, newBinStream);
+
+        byte[] newAlbedoBytes = EncodeImagePng(albedoImg);
+        int newAlbedoBvIndex = AppendToBin(newAlbedoBytes, newBinStream);
+        newBufferViewsList.Add(new JsonObject
+        {
+            ["byteOffset"] = newAlbedoBvIndex,
+            ["byteLength"] = newAlbedoBytes.Length,
+            ["buffer"] = 0
+        });
+        int albedoBvIdx = newBufferViewsList.Count - 1;
+
+        byte[] newOrmBytes = EncodeImagePng(ormImg);
+        int newOrmBvOffset = AppendToBin(newOrmBytes, newBinStream);
+        newBufferViewsList.Add(new JsonObject
+        {
+            ["byteOffset"] = newOrmBvOffset,
+            ["byteLength"] = newOrmBytes.Length,
+            ["buffer"] = 0
+        });
+        int ormBvIdx = newBufferViewsList.Count - 1;
+
+        PatchImagesAndMaterials(root, images, textures, materials,
+            albedoImageIndex, albedoBvIdx, ormImageIndex, ormBvIdx);
+
+        RebuildBufferViewsInJson(root, newBufferViewsList);
+
+        if (root["buffers"] is JsonArray buffers && buffers.Count > 0 && buffers[0] is JsonObject buf0)
+        {
+            buf0["byteLength"] = (int)newBinStream.Position;
+        }
+
+        byte[] newBin = newBinStream.ToArray();
+        byte[] outputBytes = GlbManifestUtils.BuildGlb(root, newBin, glbVersion);
+
+        return (true, outputBytes, null, restoredTexels);
+    }
+
     private static (float R, float G, float B) HexToRgb(string hex)
     {
         hex = hex.TrimStart('#');
+        if (hex.Length == 3)
+        {
+            hex = $"{hex[0]}{hex[0]}{hex[1]}{hex[1]}{hex[2]}{hex[2]}";
+        }
+        if (hex.Length < 6)
+        {
+            return (1f, 0f, 1f);
+        }
         byte r = Convert.ToByte(hex[..2], 16);
         byte g = Convert.ToByte(hex[2..4], 16);
         byte b = Convert.ToByte(hex[4..6], 16);
