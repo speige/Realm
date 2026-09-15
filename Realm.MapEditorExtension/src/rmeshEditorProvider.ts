@@ -4,6 +4,133 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { sendGodotIpc } from './extension';
 
+export function parseRmesh(buffer: Buffer): { metadata: any; glbBytes: Buffer } | null {
+    if (buffer.length < 16) return null;
+    const magic = buffer.toString('ascii', 0, 4);
+    if (magic !== 'RMSH') return null;
+
+    const version = buffer.readUInt32LE(4);
+    const metaLen = buffer.readUInt32LE(8);
+    if (buffer.length < 12 + metaLen + 4) return null;
+
+    let metadata: any = {};
+    if (metaLen > 0) {
+        try {
+            const metaJson = buffer.toString('utf8', 12, 12 + metaLen);
+            metadata = JSON.parse(metaJson);
+        } catch {}
+    }
+
+    const glbLen = buffer.readUInt32LE(12 + metaLen);
+    const glbStart = 16 + metaLen;
+    const glbBytes = buffer.subarray(glbStart, glbStart + glbLen);
+
+    return { metadata, glbBytes };
+}
+
+export class RmeshGlbFileSystemProvider implements vscode.FileSystemProvider {
+    public static readonly scheme = 'rmesh-git';
+
+    private _emitter = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
+    readonly onDidChangeFile: vscode.Event<vscode.FileChangeEvent[]> = this._emitter.event;
+
+    public static createVirtualUri(rmeshFsPath: string): vscode.Uri {
+        const baseName = path.basename(rmeshFsPath, path.extname(rmeshFsPath));
+        return vscode.Uri.from({
+            scheme: RmeshGlbFileSystemProvider.scheme,
+            authority: 'memory',
+            path: `/${encodeURIComponent(rmeshFsPath)}/${baseName}.glb`
+        });
+    }
+
+    public static getRmeshPathFromUri(uri: vscode.Uri): string | null {
+        const parts = uri.path.split('/').filter(p => p.length > 0);
+        if (parts.length > 0) {
+            try {
+                return decodeURIComponent(parts[0]);
+            } catch {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    watch(_uri: vscode.Uri, _options: { readonly recursive: boolean; readonly excludes: readonly string[] }): vscode.Disposable {
+        return new vscode.Disposable(() => {});
+    }
+
+    stat(uri: vscode.Uri): vscode.FileStat {
+        const rmeshPath = RmeshGlbFileSystemProvider.getRmeshPathFromUri(uri);
+        if (!rmeshPath || !fs.existsSync(rmeshPath)) {
+            throw vscode.FileSystemError.FileNotFound(uri);
+        }
+        try {
+            const stats = fs.statSync(rmeshPath);
+            const buffer = fs.readFileSync(rmeshPath);
+            const parsed = parseRmesh(buffer);
+            if (!parsed || !parsed.glbBytes) {
+                throw vscode.FileSystemError.FileNotFound(uri);
+            }
+            return {
+                type: vscode.FileType.File,
+                ctime: stats.ctimeMs,
+                mtime: stats.mtimeMs,
+                size: parsed.glbBytes.length
+            };
+        } catch (err: any) {
+            if (err instanceof vscode.FileSystemError) throw err;
+            throw vscode.FileSystemError.Unavailable(err?.message || 'Error reading rmesh file');
+        }
+    }
+
+    readDirectory(_uri: vscode.Uri): [string, vscode.FileType][] {
+        return [];
+    }
+
+    createDirectory(_uri: vscode.Uri): void {
+        throw vscode.FileSystemError.NoPermissions();
+    }
+
+    readFile(uri: vscode.Uri): Uint8Array {
+        const rmeshPath = RmeshGlbFileSystemProvider.getRmeshPathFromUri(uri);
+        if (!rmeshPath || !fs.existsSync(rmeshPath)) {
+            throw vscode.FileSystemError.FileNotFound(uri);
+        }
+        try {
+            const buffer = fs.readFileSync(rmeshPath);
+            const parsed = parseRmesh(buffer);
+            if (!parsed || !parsed.glbBytes) {
+                throw vscode.FileSystemError.FileNotFound(uri);
+            }
+            return new Uint8Array(parsed.glbBytes.buffer, parsed.glbBytes.byteOffset, parsed.glbBytes.byteLength);
+        } catch (err: any) {
+            if (err instanceof vscode.FileSystemError) throw err;
+            throw vscode.FileSystemError.Unavailable(err?.message || 'Error reading rmesh GLB payload');
+        }
+    }
+
+    writeFile(_uri: vscode.Uri, _content: Uint8Array, _options: { readonly create: boolean; readonly overwrite: boolean }): void {
+        throw vscode.FileSystemError.NoPermissions();
+    }
+
+    delete(_uri: vscode.Uri, _options: { readonly recursive: boolean }): void {
+        throw vscode.FileSystemError.NoPermissions();
+    }
+
+    rename(_oldUri: vscode.Uri, _newUri: vscode.Uri, _options: { readonly overwrite: boolean }): void {
+        throw vscode.FileSystemError.NoPermissions();
+    }
+}
+
+export async function openRmeshInGlbViewer(rmeshPath: string): Promise<void> {
+    try {
+        const virtualUri = RmeshGlbFileSystemProvider.createVirtualUri(rmeshPath);
+        await vscode.commands.executeCommand('vscode.openWith', virtualUri, 'glbViewer.customEditor', { preview: false });
+    } catch (err: any) {
+        vscode.window.showErrorMessage(`Failed to open 3D GLB Viewer: ${err?.message || err}. Make sure OHZIInteractiveStudio.ohzi-vscode-glb-viewer is installed.`);
+    }
+}
+
 export class RealmRmeshViewerProvider implements vscode.CustomReadonlyEditorProvider {
     public static readonly viewType = 'realm.rmeshViewer';
 
@@ -41,12 +168,13 @@ export class RealmRmeshViewerProvider implements vscode.CustomReadonlyEditorProv
         const rmeshPath = document.uri.fsPath;
 
         webviewPanel.webview.onDidReceiveMessage(async message => {
-            if (message.command === 'exportGlb') {
+            if (message.command === 'open3d') {
+                await openRmeshInGlbViewer(rmeshPath);
+            } else if (message.command === 'exportGlb') {
                 const confirmed = await vscode.window.showWarningMessage(
                     'The Realm Asset Agreement states that files cannot be used outside the Realm UGC platform unless you are the original author of the asset. Do you understand?',
                     { modal: true },
-                    'Yes, Export GLB',
-                    'Cancel'
+                    'Yes, Export GLB'
                 );
 
                 if (confirmed === 'Yes, Export GLB') {
@@ -60,7 +188,7 @@ export class RealmRmeshViewerProvider implements vscode.CustomReadonlyEditorProv
 
                         if (targetUri) {
                             const buffer = fs.readFileSync(rmeshPath);
-                            const parsed = this.parseRmesh(buffer);
+                            const parsed = parseRmesh(buffer);
                             if (parsed && parsed.glbBytes) {
                                 fs.writeFileSync(targetUri.fsPath, parsed.glbBytes);
                                 vscode.window.showInformationMessage(`Successfully exported GLB to: ${targetUri.fsPath}`);
@@ -77,7 +205,7 @@ export class RealmRmeshViewerProvider implements vscode.CustomReadonlyEditorProv
 
         try {
             const fileBuffer = fs.readFileSync(rmeshPath);
-            const parsed = this.parseRmesh(fileBuffer);
+            const parsed = parseRmesh(fileBuffer);
             const stats = fs.statSync(rmeshPath);
 
             webviewPanel.webview.html = this.getPreviewHtml(
@@ -92,31 +220,7 @@ export class RealmRmeshViewerProvider implements vscode.CustomReadonlyEditorProv
         }
     }
 
-    private parseRmesh(buffer: Buffer): { metadata: any; glbBytes: Buffer } | null {
-        if (buffer.length < 16) return null;
-        const magic = buffer.toString('ascii', 0, 4);
-        if (magic !== 'RMSH') return null;
-
-        const version = buffer.readUInt32LE(4);
-        const metaLen = buffer.readUInt32LE(8);
-        if (buffer.length < 12 + metaLen + 4) return null;
-
-        let metadata: any = {};
-        if (metaLen > 0) {
-            try {
-                const metaJson = buffer.toString('utf8', 12, 12 + metaLen);
-                metadata = JSON.parse(metaJson);
-            } catch {}
-        }
-
-        const glbLen = buffer.readUInt32LE(12 + metaLen);
-        const glbStart = 16 + metaLen;
-        const glbBytes = buffer.subarray(glbStart, glbStart + glbLen);
-
-        return { metadata, glbBytes };
-    }
-
-    private getPreviewHtml(webview: vscode.Webview, fileName: string, fileSize: number, metadata: any, glbSize: number): string {
+    private getPreviewHtml(fileName: string, fileSize: number, metadata: any, glbSize: number): string {
         const formatSize = (bytes: number) => {
             if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
             if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
@@ -210,18 +314,34 @@ export class RealmRmeshViewerProvider implements vscode.CustomReadonlyEditorProv
             gap: 12px;
         }
         .btn {
-            background-color: var(--vscode-button-background, #0e639c);
-            color: var(--vscode-button-foreground, #ffffff);
             border: none;
             padding: 8px 16px;
             border-radius: 4px;
             font-size: 13px;
             font-weight: 500;
             cursor: pointer;
-            transition: background-color 0.15s ease;
+            transition: background-color 0.15s ease, transform 0.05s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
         }
-        .btn:hover {
+        .btn:active {
+            transform: scale(0.98);
+        }
+        .btn-primary {
+            background-color: var(--vscode-button-background, #0e639c);
+            color: var(--vscode-button-foreground, #ffffff);
+            font-weight: 600;
+        }
+        .btn-primary:hover {
             background-color: var(--vscode-button-hoverBackground, #1177bb);
+        }
+        .btn-secondary {
+            background-color: var(--vscode-button-secondaryBackground, #3a3d41);
+            color: var(--vscode-button-secondaryForeground, #ffffff);
+        }
+        .btn-secondary:hover {
+            background-color: var(--vscode-button-secondaryHoverBackground, #45494e);
         }
     </style>
 </head>
@@ -262,12 +382,16 @@ export class RealmRmeshViewerProvider implements vscode.CustomReadonlyEditorProv
         </div>
 
         <div class="actions">
-            <button class="btn" onclick="exportGlb()">📤 Export to GLB...</button>
+            <button class="btn btn-primary" onclick="open3d()">🎮 Open in 3D Viewer (OHZI)</button>
+            <button class="btn btn-secondary" onclick="exportGlb()">📤 Export to GLB...</button>
         </div>
     </div>
 
     <script>
         const vscode = acquireVsCodeApi();
+        function open3d() {
+            vscode.postMessage({ command: 'open3d' });
+        }
         function exportGlb() {
             vscode.postMessage({ command: 'exportGlb' });
         }
@@ -295,3 +419,4 @@ export class RealmRmeshViewerProvider implements vscode.CustomReadonlyEditorProv
 </html>`;
     }
 }
+

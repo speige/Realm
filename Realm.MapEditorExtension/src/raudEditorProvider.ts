@@ -45,8 +45,7 @@ export class RealmRaudViewerProvider implements vscode.CustomReadonlyEditorProvi
                 const confirmed = await vscode.window.showWarningMessage(
                     'The Realm Asset Agreement states that files cannot be used outside the Realm UGC platform unless you are the original author of the asset. Do you understand?',
                     { modal: true },
-                    'Yes, Export OGG',
-                    'Cancel'
+                    'Yes, Export OGG'
                 );
 
                 if (confirmed === 'Yes, Export OGG') {

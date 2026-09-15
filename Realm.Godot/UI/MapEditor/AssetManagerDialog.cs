@@ -1079,7 +1079,17 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 		var gltfDoc = new GltfDocument();
 		var gltfState = new GltfState();
-		var err = gltfDoc.AppendFromFile(modelPath, gltfState);
+		Error err;
+		if (modelPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
+		{
+			byte[] rmeshBytes = File.ReadAllBytes(modelPath);
+			byte[] glbBytes = Realm.Shared.ModelOptimization.RmeshFile.GetGlbBytes(rmeshBytes) ?? rmeshBytes;
+			err = gltfDoc.AppendFromBuffer(glbBytes, "", gltfState);
+		}
+		else
+		{
+			err = gltfDoc.AppendFromFile(modelPath, gltfState);
+		}
 		if (err == Error.Ok)
 		{
 			var node = gltfDoc.GenerateScene(gltfState);
@@ -1107,50 +1117,70 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		string modelPath = Path.Combine(wsPath, "Assets", "models", "units", _selectedRanimBaseModel);
 		if (!File.Exists(modelPath))
 		{
-			foreach (var sub in new[] { "units", "buildings", "resources", "props" })
+			foreach (var sub in new[] { "units", "buildings", "resources", "props", "projectiles", "characters", "items", "attachments", "weapons" })
 			{
 				string p = Path.Combine(wsPath, "Assets", "models", sub, _selectedRanimBaseModel);
 				if (File.Exists(p)) { modelPath = p; break; }
 			}
 		}
 
-		if (!File.Exists(modelPath)) return;
-
-		var gltfDoc = new GltfDocument();
-		var gltfState = new GltfState();
-		if (gltfDoc.AppendFromFile(modelPath, gltfState) == Error.Ok)
+		Node3D? animModelNode = null;
+		var loaded = ModelCache.GetModel(modelPath ?? _selectedRanimBaseModel) ?? ModelCache.GetModel(_selectedRanimBaseModel);
+		if (loaded is Node3D n)
 		{
-			var node = gltfDoc.GenerateScene(gltfState);
-			if (node is Node3D node3D)
+			animModelNode = n;
+		}
+		else if (modelPath != null && File.Exists(modelPath))
+		{
+			var gltfDoc = new GltfDocument();
+			var gltfState = new GltfState();
+			Error err;
+			if (modelPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
 			{
-				_currentModelRoot.AddChild(node3D);
-				CenterAndFrameNode(node3D);
+				byte[] rmeshBytes = File.ReadAllBytes(modelPath);
+				byte[] glbBytes = Realm.Shared.ModelOptimization.RmeshFile.GetGlbBytes(rmeshBytes) ?? rmeshBytes;
+				err = gltfDoc.AppendFromBuffer(glbBytes, "", gltfState);
+			}
+			else
+			{
+				err = gltfDoc.AppendFromFile(modelPath, gltfState);
+			}
+			if (err == Error.Ok)
+			{
+				var node = gltfDoc.GenerateScene(gltfState);
+				if (node is Node3D node3D) animModelNode = node3D;
+			}
+		}
 
-				// Load and bind .ranim animation
-				string animPath = Path.Combine(wsPath, "Assets", "animations", ranimKey);
-				if (File.Exists(animPath))
+		if (animModelNode != null)
+		{
+			_currentModelRoot.AddChild(animModelNode);
+			CenterAndFrameNode(animModelNode);
+
+			// Load and bind .ranim animation
+			string animPath = Path.Combine(wsPath, "Assets", "animations", ranimKey);
+			if (File.Exists(animPath))
+			{
+				try
 				{
-					try
+					var animData = AnimationRetargetingService.GetOrLoadRanimData(animPath);
+					if (animData != null)
 					{
-						var animData = AnimationRetargetingService.GetOrLoadRanimData(animPath);
-						if (animData != null)
+						if (AnimationRetargetingService.RetargetAndBind(animData, animModelNode, "preview_loop", out _))
 						{
-							if (AnimationRetargetingService.RetargetAndBind(animData, node3D, "preview_loop", out _))
+							var animPlayer = AnimationRetargetingService.FindOrCreateAnimationPlayer(animModelNode);
+							if (animPlayer != null && animPlayer.HasAnimation("preview_loop"))
 							{
-								var animPlayer = AnimationRetargetingService.FindOrCreateAnimationPlayer(node3D);
-								if (animPlayer != null && animPlayer.HasAnimation("preview_loop"))
-								{
-									var anim = animPlayer.GetAnimation("preview_loop");
-									if (anim != null) anim.LoopMode = Godot.Animation.LoopModeEnum.Linear;
-									animPlayer.Play("preview_loop");
-								}
+								var anim = animPlayer.GetAnimation("preview_loop");
+								if (anim != null) anim.LoopMode = Godot.Animation.LoopModeEnum.Linear;
+								animPlayer.Play("preview_loop");
 							}
 						}
 					}
-					catch (Exception ex)
-					{
-						GD.PrintErr($"[AssetManagerDialog] LoadRanimAnimation error: {ex.Message}");
-					}
+				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"[AssetManagerDialog] LoadRanimAnimation error: {ex.Message}");
 				}
 			}
 		}
@@ -1335,27 +1365,54 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		string modelPath = null;
 		if (!string.IsNullOrEmpty(_selectedRanimBaseModel))
 		{
-			foreach (var sub in new[] { "units", "buildings", "resources", "props", "projectiles", "attachments" })
+			foreach (var sub in new[] { "units", "buildings", "resources", "props", "projectiles", "characters", "items", "attachments", "weapons" })
 			{
 				string p = Path.Combine(wsPath, "Assets", "models", sub, _selectedRanimBaseModel);
 				if (File.Exists(p)) { modelPath = p; break; }
 			}
+
+			if (!File.Exists(modelPath))
+			{
+				string modelsDir = Path.Combine(wsPath, "Assets", "models");
+				if (Directory.Exists(modelsDir))
+				{
+					var files = Directory.GetFiles(modelsDir, _selectedRanimBaseModel, SearchOption.AllDirectories);
+					if (files.Length > 0) modelPath = files[0];
+				}
+			}
 		}
 
-		if (modelPath != null && File.Exists(modelPath))
+		Node3D? previewNode = null;
+		if (!string.IsNullOrEmpty(_selectedRanimBaseModel))
+		{
+			var loaded = ModelCache.GetModel(modelPath ?? _selectedRanimBaseModel) ?? ModelCache.GetModel(_selectedRanimBaseModel);
+			if (loaded is Node3D n) previewNode = n;
+		}
+
+		if (previewNode == null && modelPath != null && File.Exists(modelPath))
 		{
 			var gltfDoc = new GltfDocument();
 			var gltfState = new GltfState();
-			if (gltfDoc.AppendFromFile(modelPath, gltfState) == Error.Ok)
+			Error err;
+			if (modelPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
 			{
-				var node = gltfDoc.GenerateScene(gltfState);
-				if (node is Node3D node3D)
+				byte[] rmeshBytes = File.ReadAllBytes(modelPath);
+				byte[] glbBytes = Realm.Shared.ModelOptimization.RmeshFile.GetGlbBytes(rmeshBytes) ?? rmeshBytes;
+				err = gltfDoc.AppendFromBuffer(glbBytes, "", gltfState);
+				
+				if (err == Error.Ok)
 				{
-					_currentModelRoot.AddChild(node3D);
-					CenterAndFrameNode(node3D);
-					SpawnDeathShaderManager.ApplyShaderPreview(_currentModelRoot, _currentShaderConfig, 0.5f);
+					var node = gltfDoc.GenerateScene(gltfState);
+					if (node is Node3D n3d) previewNode = n3d;
 				}
 			}
+		}
+
+		if (previewNode != null)
+		{
+			_currentModelRoot.AddChild(previewNode);
+			CenterAndFrameNode(previewNode);
+			SpawnDeathShaderManager.ApplyShaderPreview(_currentModelRoot, _currentShaderConfig, 0.5f);
 		}
 		else
 		{
@@ -1786,16 +1843,34 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				else
 				{
 					string resolvedPath = Path.Combine(wsPath, "Assets", "models", "units", modelFile);
-
-					var doc = new GltfDocument();
-					var state = new GltfState();
-					if (doc.AppendFromFile(resolvedPath, state) == Error.Ok)
+					if (!File.Exists(resolvedPath))
 					{
-						var scene = doc.GenerateScene(state);
-						if (scene != null)
+						resolvedPath = ModelCache.ResolveModelPath(modelFile);
+					}
+
+					if (File.Exists(resolvedPath))
+					{
+						var doc = new GltfDocument();
+						var state = new GltfState();
+						Error err;
+						if (resolvedPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
 						{
-							hasSkeleton = SkeletonValidator.FindSkeleton(scene) != null;
-							scene.QueueFree();
+							byte[] rmeshBytes = File.ReadAllBytes(resolvedPath);
+							byte[] glbBytes = Realm.Shared.ModelOptimization.RmeshFile.GetGlbBytes(rmeshBytes) ?? rmeshBytes;
+							err = doc.AppendFromBuffer(glbBytes, "", state);
+						}
+						else
+						{
+							err = doc.AppendFromFile(resolvedPath, state);
+						}
+						if (err == Error.Ok)
+						{
+							var scene = doc.GenerateScene(state);
+							if (scene != null)
+							{
+								hasSkeleton = SkeletonValidator.FindSkeleton(scene) != null;
+								scene.QueueFree();
+							}
 						}
 					}
 				}
@@ -1834,17 +1909,20 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		try
 		{
 			var assets = MapAssetHelper.LoadUnionedAssets(wsPath);
-			if (assets["glb"] is JsonObject glbObj)
+			foreach (var topKey in new[] { "rmesh", "glb", "models" })
 			{
-				foreach (var sub in glbObj)
+				if (assets[topKey] is JsonObject glbObj)
 				{
-					if (sub.Value is JsonObject subObj)
+					foreach (var sub in glbObj)
 					{
-						foreach (var model in subObj)
+						if (sub.Value is JsonObject subObj)
 						{
-							if (!string.IsNullOrEmpty(model.Key))
+							foreach (var model in subObj)
 							{
-								models.Add(Path.GetFileName(model.Key));
+								if (!string.IsNullOrEmpty(model.Key))
+								{
+									models.Add(Path.GetFileName(model.Key));
+								}
 							}
 						}
 					}
@@ -1861,7 +1939,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				foreach (var file in Directory.GetFiles(dir))
 				{
 					string ext = Path.GetExtension(file).ToLowerInvariant();
-					if (ext is ".rmesh")
+					if (ext is ".rmesh" or ".glb")
 					{
 						models.Add(Path.GetFileName(file));
 					}
@@ -1896,6 +1974,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			"icons" => "Icon",
 			"decals" => "Decal",
 			"ribbons" or "ribbon_textures" => "Ribbon",
+			"noise_textures" or "noise" => "Noise",
 			"skyboxes" => "Skybox",
 			"animations" => "Animation",
 			"music" => "Music",

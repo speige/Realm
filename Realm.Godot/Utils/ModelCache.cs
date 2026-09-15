@@ -17,33 +17,54 @@ namespace Realm.Godot.Utils
 		{
 			if (string.IsNullOrEmpty(modelPath)) return null;
 
-			if (System.IO.File.Exists(modelPath))
+			string cleanPath = modelPath.TrimStart('/', '\\');
+			string withRmesh = cleanPath;
+			if (withRmesh.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) || withRmesh.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
+			{
+				withRmesh = System.IO.Path.ChangeExtension(withRmesh, ".rmesh");
+			}
+			else if (!withRmesh.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
+			{
+				withRmesh = $"{withRmesh}.rmesh";
+			}
+
+			if (modelPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(modelPath))
 			{
 				return modelPath;
+			}
+
+			string candDirectRmesh = System.IO.Path.ChangeExtension(modelPath, ".rmesh");
+			if (candDirectRmesh.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(candDirectRmesh))
+			{
+				return candDirectRmesh;
 			}
 
 			if (modelPath.StartsWith("res://") || modelPath.StartsWith("user://"))
 			{
 				string globalized = ProjectSettings.GlobalizePath(modelPath);
-				if (System.IO.File.Exists(globalized))
+				if (globalized.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(globalized))
 				{
 					return globalized;
 				}
-				if (ResourceLoader.Exists(modelPath))
+				string globalizedRmesh = System.IO.Path.ChangeExtension(globalized, ".rmesh");
+				if (globalizedRmesh.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(globalizedRmesh))
 				{
-					return modelPath;
+					return globalizedRmesh;
 				}
 			}
-
-			string cleanPath = modelPath.TrimStart('/', '\\');
 
 			string tempWs = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
 			if (!string.IsNullOrEmpty(tempWs))
 			{
 				string candTemp = System.IO.Path.Combine(tempWs, cleanPath);
-				if (System.IO.File.Exists(candTemp))
+				if (candTemp.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(candTemp))
 				{
 					return candTemp;
+				}
+				string candTempRmesh = System.IO.Path.Combine(tempWs, withRmesh);
+				if (candTempRmesh.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(candTempRmesh))
+				{
+					return candTempRmesh;
 				}
 			}
 
@@ -53,16 +74,26 @@ namespace Realm.Godot.Utils
 				if (System.IO.Directory.Exists(activeMap))
 				{
 					string candDirect = System.IO.Path.Combine(activeMap, cleanPath);
-					if (System.IO.File.Exists(candDirect))
+					if (candDirect.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(candDirect))
 					{
 						return candDirect;
+					}
+					string candDirectRmesh2 = System.IO.Path.Combine(activeMap, withRmesh);
+					if (candDirectRmesh2.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(candDirectRmesh2))
+					{
+						return candDirectRmesh2;
 					}
 				}
 				string mapDir = ProjectSettings.GlobalizePath($"user://maps/{activeMap}");
 				string candMap = System.IO.Path.Combine(mapDir, cleanPath);
-				if (System.IO.File.Exists(candMap))
+				if (candMap.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(candMap))
 				{
 					return candMap;
+				}
+				string candMapRmesh = System.IO.Path.Combine(mapDir, withRmesh);
+				if (candMapRmesh.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(candMapRmesh))
+				{
+					return candMapRmesh;
 				}
 			}
 
@@ -70,39 +101,39 @@ namespace Realm.Godot.Utils
 			if (!string.IsNullOrEmpty(currentMapDir) && System.IO.Directory.Exists(currentMapDir))
 			{
 				string candCur = System.IO.Path.Combine(currentMapDir, cleanPath);
-				if (System.IO.File.Exists(candCur))
+				if (candCur.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(candCur))
 				{
 					return candCur;
+				}
+				string candCurRmesh = System.IO.Path.Combine(currentMapDir, withRmesh);
+				if (candCurRmesh.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(candCurRmesh))
+				{
+					return candCurRmesh;
 				}
 			}
 
 			string resDir = ProjectSettings.GlobalizePath("res://");
 			string candRes = System.IO.Path.Combine(resDir, cleanPath);
-			if (System.IO.File.Exists(candRes))
+			if (candRes.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(candRes))
 			{
 				return candRes;
 			}
-			string godotResPath = "res://" + cleanPath.Replace("\\", "/");
-			if (ResourceLoader.Exists(godotResPath))
+			string candResRmesh = System.IO.Path.Combine(resDir, withRmesh);
+			if (candResRmesh.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(candResRmesh))
 			{
-				return godotResPath;
+				return candResRmesh;
 			}
 
 			string userDir = ProjectSettings.GlobalizePath("user://");
 			string candUser = System.IO.Path.Combine(userDir, cleanPath);
-			if (System.IO.File.Exists(candUser))
+			if (candUser.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(candUser))
 			{
 				return candUser;
 			}
-
-			string withRmesh = cleanPath;
-			if (withRmesh.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) || withRmesh.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
+			string candUserRmesh = System.IO.Path.Combine(userDir, withRmesh);
+			if (candUserRmesh.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(candUserRmesh))
 			{
-				withRmesh = System.IO.Path.ChangeExtension(withRmesh, ".rmesh");
-			}
-			else if (!withRmesh.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
-			{
-				withRmesh = $"{withRmesh}.rmesh";
+				return candUserRmesh;
 			}
 
 			string[] subDirs = new[] { "attachments", "items", "projectiles", "weapons", "props", "resources", "units", "buildings" };
@@ -114,25 +145,28 @@ namespace Realm.Godot.Utils
 				foreach (var sub in subDirs)
 				{
 					string candRmesh = System.IO.Path.Combine(loc, "Assets", "models", sub, withRmesh);
-					if (System.IO.File.Exists(candRmesh)) return candRmesh;
+					if (candRmesh.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(candRmesh)) return candRmesh;
 				}
 			}
 
-			string foundPath = PathUtils.FindPath(cleanPath);
-			if (System.IO.File.Exists(foundPath)) return foundPath;
+			if (cleanPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
+			{
+				string foundPath = PathUtils.FindPath(cleanPath);
+				if (!string.IsNullOrEmpty(foundPath) && foundPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(foundPath)) return foundPath;
+			}
 
 			string foundWithRmesh = PathUtils.FindPath(withRmesh);
-			if (System.IO.File.Exists(foundWithRmesh)) return foundWithRmesh;
+			if (!string.IsNullOrEmpty(foundWithRmesh) && foundWithRmesh.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(foundWithRmesh)) return foundWithRmesh;
 
 			foreach (var sub in subDirs)
 			{
 				string tPathRmesh = PathUtils.FindPath($"MapTemplate/Assets/models/{sub}/{withRmesh}");
-				if (System.IO.File.Exists(tPathRmesh)) return tPathRmesh;
+				if (!string.IsNullOrEmpty(tPathRmesh) && tPathRmesh.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(tPathRmesh)) return tPathRmesh;
 				string rPathRmesh = PathUtils.FindPath($"Assets/models/{sub}/{withRmesh}");
-				if (System.IO.File.Exists(rPathRmesh)) return rPathRmesh;
+				if (!string.IsNullOrEmpty(rPathRmesh) && rPathRmesh.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(rPathRmesh)) return rPathRmesh;
 			}
 
-			return modelPath;
+			return null;
 		}
 
 		public static Node GetModel(string modelPath)
@@ -145,19 +179,21 @@ namespace Realm.Godot.Utils
 			}
 
 			string resolvedPath = ResolveModelPath(modelPath);
-			if (!string.IsNullOrEmpty(resolvedPath) && _cachedScenes.TryGetValue(resolvedPath, out var cachedSceneResolved) && GodotObject.IsInstanceValid(cachedSceneResolved))
+			if (string.IsNullOrEmpty(resolvedPath) || !resolvedPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
+			{
+				return null;
+			}
+
+			if (_cachedScenes.TryGetValue(resolvedPath, out var cachedSceneResolved) && GodotObject.IsInstanceValid(cachedSceneResolved))
 			{
 				return cachedSceneResolved.Instantiate();
 			}
 
-			PackedScene scene = LoadPackedScene(resolvedPath ?? modelPath);
+			PackedScene scene = LoadPackedScene(resolvedPath);
 			if (scene != null)
 			{
 				_cachedScenes[modelPath] = scene;
-				if (!string.IsNullOrEmpty(resolvedPath))
-				{
-					_cachedScenes[resolvedPath] = scene;
-				}
+				_cachedScenes[resolvedPath] = scene;
 				return scene.Instantiate();
 			}
 
@@ -166,33 +202,28 @@ namespace Realm.Godot.Utils
 
 		private static PackedScene LoadPackedScene(string modelPath)
 		{
+			if (string.IsNullOrEmpty(modelPath)) return null;
+
 			try
 			{
 				string targetPath = modelPath;
 				if (targetPath.StartsWith("res://") || targetPath.StartsWith("user://"))
 				{
-					if (ResourceLoader.Exists(targetPath))
-					{
-						return GD.Load<PackedScene>(targetPath);
-					}
 					targetPath = ProjectSettings.GlobalizePath(targetPath);
+				}
+
+				if (!targetPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
+				{
+					return null;
 				}
 
 				if (System.IO.File.Exists(targetPath))
 				{
 					var doc = new GltfDocument();
 					var state = new GltfState();
-					Error err;
-					if (targetPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
-					{
-						byte[] rmeshBytes = System.IO.File.ReadAllBytes(targetPath);
-						byte[] glbBytes = Realm.Shared.ModelOptimization.RmeshFile.GetGlbBytes(rmeshBytes) ?? rmeshBytes;
-						err = doc.AppendFromBuffer(glbBytes, "", state);
-					}
-					else
-					{
-						err = doc.AppendFromFile(targetPath, state);
-					}
+					byte[] rmeshBytes = System.IO.File.ReadAllBytes(targetPath);
+					byte[] glbBytes = Realm.Shared.ModelOptimization.RmeshFile.GetGlbBytes(rmeshBytes) ?? rmeshBytes;
+					Error err = doc.AppendFromBuffer(glbBytes, "", state);
 					if (err == Error.Ok)
 					{
 						Node generatedNode = doc.GenerateScene(state);
@@ -209,10 +240,6 @@ namespace Realm.Godot.Utils
 							}
 						}
 					}
-				}
-				else if (ResourceLoader.Exists(targetPath))
-				{
-					return GD.Load<PackedScene>(targetPath);
 				}
 			}
 			catch (Exception ex)
@@ -241,21 +268,13 @@ namespace Realm.Godot.Utils
 			{
 				string resolved = ResolveModelPath(modelPath);
 				Node node = null;
-				if (!string.IsNullOrEmpty(resolved) && System.IO.File.Exists(resolved))
+				if (!string.IsNullOrEmpty(resolved) && resolved.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(resolved))
 				{
 					var doc = new GltfDocument();
 					var state = new GltfState();
-					Error err;
-					if (resolved.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
-					{
-						byte[] rmeshBytes = System.IO.File.ReadAllBytes(resolved);
-						byte[] glbBytes = Realm.Shared.ModelOptimization.RmeshFile.GetGlbBytes(rmeshBytes) ?? rmeshBytes;
-						err = doc.AppendFromBuffer(glbBytes, "", state);
-					}
-					else
-					{
-						err = doc.AppendFromFile(resolved, state);
-					}
+					byte[] rmeshBytes = System.IO.File.ReadAllBytes(resolved);
+					byte[] glbBytes = Realm.Shared.ModelOptimization.RmeshFile.GetGlbBytes(rmeshBytes) ?? rmeshBytes;
+					Error err = doc.AppendFromBuffer(glbBytes, "", state);
 					if (err == Error.Ok)
 					{
 						node = doc.GenerateScene(state);

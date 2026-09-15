@@ -67,6 +67,22 @@
                                                   "priority":  "default"
                                               }
                                           ],
+                        "commands":  [
+                                         {
+                                             "command":  "realm.openRmesh3D",
+                                             "title":  "Open in 3D GLB Viewer",
+                                             "category":  "Realm"
+                                         }
+                                     ],
+                        "menus":  {
+                                      "explorer/context":  [
+                                                               {
+                                                                   "command":  "realm.openRmesh3D",
+                                                                   "when":  "resourceExtname == .rmesh",
+                                                                   "group":  "navigation"
+                                                               }
+                                                           ]
+                                  },
                         "jsonValidation":  [
                                                {
                                                    "fileMatch":  "**/metadata.json",
