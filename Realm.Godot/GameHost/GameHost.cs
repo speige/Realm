@@ -4827,16 +4827,11 @@ public class {mapName} : IMapScript
 			return radius;
 		}
 
-		// Prefer the radius measured at import time (persisted per model key) so custom map
-		// assets get a correct collision footprint without needing code-side collision shapes.
-		if (node != null)
+		string modelKey = node != null ? GetModelAssetKey(node) : GetModelAssetKey(id);
+		if (!string.IsNullOrEmpty(modelKey) && ModelObstacleRadii.TryGetValue(modelKey, out float measuredRadius) && measuredRadius > 0f)
 		{
-			string modelKey = GetModelAssetKey(node);
-			if (!string.IsNullOrEmpty(modelKey) && ModelObstacleRadii.TryGetValue(modelKey, out float measuredRadius) && measuredRadius > 0f)
-			{
-				ObstacleRadiusCache[id] = measuredRadius;
-				return measuredRadius;
-			}
+			ObstacleRadiusCache[id] = measuredRadius;
+			return measuredRadius;
 		}
 
 		float calculatedRadius = 0.5f;

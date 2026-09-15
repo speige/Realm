@@ -42,9 +42,13 @@ public partial class GameHost
 		}
 
 		string filename = System.IO.Path.GetFileName(pathOrId);
-		if (!filename.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
+		if (filename.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) || filename.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
 		{
-			filename += ".glb";
+			filename = System.IO.Path.GetFileNameWithoutExtension(filename) + ".rmesh";
+		}
+		else if (!filename.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
+		{
+			filename += ".rmesh";
 		}
 		string result = filename.ToLowerInvariant();
 		_normalizedAssetKeyCache[pathOrId] = result;
@@ -140,19 +144,21 @@ public partial class GameHost
 		{
 			if (!string.IsNullOrEmpty(prop.PropId) && NormalizeModelAssetKey(prop.PropId) == normTarget)
 				return true;
-			if (PropRegistry.TryGetValue(prop.PropId, out var propMeta) && !string.IsNullOrEmpty(propMeta.ModelPath) && NormalizeModelAssetKey(propMeta.ModelPath) == normTarget)
+			string cleanPropId = System.IO.Path.GetFileNameWithoutExtension(prop.PropId);
+			if ((PropRegistry.TryGetValue(prop.PropId, out var propMeta) || (!string.IsNullOrEmpty(cleanPropId) && PropRegistry.TryGetValue(cleanPropId, out propMeta))) && !string.IsNullOrEmpty(propMeta.ModelPath) && NormalizeModelAssetKey(propMeta.ModelPath) == normTarget)
 				return true;
-			if (ResourceRegistry.TryGetValue(prop.PropId, out var resMeta) && !string.IsNullOrEmpty(resMeta.ModelPath) && NormalizeModelAssetKey(resMeta.ModelPath) == normTarget)
+			if ((ResourceRegistry.TryGetValue(prop.PropId, out var resMeta) || (!string.IsNullOrEmpty(cleanPropId) && ResourceRegistry.TryGetValue(cleanPropId, out resMeta))) && !string.IsNullOrEmpty(resMeta.ModelPath) && NormalizeModelAssetKey(resMeta.ModelPath) == normTarget)
 				return true;
 		}
 		else if (objOrId is string str)
 		{
 			if (NormalizeModelAssetKey(str) == normTarget) return true;
-			if (UnitRegistry.TryGetValue(str, out var meta) && !string.IsNullOrEmpty(meta.ModelPath) && NormalizeModelAssetKey(meta.ModelPath) == normTarget)
+			string cleanStr = System.IO.Path.GetFileNameWithoutExtension(str);
+			if ((UnitRegistry.TryGetValue(str, out var meta) || (!string.IsNullOrEmpty(cleanStr) && UnitRegistry.TryGetValue(cleanStr, out meta))) && !string.IsNullOrEmpty(meta.ModelPath) && NormalizeModelAssetKey(meta.ModelPath) == normTarget)
 				return true;
-			if (PropRegistry.TryGetValue(str, out var propMeta) && !string.IsNullOrEmpty(propMeta.ModelPath) && NormalizeModelAssetKey(propMeta.ModelPath) == normTarget)
+			if ((PropRegistry.TryGetValue(str, out var propMeta) || (!string.IsNullOrEmpty(cleanStr) && PropRegistry.TryGetValue(cleanStr, out propMeta))) && !string.IsNullOrEmpty(propMeta.ModelPath) && NormalizeModelAssetKey(propMeta.ModelPath) == normTarget)
 				return true;
-			if (ResourceRegistry.TryGetValue(str, out var resMeta) && !string.IsNullOrEmpty(resMeta.ModelPath) && NormalizeModelAssetKey(resMeta.ModelPath) == normTarget)
+			if ((ResourceRegistry.TryGetValue(str, out var resMeta) || (!string.IsNullOrEmpty(cleanStr) && ResourceRegistry.TryGetValue(cleanStr, out resMeta))) && !string.IsNullOrEmpty(resMeta.ModelPath) && NormalizeModelAssetKey(resMeta.ModelPath) == normTarget)
 				return true;
 		}
 		return GetModelAssetKey(objOrId) == normTarget;
@@ -1392,7 +1398,10 @@ public partial class GameHost
 		foreach (var unit in AllUnits)
 		{
 			if (!GodotObject.IsInstanceValid(unit)) continue;
-			if (string.IsNullOrEmpty(targetId) || string.Equals(unit.UnitId, targetId, StringComparison.OrdinalIgnoreCase))
+			if (string.IsNullOrEmpty(targetId) 
+				|| string.Equals(unit.UnitId, targetId, StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(System.IO.Path.GetFileNameWithoutExtension(unit.UnitId), targetId, StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(unit.UnitId, System.IO.Path.GetFileNameWithoutExtension(targetId), StringComparison.OrdinalIgnoreCase))
 			{
 				string targetModel = null;
 				bool isBuilding = unit.IsBuilding;
@@ -1429,7 +1438,10 @@ public partial class GameHost
 		foreach (var prop in AllProps)
 		{
 			if (!GodotObject.IsInstanceValid(prop)) continue;
-			if (string.IsNullOrEmpty(targetId) || string.Equals(prop.PropId, targetId, StringComparison.OrdinalIgnoreCase))
+			if (string.IsNullOrEmpty(targetId) 
+				|| string.Equals(prop.PropId, targetId, StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(System.IO.Path.GetFileNameWithoutExtension(prop.PropId), targetId, StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(prop.PropId, System.IO.Path.GetFileNameWithoutExtension(targetId), StringComparison.OrdinalIgnoreCase))
 			{
 				prop.RefreshPropVisual();
 			}
@@ -1814,6 +1826,10 @@ public partial class GameHost
 		if (string.IsNullOrEmpty(propIdOrEntityId)) return false;
 
 		if (PropRegistry.ContainsKey(propIdOrEntityId) || ResourceRegistry.ContainsKey(propIdOrEntityId))
+			return true;
+
+		string clean = System.IO.Path.GetFileNameWithoutExtension(propIdOrEntityId);
+		if (!string.IsNullOrEmpty(clean) && (PropRegistry.ContainsKey(clean) || ResourceRegistry.ContainsKey(clean)))
 			return true;
 
 		return false;
@@ -2344,12 +2360,47 @@ public partial class GameHost
 	{
 		if (string.IsNullOrEmpty(propId)) return null;
 
-		if (!PropRegistry.ContainsKey(propId) && !ResourceRegistry.ContainsKey(propId))
+		string cleanId = System.IO.Path.GetFileNameWithoutExtension(propId);
+		bool inProp = PropRegistry.ContainsKey(propId) || (!string.IsNullOrEmpty(cleanId) && PropRegistry.ContainsKey(cleanId));
+		bool inRes = ResourceRegistry.ContainsKey(propId) || (!string.IsNullOrEmpty(cleanId) && ResourceRegistry.ContainsKey(cleanId));
+
+		if (!inProp && !inRes)
 		{
 			LoadUnitMetadata(!string.IsNullOrEmpty(CurrentMapDirectory) ? CurrentMapDirectory : Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath));
+			inProp = PropRegistry.ContainsKey(propId) || (!string.IsNullOrEmpty(cleanId) && PropRegistry.ContainsKey(cleanId));
+			inRes = ResourceRegistry.ContainsKey(propId) || (!string.IsNullOrEmpty(cleanId) && ResourceRegistry.ContainsKey(cleanId));
 		}
 
-		if (!PropRegistry.ContainsKey(propId) && !ResourceRegistry.ContainsKey(propId))
+		if (!inProp && !inRes)
+		{
+			foreach (var kvp in PropRegistry)
+			{
+				if (string.Equals(kvp.Value.ModelPath, propId, StringComparison.OrdinalIgnoreCase) ||
+					(!string.IsNullOrEmpty(cleanId) && string.Equals(System.IO.Path.GetFileNameWithoutExtension(kvp.Value.ModelPath), cleanId, StringComparison.OrdinalIgnoreCase)))
+				{
+					inProp = true;
+					propId = kvp.Key;
+					cleanId = System.IO.Path.GetFileNameWithoutExtension(propId);
+					break;
+				}
+			}
+			if (!inProp)
+			{
+				foreach (var kvp in ResourceRegistry)
+				{
+					if (string.Equals(kvp.Value.ModelPath, propId, StringComparison.OrdinalIgnoreCase) ||
+						(!string.IsNullOrEmpty(cleanId) && string.Equals(System.IO.Path.GetFileNameWithoutExtension(kvp.Value.ModelPath), cleanId, StringComparison.OrdinalIgnoreCase)))
+					{
+						inRes = true;
+						propId = kvp.Key;
+						cleanId = System.IO.Path.GetFileNameWithoutExtension(propId);
+						break;
+					}
+				}
+			}
+		}
+
+		if (!inProp && !inRes)
 		{
 			return null;
 		}
@@ -2364,7 +2415,7 @@ public partial class GameHost
 
 		var entity = EcsWorld.Create();
 		EcsWorld.Add(entity, new PropIdentity(propId));
-		if (ResourceRegistry.TryGetValue(propId, out var meta) && (meta.MaxCapacity > 0f || defaultAmount > 0f))
+		if ((ResourceRegistry.TryGetValue(propId, out var meta) || (!string.IsNullOrEmpty(cleanId) && ResourceRegistry.TryGetValue(cleanId, out meta))) && (meta.MaxCapacity > 0f || defaultAmount > 0f))
 		{
 			float amount = meta.MaxCapacity > 0f ? meta.MaxCapacity : defaultAmount;
 			float harvestRate = meta.HarvestRate > 0f ? meta.HarvestRate : 10f;
@@ -3203,12 +3254,18 @@ public partial class GameHost
 			}
 			else if (ActiveEditorTool == EditorTool.PlaceProp)
 			{
-				if (!PropRegistry.ContainsKey(reqId) && !ResourceRegistry.ContainsKey(reqId))
+				string cleanReqId = System.IO.Path.GetFileNameWithoutExtension(reqId);
+				bool hasReq = PropRegistry.ContainsKey(reqId) || ResourceRegistry.ContainsKey(reqId) ||
+					(!string.IsNullOrEmpty(cleanReqId) && (PropRegistry.ContainsKey(cleanReqId) || ResourceRegistry.ContainsKey(cleanReqId)));
+
+				if (!hasReq)
 				{
 					LoadUnitMetadata(!string.IsNullOrEmpty(CurrentMapDirectory) ? CurrentMapDirectory : Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath));
+					hasReq = PropRegistry.ContainsKey(reqId) || ResourceRegistry.ContainsKey(reqId) ||
+						(!string.IsNullOrEmpty(cleanReqId) && (PropRegistry.ContainsKey(cleanReqId) || ResourceRegistry.ContainsKey(cleanReqId)));
 				}
 
-				if (PropRegistry.ContainsKey(reqId) || ResourceRegistry.ContainsKey(reqId))
+				if (hasReq)
 				{
 					var previewProp = new Prop3D();
 					previewProp.PropId = reqId;

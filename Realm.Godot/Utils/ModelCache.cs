@@ -95,8 +95,16 @@ namespace Realm.Godot.Utils
 				return candUser;
 			}
 
-			string withRmesh = cleanPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) ? cleanPath : $"{cleanPath}.rmesh";
-			string withGlb = cleanPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) ? cleanPath : $"{cleanPath}.glb";
+			string withRmesh = cleanPath;
+			if (withRmesh.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) || withRmesh.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
+			{
+				withRmesh = System.IO.Path.ChangeExtension(withRmesh, ".rmesh");
+			}
+			else if (!withRmesh.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
+			{
+				withRmesh = $"{withRmesh}.rmesh";
+			}
+
 			string[] subDirs = new[] { "attachments", "items", "projectiles", "weapons", "props", "resources", "units", "buildings" };
 
 			string?[] baseLocations = new[] { tempWs, activeMap, currentMapDir, resDir, userDir };
@@ -107,8 +115,6 @@ namespace Realm.Godot.Utils
 				{
 					string candRmesh = System.IO.Path.Combine(loc, "Assets", "models", sub, withRmesh);
 					if (System.IO.File.Exists(candRmesh)) return candRmesh;
-					string cand = System.IO.Path.Combine(loc, "Assets", "models", sub, withGlb);
-					if (System.IO.File.Exists(cand)) return cand;
 				}
 			}
 
@@ -118,20 +124,12 @@ namespace Realm.Godot.Utils
 			string foundWithRmesh = PathUtils.FindPath(withRmesh);
 			if (System.IO.File.Exists(foundWithRmesh)) return foundWithRmesh;
 
-			string foundWithGlb = PathUtils.FindPath(withGlb);
-			if (System.IO.File.Exists(foundWithGlb)) return foundWithGlb;
-
 			foreach (var sub in subDirs)
 			{
 				string tPathRmesh = PathUtils.FindPath($"MapTemplate/Assets/models/{sub}/{withRmesh}");
 				if (System.IO.File.Exists(tPathRmesh)) return tPathRmesh;
 				string rPathRmesh = PathUtils.FindPath($"Assets/models/{sub}/{withRmesh}");
 				if (System.IO.File.Exists(rPathRmesh)) return rPathRmesh;
-
-				string tPath = PathUtils.FindPath($"MapTemplate/Assets/models/{sub}/{withGlb}");
-				if (System.IO.File.Exists(tPath)) return tPath;
-				string rPath = PathUtils.FindPath($"Assets/models/{sub}/{withGlb}");
-				if (System.IO.File.Exists(rPath)) return rPath;
 			}
 
 			return modelPath;

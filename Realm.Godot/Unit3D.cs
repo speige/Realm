@@ -1125,22 +1125,7 @@ public partial class Unit3D : Prop3D
 		Node? loaded = !string.IsNullOrEmpty(modelPath) ? Realm.Godot.Utils.ModelCache.GetModel(modelPath) : null;
 		if (loaded == null)
 		{
-			string clean = attachmentId;
-			if (!clean.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
-			{
-				clean += ".glb";
-			}
-
-			string[] candidateSubfolders = new[] { "attachments", "items", "projectiles", "weapons", "props", "resources", "units", "buildings" };
-			foreach (var sub in candidateSubfolders)
-			{
-				string candidatePath = System.IO.Path.Combine("Assets", "models", sub, clean).Replace('\\', '/');
-				loaded = Realm.Godot.Utils.ModelCache.GetModel(candidatePath);
-				if (loaded != null)
-				{
-					break;
-				}
-			}
+			loaded = Realm.Godot.Utils.ModelCache.GetModel(attachmentId);
 		}
 
 		if (loaded == null)

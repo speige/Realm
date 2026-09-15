@@ -370,7 +370,7 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 			.Select(e => e.StartsWith(".") ? e : "." + e)
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-		if (_allowedExtensions.Contains(".glb") || _allowedExtensions.Contains(".rmesh"))
+		if (_allowedExtensions.Contains(".rmesh"))
 		{
 			requireRealmMetadata = true;
 		}

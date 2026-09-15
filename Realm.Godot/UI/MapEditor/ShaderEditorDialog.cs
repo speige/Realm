@@ -443,7 +443,7 @@ public partial class ShaderEditorDialog : FloatingDialogBase
 		string modelsDir = Path.Combine(wsPath, "Assets", "models");
 		if (Directory.Exists(modelsDir))
 		{
-			var files = Directory.GetFiles(modelsDir, "*.glb", SearchOption.AllDirectories);
+			var files = Directory.GetFiles(modelsDir, "*.rmesh", SearchOption.AllDirectories);
 			foreach (var f in files)
 			{
 				string name = Path.GetFileName(f);

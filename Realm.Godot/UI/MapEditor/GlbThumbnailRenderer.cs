@@ -1,4 +1,5 @@
 using Godot;
+using Realm.Godot.Animation;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -278,6 +279,11 @@ public partial class GlbThumbnailRenderer : Node
 
 			_modelContainer.AddChild(scene);
 
+			if (request.FilePath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
+			{
+				TryApplyRiggedIdlePose(scene);
+			}
+
 			Aabb aabb = CalculateVisualAabb(scene);
 			if (aabb.Size.LengthSquared() < 0.0001f)
 			{
@@ -427,5 +433,58 @@ public partial class GlbThumbnailRenderer : Node
 			}
 		}
 		return new string(chars);
+	}
+
+	private static void TryApplyRiggedIdlePose(Node scene)
+	{
+		try
+		{
+			var validation = SkeletonValidator.Validate(scene);
+			if (!validation.IsValid) return;
+
+			var idleData = GetIdleAnimationData();
+			if (idleData == null) return;
+
+			if (AnimationRetargetingService.RetargetAndBind(idleData, scene, "Idle", out _))
+			{
+				var player = AnimationRetargetingService.FindOrCreateAnimationPlayer(scene);
+				if (player != null && player.HasAnimation("Idle"))
+				{
+					player.ProcessMode = ProcessModeEnum.Inherit;
+					player.Play("Idle");
+					player.Seek(0.0, update: true);
+					player.Pause();
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[GlbThumbnailRenderer] Failed to apply idle pose to rigged rmesh: {ex.Message}");
+		}
+	}
+
+	private static RealmAnimationData? GetIdleAnimationData()
+	{
+		if (RealmDefaultAnimations.Idle != null)
+		{
+			return RealmDefaultAnimations.Idle;
+		}
+
+		string? filePath = AnimationRetargetingService.ResolveAnimationFilePath("idle.ranim");
+		if (string.IsNullOrEmpty(filePath))
+		{
+			string resPath = ProjectSettings.GlobalizePath("res://Assets/animations/idle.ranim");
+			if (File.Exists(resPath))
+			{
+				filePath = resPath;
+			}
+		}
+
+		if (!string.IsNullOrEmpty(filePath) && File.Exists(filePath))
+		{
+			return AnimationRetargetingService.GetOrLoadRanimData(filePath);
+		}
+
+		return null;
 	}
 }

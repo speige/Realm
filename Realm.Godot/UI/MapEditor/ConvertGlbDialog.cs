@@ -552,9 +552,112 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 				Realm.Godot.Utils.MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj, removeFromMetadata: true);
 			}
 
+			string unitId = Path.GetFileNameWithoutExtension(fileName);
+			MetadataService.Instance.UpdateMetadata(wsPath, meta =>
+			{
+				meta.SetModelYOffset(fileName, autoYOffset);
+				meta.SetModelScale(fileName, defaultScale);
+
+				switch (subCategory)
+				{
+					case "units" or "characters":
+						bool updatedU = meta.UpdateUnit(unitId, u =>
+						{
+							if (autoYOffset != 0f) u.YOffset = autoYOffset;
+							return u;
+						});
+						if (!updatedU)
+						{
+							meta.AddOrUpdateUnit(new GameHost.UnitMetadata
+							{
+								UnitId = unitId,
+								Name = unitId,
+								Description = "",
+								ModelPath = fileName,
+								Scale = defaultScale,
+								YOffset = autoYOffset,
+								PathingType = 9,
+								NormalMode = GameHost.ModelNormalMode.Flat,
+								NormalizeLuminance = true
+							});
+						}
+						break;
+					case "buildings":
+						bool updatedB = meta.UpdateBuilding(unitId, b =>
+						{
+							if (autoYOffset != 0f) b.YOffset = autoYOffset;
+							return b;
+						});
+						if (!updatedB)
+						{
+							meta.AddOrUpdateBuilding(new GameHost.UnitMetadata
+							{
+								UnitId = unitId,
+								Name = unitId,
+								Description = "",
+								ModelPath = fileName,
+								Scale = defaultScale,
+								YOffset = autoYOffset,
+								PathingType = 32,
+								NormalMode = GameHost.ModelNormalMode.Flat,
+								NormalizeLuminance = true
+							});
+						}
+						break;
+					case "resources":
+						bool updatedR = meta.UpdateResource(unitId, r =>
+						{
+							if (autoYOffset != 0f) r.YOffset = autoYOffset;
+							return r;
+						});
+						if (!updatedR)
+						{
+							meta.AddOrUpdateResource(new GameHost.ResourceMetadata
+							{
+								UnitId = unitId,
+								Name = unitId,
+								Description = "",
+								ModelPath = fileName,
+								Scale = defaultScale,
+								YOffset = autoYOffset,
+								PathingType = 255,
+								NormalMode = GameHost.ModelNormalMode.Flat,
+								NormalizeLuminance = true,
+								IgnorePlayerColor = true
+							});
+						}
+						break;
+					case "props":
+						bool updatedP = meta.UpdateProp(unitId, p =>
+						{
+							if (autoYOffset != 0f) p.YOffset = autoYOffset;
+							return p;
+						});
+						if (!updatedP)
+						{
+							meta.AddOrUpdateProp(new GameHost.PropMetadata
+							{
+								UnitId = unitId,
+								Name = unitId,
+								Description = "",
+								ModelPath = fileName,
+								Scale = defaultScale,
+								YOffset = autoYOffset,
+								PathingType = 255,
+								NormalMode = GameHost.ModelNormalMode.Flat,
+								NormalizeLuminance = true,
+								IgnorePlayerColor = true
+							});
+						}
+						break;
+				}
+			});
+
+			MetadataService.Instance.CleanMetadata(wsPath);
 			GameHost.Instance?.SetModelYOffset(fileName, autoYOffset);
 			GameHost.Instance?.SetModelScale(fileName, defaultScale);
 			GameHost.Instance?.FlushModelYOffsetSave();
+			GameHost.Instance?.LoadUnitMetadata(wsPath);
 		}
 		catch (Exception ex)
 		{

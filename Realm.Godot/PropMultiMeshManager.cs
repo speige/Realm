@@ -657,19 +657,19 @@ public partial class PropMultiMeshManager : Node3D
 		string targetModel = normAssetKey;
 		string cleanId = System.IO.Path.GetFileNameWithoutExtension(normAssetKey);
 
-		if (GameHost.PropRegistry != null && ((GameHost.PropRegistry.TryGetValue(normAssetKey, out var propMeta) || GameHost.PropRegistry.TryGetValue(cleanId, out propMeta)) && !string.IsNullOrEmpty(propMeta.ModelPath)))
+		if (GameHost.PropRegistry != null && ((GameHost.PropRegistry.TryGetValue(normAssetKey, out var propMeta) || (!string.IsNullOrEmpty(cleanId) && GameHost.PropRegistry.TryGetValue(cleanId, out propMeta))) && !string.IsNullOrEmpty(propMeta.ModelPath)))
 		{
 			targetModel = propMeta.ModelPath;
 		}
-		else if (GameHost.ResourceRegistry != null && ((GameHost.ResourceRegistry.TryGetValue(normAssetKey, out var resMeta) || GameHost.ResourceRegistry.TryGetValue(cleanId, out resMeta)) && !string.IsNullOrEmpty(resMeta.ModelPath)))
+		else if (GameHost.ResourceRegistry != null && ((GameHost.ResourceRegistry.TryGetValue(normAssetKey, out var resMeta) || (!string.IsNullOrEmpty(cleanId) && GameHost.ResourceRegistry.TryGetValue(cleanId, out resMeta))) && !string.IsNullOrEmpty(resMeta.ModelPath)))
 		{
 			targetModel = resMeta.ModelPath;
 		}
-		else if (GameHost.UnitRegistry != null && ((GameHost.UnitRegistry.TryGetValue(normAssetKey, out var unitMeta) || GameHost.UnitRegistry.TryGetValue(cleanId, out unitMeta)) && !string.IsNullOrEmpty(unitMeta.ModelPath)))
+		else if (GameHost.UnitRegistry != null && ((GameHost.UnitRegistry.TryGetValue(normAssetKey, out var unitMeta) || (!string.IsNullOrEmpty(cleanId) && GameHost.UnitRegistry.TryGetValue(cleanId, out unitMeta))) && !string.IsNullOrEmpty(unitMeta.ModelPath)))
 		{
 			targetModel = unitMeta.ModelPath;
 		}
-		else if (GameHost.BuildingRegistry != null && ((GameHost.BuildingRegistry.TryGetValue(normAssetKey, out var bldMeta) || GameHost.BuildingRegistry.TryGetValue(cleanId, out bldMeta)) && !string.IsNullOrEmpty(bldMeta.ModelPath)))
+		else if (GameHost.BuildingRegistry != null && ((GameHost.BuildingRegistry.TryGetValue(normAssetKey, out var bldMeta) || (!string.IsNullOrEmpty(cleanId) && GameHost.BuildingRegistry.TryGetValue(cleanId, out bldMeta))) && !string.IsNullOrEmpty(bldMeta.ModelPath)))
 		{
 			targetModel = bldMeta.ModelPath;
 		}
@@ -677,37 +677,11 @@ public partial class PropMultiMeshManager : Node3D
 		if (string.IsNullOrEmpty(targetModel))
 			return string.Empty;
 
-		if (targetModel.StartsWith("res://") || System.IO.File.Exists(targetModel))
-			return targetModel;
-
-		string wsPath = GameHost.Instance != null && !string.IsNullOrEmpty(GameHost.Instance.CurrentMapDirectory)
-			? GameHost.Instance.CurrentMapDirectory
-			: MapWorkspaceService.GetDefaultWorkspaceGlobalPath();
-		string directCandidate = System.IO.Path.Combine(wsPath, targetModel);
-		if (System.IO.File.Exists(directCandidate))
-			return directCandidate;
-
-		string filename = System.IO.Path.GetFileName(targetModel);
-		if (!filename.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
+		string resolvedPath = Realm.Godot.Utils.ModelCache.ResolveModelPath(targetModel);
+		if (!string.IsNullOrEmpty(resolvedPath) && (resolvedPath.StartsWith("res://") || System.IO.File.Exists(resolvedPath)))
 		{
-			filename += ".glb";
+			return resolvedPath;
 		}
-
-		string[] subDirs = new[] { "props", "resources", "buildings", "units", "attachments", "projectiles", "weapons" };
-		foreach (var sub in subDirs)
-		{
-			string candidate = System.IO.Path.Combine(wsPath, "Assets", "models", sub, filename);
-			if (System.IO.File.Exists(candidate))
-				return candidate;
-		}
-
-		string modelsCandidate = System.IO.Path.Combine(wsPath, "Assets", "models", filename);
-		if (System.IO.File.Exists(modelsCandidate))
-			return modelsCandidate;
-
-		string rootCandidate = System.IO.Path.Combine(wsPath, filename);
-		if (System.IO.File.Exists(rootCandidate))
-			return rootCandidate;
 
 		return targetModel;
 	}

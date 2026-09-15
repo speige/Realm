@@ -647,12 +647,16 @@ public static class MapAssetHelper
 						if (!string.IsNullOrEmpty(modelPath))
 						{
 							string fileName = Path.GetFileName(modelPath);
-							if (!fileName.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) && !fileName.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
+							string? diskPath = FindModelOnDisk(targetDirectory, subCat, fileName, out string resolvedSub);
+							if (!string.IsNullOrEmpty(diskPath))
 							{
-								fileName += ".glb";
+								fileName = Path.GetFileName(diskPath);
+							}
+							else if (!fileName.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
+							{
+								fileName = Path.ChangeExtension(fileName, ".rmesh");
 							}
 
-							string? diskPath = FindModelOnDisk(targetDirectory, subCat, fileName);
 							EnsureGlbEntryExists(unionedAssets, subCat, fileName, diskPath);
 						}
 					}
@@ -674,16 +678,16 @@ public static class MapAssetHelper
 				foreach (var prop in dictObj)
 				{
 					string rawName = prop.Key;
-					string fileName = rawName.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) || rawName.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase)
-						? rawName
-						: rawName + ".glb";
-
-					string? existingSub = FindExistingGlbSubCategory(unionedAssets, fileName);
+					string? existingSub = FindExistingGlbSubCategory(unionedAssets, rawName);
 					if (string.IsNullOrEmpty(existingSub))
 					{
-						string? diskPath = FindModelOnDisk(targetDirectory, null, fileName, out string foundSub);
-						existingSub = !string.IsNullOrEmpty(foundSub) ? foundSub : "props";
-						EnsureGlbEntryExists(unionedAssets, existingSub, fileName, diskPath);
+						string? diskPath = FindModelOnDisk(targetDirectory, null, rawName, out string foundSub);
+						if (!string.IsNullOrEmpty(diskPath))
+						{
+							string fileName = Path.GetFileName(diskPath);
+							existingSub = !string.IsNullOrEmpty(foundSub) ? foundSub : "props";
+							EnsureGlbEntryExists(unionedAssets, existingSub, fileName, diskPath);
+						}
 					}
 				}
 			}
@@ -801,32 +805,51 @@ public static class MapAssetHelper
 			return null;
 		}
 
+		string[] candidateFiles;
+		if (fileName.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
+		{
+			candidateFiles = new[] { fileName };
+		}
+		else
+		{
+			candidateFiles = new[] { $"{fileName}.rmesh", $"{Path.GetFileNameWithoutExtension(fileName)}.rmesh" };
+		}
+
 		if (!string.IsNullOrEmpty(preferredSubCategory))
 		{
 			string prefSub = NormalizeGlbSubCategory(preferredSubCategory);
-			string preferredPath = Path.Combine(modelsDir, prefSub, fileName);
-			if (File.Exists(preferredPath))
+			foreach (var cand in candidateFiles)
 			{
-				resolvedSubCategory = prefSub;
-				return preferredPath;
+				string preferredPath = Path.Combine(modelsDir, prefSub, cand);
+				if (File.Exists(preferredPath))
+				{
+					resolvedSubCategory = prefSub;
+					return preferredPath;
+				}
 			}
 		}
 
 		string[] subCategories = new[] { "units", "buildings", "resources", "props", "projectiles", "attachments", "weapons" };
 		foreach (var sub in subCategories)
 		{
-			string candPath = Path.Combine(modelsDir, sub, fileName);
-			if (File.Exists(candPath))
+			foreach (var cand in candidateFiles)
 			{
-				resolvedSubCategory = sub;
-				return candPath;
+				string candPath = Path.Combine(modelsDir, sub, cand);
+				if (File.Exists(candPath))
+				{
+					resolvedSubCategory = sub;
+					return candPath;
+				}
 			}
 		}
 
-		string directPath = Path.Combine(modelsDir, fileName);
-		if (File.Exists(directPath))
+		foreach (var cand in candidateFiles)
 		{
-			return directPath;
+			string directPath = Path.Combine(modelsDir, cand);
+			if (File.Exists(directPath))
+			{
+				return directPath;
+			}
 		}
 
 		return null;
@@ -841,11 +864,21 @@ public static class MapAssetHelper
 	{
 		if (unionedAssets["glb"] is JsonObject glbObj)
 		{
+			string[] candidates = fileName.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase)
+				? new[] { fileName }
+				: new[] { fileName, $"{fileName}.rmesh", $"{Path.GetFileNameWithoutExtension(fileName)}.rmesh" };
+
 			foreach (var subPair in glbObj)
 			{
-				if (subPair.Value is JsonObject subObj && subObj.ContainsKey(fileName))
+				if (subPair.Value is JsonObject subObj)
 				{
-					return subPair.Key;
+					foreach (var cand in candidates)
+					{
+						if (subObj.ContainsKey(cand))
+						{
+							return subPair.Key;
+						}
+					}
 				}
 			}
 		}

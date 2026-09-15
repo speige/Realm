@@ -2167,11 +2167,11 @@ public partial class MapEditorHUD : Control
 	{
 		if (isBuilding)
 		{
-			_entityPaletteController?.SelectCategoryItemExternal("Buildings", id + ".glb");
+			_entityPaletteController?.SelectCategoryItemExternal("Buildings", id);
 		}
 		else
 		{
-			_entityPaletteController?.SelectCategoryItemExternal("Units", id + ".glb");
+			_entityPaletteController?.SelectCategoryItemExternal("Units", id);
 		}
 	}
 
@@ -8105,6 +8105,35 @@ public partial class MapEditorHUD : Control
 				}
 				GameHost.UnitRegistry[entityId] = uMeta;
 			}
+			else if (domain.Equals("buildings", StringComparison.OrdinalIgnoreCase) && GameHost.BuildingRegistry.TryGetValue(entityId, out var bMeta))
+			{
+				if (fieldName == "PortraitModelPath")
+				{
+					bMeta.PortraitModelPath = newModelPath;
+				}
+				else
+				{
+					bMeta.ModelPath = newModelPath;
+				}
+				GameHost.BuildingRegistry[entityId] = bMeta;
+			}
+			else if (domain.Equals("resources", StringComparison.OrdinalIgnoreCase) && GameHost.ResourceRegistry.TryGetValue(entityId, out var rMeta))
+			{
+				if (fieldName == "PortraitModelPath")
+				{
+					rMeta.PortraitModelPath = newModelPath;
+				}
+				else
+				{
+					rMeta.ModelPath = newModelPath;
+				}
+				GameHost.ResourceRegistry[entityId] = rMeta;
+			}
+			else if (domain.Equals("props", StringComparison.OrdinalIgnoreCase) && GameHost.PropRegistry.TryGetValue(entityId, out var pMeta))
+			{
+				pMeta.ModelPath = newModelPath;
+				GameHost.PropRegistry[entityId] = pMeta;
+			}
 
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
 				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
@@ -8150,6 +8179,13 @@ public partial class MapEditorHUD : Control
 				}
 			});
 			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+
+			GameHost.Instance?.LoadUnitMetadata(wsPath);
+			if (fieldName != "PortraitModelPath")
+			{
+				GameHost.Instance?.RefreshAllPlacedObjectModels(entityId);
+			}
+			_entityPaletteController?.SelectCategory(_entityPaletteController.CurrentCategory, triggerAddObject: false);
 		}
 		catch (Exception ex)
 		{

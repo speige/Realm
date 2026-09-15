@@ -631,7 +631,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		}
 
 		string ext = Path.GetExtension(fileName).ToLowerInvariant();
-		if (ext is ".glb" or ".rmesh")
+		if (ext is ".rmesh")
 		{
 			return subCategoryOrFolder switch
 			{
@@ -673,7 +673,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	private string ResolveAssetFilePath(string wsPath, string fileName, string subCategoryOrFolder)
 	{
 		string ext = Path.GetExtension(fileName).ToLowerInvariant();
-		if (ext is ".glb" or ".rmesh")
+		if (ext is ".rmesh")
 		{
 			string path = Path.Combine(wsPath, "Assets", "models", subCategoryOrFolder, fileName);
 			if (File.Exists(path)) return path;
@@ -1711,7 +1711,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			{
 				foreach (var u in metadata.CustomUnits)
 				{
-					if (!string.IsNullOrEmpty(u.ModelPath) && u.ModelPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+					if (!string.IsNullOrEmpty(u.ModelPath) && (u.ModelPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) || !Path.HasExtension(u.ModelPath)))
 					{
 						candidateModels.Add(Path.GetFileName(u.ModelPath));
 					}
@@ -1741,14 +1741,14 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		{
 			foreach (var kvp in GameHost.UnitRegistry)
 			{
-				if (!string.IsNullOrEmpty(kvp.Value.ModelPath) && kvp.Value.ModelPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+				if (!string.IsNullOrEmpty(kvp.Value.ModelPath) && (kvp.Value.ModelPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) || !Path.HasExtension(kvp.Value.ModelPath)))
 				{
 					candidateModels.Add(Path.GetFileName(kvp.Value.ModelPath));
 				}
 			}
 		}
 
-		// 3. Scan filesystem directories for unit GLB models
+		// 3. Scan filesystem directories for unit rmesh models
 		var unitDirs = new List<string>
 		{
 			Path.Combine(wsPath, "Assets", "models", "units"),
@@ -1758,7 +1758,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		{
 			if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
 			{
-				foreach (var file in Directory.GetFiles(dir, "*.glb"))
+				foreach (var file in Directory.GetFiles(dir, "*.rmesh"))
 				{
 					candidateModels.Add(Path.GetFileName(file));
 				}
@@ -1861,7 +1861,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				foreach (var file in Directory.GetFiles(dir))
 				{
 					string ext = Path.GetExtension(file).ToLowerInvariant();
-					if (ext is ".rmesh" or ".glb")
+					if (ext is ".rmesh")
 					{
 						models.Add(Path.GetFileName(file));
 					}
@@ -2430,7 +2430,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 				switch (subCat)
 				{
-					case "units":
+					case "units" or "characters":
 						bool updatedU = meta.UpdateUnit(unitId, u =>
 						{
 							if (autoYOffset != 0f) u.YOffset = autoYOffset;
@@ -2527,6 +2527,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			GameHost.Instance?.SetModelScale($"{cleanBase}.rmesh", defaultScale);
 
 			MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj);
+			MetadataService.Instance.CleanMetadata(wsPath);
+			GameHost.Instance?.LoadUnitMetadata(wsPath);
 			Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Converted and imported 3D model {0}.rmesh"), cleanBase));
 
 			RefreshAssetList();
@@ -2641,9 +2643,9 @@ public partial class AssetManagerDialog : FloatingDialogBase
 					meta.SetModelYOffset(fileName, autoYOffset);
 					meta.SetModelScale(fileName, defaultScale);
 
-					switch (subCategory)
+					switch (targetSub)
 					{
-						case "units":
+						case "units" or "characters":
 							bool updatedU = meta.UpdateUnit(unitId, u =>
 							{
 								if (autoYOffset != 0f) u.YOffset = autoYOffset;
@@ -2866,6 +2868,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 			MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj);
 			MetadataService.Instance.CleanMetadata(wsPath);
+			GameHost.Instance?.LoadUnitMetadata(wsPath);
 			RefreshAssetList();
 			string importedKey = _currentCategory == "textures" ? (Path.GetExtension(fileName).ToLowerInvariant() == ".rtex" ? fileName : $"{Path.GetFileNameWithoutExtension(fileName).ToLowerInvariant().Replace(' ', '_')}.rtex") : fileName;
 			LoadPreviewForAsset(_currentCategory, importedKey);

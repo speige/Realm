@@ -361,7 +361,7 @@ public partial class VfxStudioDialog : FloatingDialogBase
 				}
 				RestartPreviewVfx();
 			},
-			TranslationServer.Translate("Select projectile/prop mesh (.glb)..."),
+			TranslationServer.Translate("Select projectile/prop mesh (.rmesh)..."),
 			140f,
 			true
 		);
@@ -1190,7 +1190,7 @@ public partial class VfxStudioDialog : FloatingDialogBase
 		{
 			if (Directory.Exists(folderPath))
 			{
-				foreach (var file in Directory.GetFiles(folderPath, "*.glb"))
+				foreach (var file in Directory.GetFiles(folderPath, "*.rmesh"))
 				{
 					results.Add(Path.GetFileName(file));
 				}
