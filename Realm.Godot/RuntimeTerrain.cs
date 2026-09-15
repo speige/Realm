@@ -341,9 +341,10 @@ uniform float wave_speed = 1.2;
 
 uniform sampler2D depth_texture : hint_depth_texture, filter_linear;
 
-uniform sampler2D shroud_texture : hint_default_white;
+uniform sampler2D shroud_texture : hint_default_black;
 uniform vec2 shroud_world_min = vec2(-125.0, -125.0);
 uniform vec2 shroud_world_size = vec2(250.0, 250.0);
+uniform bool shroud_enabled = false;
 
 varying vec3 v_world_pos;
 varying vec3 v_world_normal;
@@ -402,7 +403,7 @@ void fragment() {
 	float final_foam_mask = mix(waterfall_foam, flat_foam_mask, flat_factor);
 
 	vec2 shroud_uv = (v_world_pos.xz - shroud_world_min) / shroud_world_size;
-	float shroud_factor = texture(shroud_texture, clamp(shroud_uv, 0.0, 1.0)).r;
+	float shroud_factor = shroud_enabled ? texture(shroud_texture, clamp(shroud_uv, 0.0, 1.0)).r : 0.0;
 
 	vec3 final_albedo = mix(water_col.rgb, foam_color.rgb, final_foam_mask * foam_color.a) * (1.0 - shroud_factor * 0.98);
 
@@ -682,12 +683,16 @@ void fragment() {
 
 	public void UpdateWaterTransform()
 	{
-		if (_shallowWaterMaterial == null && _deepWaterMaterial == null) return;
 		float halfW = (Width * QuadSize) * 0.5f;
 		float halfD = (Depth * QuadSize) * 0.5f;
 		var shroudMin = new Vector2(-halfW, -halfD);
 		var shroudSize = new Vector2(Width * QuadSize, Depth * QuadSize);
 
+		if (_material != null)
+		{
+			_material.SetShaderParameter("shroud_world_min", shroudMin);
+			_material.SetShaderParameter("shroud_world_size", shroudSize);
+		}
 		if (_shallowWaterMaterial != null)
 		{
 			_shallowWaterMaterial.SetShaderParameter("shroud_world_min", shroudMin);
@@ -722,9 +727,10 @@ uniform float blend_noise_strength = 0.22;
 uniform float blend_noise_scale = 0.22;
 uniform float cliff_jitter_strength = 1.0;
 uniform float cliff_jitter_scale = 0.20;
-uniform sampler2D shroud_texture : hint_default_white;
+uniform sampler2D shroud_texture : hint_default_black;
 uniform vec2 shroud_world_min = vec2(-125.0, -125.0);
 uniform vec2 shroud_world_size = vec2(250.0, 250.0);
+uniform bool shroud_enabled = false;
 
 uniform sampler2D pathing_texture : hint_default_transparent, filter_nearest;
 uniform bool pathing_visible = false;
@@ -1517,7 +1523,7 @@ void fragment() {
 	}
 
 	vec2 shroud_uv = (v_world_pos.xz - shroud_world_min) / shroud_world_size;
-	float shroud_factor = texture(shroud_texture, clamp(shroud_uv, 0.0, 1.0)).r;
+	float shroud_factor = shroud_enabled ? texture(shroud_texture, clamp(shroud_uv, 0.0, 1.0)).r : 0.0;
 	final_albedo *= (1.0 - shroud_factor * 0.98);
 	emission_color *= (1.0 - shroud_factor * 0.98);
 
@@ -1539,7 +1545,14 @@ void fragment() {
 		var defaultShroudImage = Image.CreateEmpty(32, 32, false, Image.Format.Rf);
 		defaultShroudImage.Fill(new Color(0f, 0f, 0f, 1f));
 		var defaultShroudTexture = ImageTexture.CreateFromImage(defaultShroudImage);
+		_currentShroudTexture = defaultShroudTexture;
 		_material.SetShaderParameter("shroud_texture", defaultShroudTexture);
+		_material.SetShaderParameter("shroud_enabled", GameHost.Instance == null || !GameHost.Instance.IsMapEditorMode);
+
+		float halfW = (Width * QuadSize) * 0.5f;
+		float halfD = (Depth * QuadSize) * 0.5f;
+		_material.SetShaderParameter("shroud_world_min", new Vector2(-halfW, -halfD));
+		_material.SetShaderParameter("shroud_world_size", new Vector2(Width * QuadSize, Depth * QuadSize));
 
 		_material.SetShaderParameter("grid_spacing", QuadSize);
 		_material.SetShaderParameter("terrain_size", new Vector2(Width * QuadSize, Depth * QuadSize));
@@ -2315,8 +2328,25 @@ void fragment() {
 	}
 
 	protected static readonly StringName ShroudTextureParam = "shroud_texture";
+	protected static readonly StringName ShroudEnabledParam = "shroud_enabled";
 	protected ImageTexture _currentShroudTexture = null;
 	protected static ImageTexture _clearShroudTexture = null;
+
+	public void SetShroudEnabled(bool enabled)
+	{
+		if (_material != null)
+		{
+			_material.SetShaderParameter(ShroudEnabledParam, enabled);
+		}
+		if (_shallowWaterMaterial != null)
+		{
+			_shallowWaterMaterial.SetShaderParameter(ShroudEnabledParam, enabled);
+		}
+		if (_deepWaterMaterial != null)
+		{
+			_deepWaterMaterial.SetShaderParameter(ShroudEnabledParam, enabled);
+		}
+	}
 
 	public static ImageTexture GetClearShroudTexture()
 	{
@@ -2349,20 +2379,18 @@ void fragment() {
 
 	public void EndMinimapCapture()
 	{
-		if (_currentShroudTexture != null)
+		var restoreTex = _currentShroudTexture ?? GetClearShroudTexture();
+		if (_material != null)
 		{
-			if (_material != null)
-			{
-				_material.SetShaderParameter(ShroudTextureParam, _currentShroudTexture);
-			}
-			if (_shallowWaterMaterial != null)
-			{
-				_shallowWaterMaterial.SetShaderParameter(ShroudTextureParam, _currentShroudTexture);
-			}
-			if (_deepWaterMaterial != null)
-			{
-				_deepWaterMaterial.SetShaderParameter(ShroudTextureParam, _currentShroudTexture);
-			}
+			_material.SetShaderParameter(ShroudTextureParam, restoreTex);
+		}
+		if (_shallowWaterMaterial != null)
+		{
+			_shallowWaterMaterial.SetShaderParameter(ShroudTextureParam, restoreTex);
+		}
+		if (_deepWaterMaterial != null)
+		{
+			_deepWaterMaterial.SetShaderParameter(ShroudTextureParam, restoreTex);
 		}
 	}
 

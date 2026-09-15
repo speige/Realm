@@ -48,7 +48,7 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 	private bool _requireRealmMetadata = false;
 	private string? _selectedAssetTypeFilter;
 	private OptionButton _optAssetTypeFilter;
-	private string? _selectedDirectoryFilter;
+	private static string? _selectedDirectoryFilter;
 	private IndexedAsset? _selectedAsset;
 	private Action<string>? _onAssetSelectedCallback;
 
@@ -411,6 +411,8 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 		_optDirectoryFilter.AddItem(TranslationServer.Translate("All Indexed Folders"), 0);
 
 		var indexedDirs = AssetIndexService.Instance.GetIndexedDirectories();
+		int selectedIndex = 0;
+
 		for (int i = 0; i < indexedDirs.Count; i++)
 		{
 			string dirPath = indexedDirs[i];
@@ -425,7 +427,13 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 
 			bool isIndexing = AssetIndexService.Instance.IsDirectoryIndexing(dirPath);
 
-			_optDirectoryFilter.AddItem(isIndexing ? $"⏳ {folderName} ({TranslationServer.Translate("Indexing...")})" : folderName, i + 1);
+			int itemIdx = i + 1;
+			_optDirectoryFilter.AddItem(isIndexing ? $"⏳ {folderName} ({TranslationServer.Translate("Indexing...")})" : folderName, itemIdx);
+
+			if (!string.IsNullOrEmpty(_selectedDirectoryFilter) && string.Equals(dirPath, _selectedDirectoryFilter, StringComparison.OrdinalIgnoreCase))
+			{
+				selectedIndex = itemIdx;
+			}
 
 			var chip = new PanelContainer();
 			var chipStyle = new StyleBoxFlat();
@@ -479,8 +487,10 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 		if (_selectedDirectoryFilter != null && !indexedDirs.Contains(_selectedDirectoryFilter, StringComparer.OrdinalIgnoreCase))
 		{
 			_selectedDirectoryFilter = null;
-			_optDirectoryFilter.Selected = 0;
+			selectedIndex = 0;
 		}
+
+		_optDirectoryFilter.Selected = selectedIndex;
 	}
 
 	private void RefreshAssetTypeFilterOptions()

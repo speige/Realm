@@ -4053,6 +4053,7 @@ public partial class GameHost
 		UpdateGridOverlayVisibility();
 		InitializeCameraBoundsOverlay();
 		UpdateDayNightVisuals(0.0f);
+		GroundTerrain?.SetShroudEnabled(false);
 	}
 
 	public void ExitMapEditorMode()
@@ -4072,6 +4073,7 @@ public partial class GameHost
 		{
 			GroundTerrain.SetGridVisible(false);
 			GroundTerrain.SetPathingVisible(false);
+			GroundTerrain.SetShroudEnabled(true);
 		}
 
 		if (_cameraBoundsOverlayMesh != null)

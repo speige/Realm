@@ -27,7 +27,7 @@ uniform float alpha_scissor_threshold : hint_range(0.0, 1.0) = 0.5;
 uniform vec3 uv1_scale = vec3(1.0, 1.0, 1.0);
 uniform vec3 uv1_offset = vec3(0.0, 0.0, 0.0);
 
-uniform sampler2D shroud_texture : hint_default_white, filter_linear_mipmap, repeat_disable;
+uniform sampler2D shroud_texture : hint_default_black, filter_linear_mipmap, repeat_disable;
 uniform vec2 shroud_world_min = vec2(-125.0, -125.0);
 uniform vec2 shroud_world_size = vec2(250.0, 250.0);
 uniform bool shroud_enabled = false;

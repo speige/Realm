@@ -405,6 +405,8 @@ public partial class MapEditorHUD : Control
 
 			string tempTerrainPath = System.IO.Path.Combine(wsPath, "terrain.json");
 			GameHost.Instance.SaveMapToFile(tempTerrainPath, performReload: false);
+			_lastTerrainSyncTime = GetMaxTerrainWriteTime(tempTerrainPath);
+			_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(wsPath, "metadata.json"));
 			int maxBackups = EditorSettingsDialog.CurrentSettings?.MaxBackupSnapshots ?? 3;
 			SaveLoadService.CreateWorkspaceBackup(wsPath, maxBackups);
 			ShowFeedback(TranslationServer.Translate("Auto-backup snapshot saved."));
