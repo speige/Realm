@@ -93,10 +93,11 @@ public class AssetIndexService : IDisposable
 				.Where(f => IsForbiddenPath(f.DirectoryPath) ||
 							string.Equals(f.DirectoryPath, legacyArchive, StringComparison.OrdinalIgnoreCase) ||
 							f.DirectoryPath.EndsWith(".7z", StringComparison.OrdinalIgnoreCase))
-				.ToList();
-			foreach (var f in forbiddenFolders)
+				.Select(f => (BsonValue)f.Id)
+				.ToArray();
+			if (forbiddenFolders.Length > 0)
 			{
-				_folderCollection.Delete(f.Id);
+				_folderCollection.DeleteMany(Query.In("_id", forbiddenFolders));
 			}
 
 			string casAssetsDirectory = GlobalCasAssetsDirectory;
@@ -126,10 +127,11 @@ public class AssetIndexService : IDisposable
 							a.DirectoryPath.EndsWith(".7z", StringComparison.OrdinalIgnoreCase) ||
 							a.FilePath.Contains("/extracted/", StringComparison.OrdinalIgnoreCase) ||
 							a.FilePath.Contains("\\extracted\\", StringComparison.OrdinalIgnoreCase))
-				.ToList();
-			foreach (var orphan in orphanedAssets)
+				.Select(a => (BsonValue)a.Id)
+				.ToArray();
+			if (orphanedAssets.Length > 0)
 			{
-				_assetCollection.Delete(orphan.Id);
+				_assetCollection.DeleteMany(Query.In("_id", orphanedAssets));
 			}
 
 			_database.Checkpoint();
@@ -247,22 +249,19 @@ public class AssetIndexService : IDisposable
 		{
 			_indexingDirectories.Remove(normalizedPath);
 
-			var foldersToDelete = _folderCollection.FindAll()
+			_folderCollection.DeleteMany(f => f.DirectoryPath == normalizedPath);
+			var leftoverFolders = _folderCollection.FindAll()
 				.Where(f => string.Equals(f.DirectoryPath, normalizedPath, StringComparison.OrdinalIgnoreCase))
-				.ToList();
-			foreach (var f in foldersToDelete)
+				.Select(f => (BsonValue)f.Id)
+				.ToArray();
+			if (leftoverFolders.Length > 0)
 			{
-				_folderCollection.Delete(f.Id);
+				_folderCollection.DeleteMany(Query.In("_id", leftoverFolders));
 			}
 
-			var assetsToDelete = _assetCollection.FindAll()
-				.Where(a => string.Equals(a.DirectoryPath, normalizedPath, StringComparison.OrdinalIgnoreCase) ||
-							a.FilePath.StartsWith(normalizedPath + "/", StringComparison.OrdinalIgnoreCase))
-				.ToList();
-			foreach (var a in assetsToDelete)
-			{
-				_assetCollection.Delete(a.Id);
-			}
+			_assetCollection.DeleteMany(Query.EQ("DirectoryPath", normalizedPath));
+			_assetCollection.DeleteMany(Query.StartsWith("FilePath", normalizedPath + "/"));
+			_assetCollection.DeleteMany(Query.StartsWith("FilePath", normalizedPath + "\\"));
 
 			_database.Checkpoint();
 		}
@@ -327,10 +326,11 @@ public class AssetIndexService : IDisposable
 
 			var orphanedAssets = _assetCollection.FindAll()
 				.Where(a => !validFolders.Contains(a.DirectoryPath) || IsForbiddenPath(a.DirectoryPath))
-				.ToList();
-			foreach (var orphan in orphanedAssets)
+				.Select(a => (BsonValue)a.Id)
+				.ToArray();
+			if (orphanedAssets.Length > 0)
 			{
-				_assetCollection.Delete(orphan.Id);
+				_assetCollection.DeleteMany(Query.In("_id", orphanedAssets));
 			}
 
 			dirsToScan = _folderCollection.FindAll()
@@ -387,6 +387,15 @@ public class AssetIndexService : IDisposable
 		var discoveredFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		var files = Directory.EnumerateFiles(normalizedDirectoryPath, "*.*", SearchOption.AllDirectories);
 
+		Dictionary<string, IndexedAsset> existingAssets;
+		lock (_syncLock)
+		{
+			existingAssets = _assetCollection.Find(Query.EQ("DirectoryPath", normalizedDirectoryPath))
+				.ToDictionary(x => x.FilePath, StringComparer.OrdinalIgnoreCase);
+		}
+
+		var batchToUpsert = new List<IndexedAsset>();
+
 		foreach (string filePath in files)
 		{
 			string normalizedFilePath = NormalizePath(filePath);
@@ -409,90 +418,94 @@ public class AssetIndexService : IDisposable
 			{
 				var fileInfo = new FileInfo(normalizedFilePath);
 
-				lock (_syncLock)
+				if (existingAssets.TryGetValue(normalizedFilePath, out var existingAsset) &&
+					existingAsset.FileSizeBytes == fileInfo.Length &&
+					existingAsset.LastModifiedUtc == fileInfo.LastWriteTimeUtc)
 				{
-					var existingAsset = _assetCollection.FindOne(x => x.FilePath == normalizedFilePath);
+					continue;
+				}
 
-					if (existingAsset != null &&
-						existingAsset.FileSizeBytes == fileInfo.Length &&
-						existingAsset.LastModifiedUtc == fileInfo.LastWriteTimeUtc)
+				List<string> tags;
+				string? assetType = null;
+				string fileName = Path.GetFileName(normalizedFilePath);
+				bool hasRealmMetadata = false;
+
+				if (isCasDirectory)
+				{
+					string blake3Hash = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(fileName);
+					string? metaJson = MapAssetManager.Storage.GetAssetMetadata(blake3Hash);
+					tags = ExtractTagsFromMetadataJson(metaJson);
+					if (tags.Count == 0)
 					{
-						continue;
+						tags = LoadTagsForFile(normalizedFilePath, normalizedDirectoryPath);
 					}
 
-					List<string> tags;
-					string? assetType = null;
-					string fileName = Path.GetFileName(normalizedFilePath);
-					bool hasRealmMetadata = false;
-
-					if (isCasDirectory)
+					if (!string.IsNullOrWhiteSpace(metaJson))
 					{
-						string blake3Hash = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(fileName);
-						string? metaJson = MapAssetManager.Storage.GetAssetMetadata(blake3Hash);
-						tags = ExtractTagsFromMetadataJson(metaJson);
-						if (tags.Count == 0)
+						hasRealmMetadata = true;
+						try
 						{
-							tags = LoadTagsForFile(normalizedFilePath, normalizedDirectoryPath);
-						}
-
-						if (!string.IsNullOrWhiteSpace(metaJson))
-						{
-							hasRealmMetadata = true;
-							try
+							var node = JsonNode.Parse(metaJson);
+							if (node is JsonObject obj)
 							{
-								var node = JsonNode.Parse(metaJson);
-								if (node is JsonObject obj)
+								string? typeVal = obj["asset_type"]?.ToString()
+									?? obj["AssetType"]?.ToString()
+									?? obj["type"]?.ToString()
+									?? obj["default_asset_type"]?.ToString();
+								if (!string.IsNullOrEmpty(typeVal) && Realm.Shared.Metadata.RealmMetadataHelper.IsValidAssetTypeForExtension(normalizedFilePath, typeVal, out string canonical, out _))
 								{
-									string? typeVal = obj["asset_type"]?.ToString()
-										?? obj["AssetType"]?.ToString()
-										?? obj["type"]?.ToString()
-										?? obj["default_asset_type"]?.ToString();
-									if (!string.IsNullOrEmpty(typeVal) && Realm.Shared.Metadata.RealmMetadataHelper.IsValidAssetTypeForExtension(normalizedFilePath, typeVal, out string canonical, out _))
-									{
-										assetType = canonical;
-									}
+									assetType = canonical;
+								}
 
-									string? friendlyName = obj["asset_name"]?.ToString()
-										?? obj["name"]?.ToString()
-										?? obj["original_filename"]?.ToString()
-										?? obj["FileName"]?.ToString();
-									if (!string.IsNullOrWhiteSpace(friendlyName))
-									{
-										string fName = Path.GetFileName(friendlyName.Trim());
-										fileName = fName.EndsWith(extension, StringComparison.OrdinalIgnoreCase)
-											? fName
-											: $"{fName}{extension}";
-									}
+								string? friendlyName = obj["asset_name"]?.ToString()
+									?? obj["name"]?.ToString()
+									?? obj["original_filename"]?.ToString()
+									?? obj["FileName"]?.ToString();
+								if (!string.IsNullOrWhiteSpace(friendlyName))
+								{
+									string fName = Path.GetFileName(friendlyName.Trim());
+									fileName = fName.EndsWith(extension, StringComparison.OrdinalIgnoreCase)
+										? fName
+										: $"{fName}{extension}";
 								}
 							}
-							catch { }
 						}
-						else
-						{
-							hasRealmMetadata = Realm.Shared.Metadata.RealmMetadataHelper.HasRealmMetadata(normalizedFilePath);
-							assetType = Realm.Shared.Metadata.RealmMetadataHelper.ExtractAssetType(normalizedFilePath);
-						}
+						catch { }
 					}
 					else
 					{
-						tags = LoadTagsForFile(normalizedFilePath, normalizedDirectoryPath);
 						hasRealmMetadata = Realm.Shared.Metadata.RealmMetadataHelper.HasRealmMetadata(normalizedFilePath);
 						assetType = Realm.Shared.Metadata.RealmMetadataHelper.ExtractAssetType(normalizedFilePath);
 					}
+				}
+				else
+				{
+					tags = LoadTagsForFile(normalizedFilePath, normalizedDirectoryPath);
+					hasRealmMetadata = Realm.Shared.Metadata.RealmMetadataHelper.HasRealmMetadata(normalizedFilePath);
+					assetType = Realm.Shared.Metadata.RealmMetadataHelper.ExtractAssetType(normalizedFilePath);
+				}
 
-					var asset = existingAsset ?? new IndexedAsset();
-					asset.FilePath = normalizedFilePath;
-					asset.FileName = fileName;
-					asset.Extension = extension;
-					asset.DirectoryPath = normalizedDirectoryPath;
-					asset.FileSizeBytes = fileInfo.Length;
-					asset.LastModifiedUtc = fileInfo.LastWriteTimeUtc;
-					asset.Tags = tags;
-					asset.MetadataJson = JsonSerializer.Serialize(new AssetMetadataModel { Tags = tags });
-					asset.HasRealmMetadata = hasRealmMetadata;
-					asset.AssetType = assetType;
+				var asset = existingAsset ?? new IndexedAsset();
+				asset.FilePath = normalizedFilePath;
+				asset.FileName = fileName;
+				asset.Extension = extension;
+				asset.DirectoryPath = normalizedDirectoryPath;
+				asset.FileSizeBytes = fileInfo.Length;
+				asset.LastModifiedUtc = fileInfo.LastWriteTimeUtc;
+				asset.Tags = tags;
+				asset.MetadataJson = JsonSerializer.Serialize(new AssetMetadataModel { Tags = tags });
+				asset.HasRealmMetadata = hasRealmMetadata;
+				asset.AssetType = assetType;
 
-					_assetCollection.Upsert(asset);
+				batchToUpsert.Add(asset);
+
+				if (batchToUpsert.Count >= 250)
+				{
+					lock (_syncLock)
+					{
+						_assetCollection.Upsert(batchToUpsert);
+					}
+					batchToUpsert.Clear();
 				}
 			}
 			catch (Exception ex)
@@ -501,14 +514,24 @@ public class AssetIndexService : IDisposable
 			}
 		}
 
+		if (batchToUpsert.Count > 0)
+		{
+			lock (_syncLock)
+			{
+				_assetCollection.Upsert(batchToUpsert);
+			}
+			batchToUpsert.Clear();
+		}
+
 		lock (_syncLock)
 		{
-			var toDelete = _assetCollection.FindAll()
-				.Where(x => string.Equals(x.DirectoryPath, normalizedDirectoryPath, StringComparison.OrdinalIgnoreCase) && !discoveredFiles.Contains(x.FilePath))
-				.ToList();
-			foreach (var d in toDelete)
+			var idsToDelete = existingAssets.Values
+				.Where(x => !discoveredFiles.Contains(x.FilePath))
+				.Select(x => (BsonValue)x.Id)
+				.ToArray();
+			if (idsToDelete.Length > 0)
 			{
-				_assetCollection.Delete(d.Id);
+				_assetCollection.DeleteMany(Query.In("_id", idsToDelete));
 			}
 
 			var folderRecord = _folderCollection.FindOne(x => x.DirectoryPath == normalizedDirectoryPath);

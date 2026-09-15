@@ -1171,16 +1171,17 @@ public static class MapAssetHelper
 	public static string NormalizeGlbSubCategory(string subCategory)
 	{
 		string lower = subCategory.ToLowerInvariant();
-		if (lower.StartsWith("glb_")) lower = lower.Substring(4);
+		if (lower.StartsWith("rmesh_")) lower = lower.Substring(6);
 		return lower switch
 		{
-			"unit" or "units" or "character" => "units",
+			"unit" or "units" or "character" or "characters" => "units",
 			"building" or "buildings" => "buildings",
 			"resource" or "resources" or "environment" => "resources",
 			"prop" or "props" => "props",
 			"projectile" or "projectiles" => "projectiles",
 			"attachment" or "attachments" => "attachments",
 			"weapon" or "weapons" => "weapons",
+			"item" or "items" => "items",
 			_ => lower
 		};
 	}

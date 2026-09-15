@@ -122,7 +122,7 @@ public class VSCodeManager
 			string distPkg = Path.Combine(PathUtils.GetProjectRoot(), "vscode_extensions_dist", "speige.realm-map-editor", "package.json");
 			if (File.Exists(distPkg))
 			{
-				var jsonNode = JsonNode.Parse(File.ReadAllText(distPkg));
+				var jsonNode = JsonNode.Parse(File.ReadAllText(distPkg, System.Text.Encoding.UTF8));
 				string version = jsonNode?["version"]?.GetValue<string>();
 				if (!string.IsNullOrWhiteSpace(version))
 				{
@@ -133,7 +133,7 @@ public class VSCodeManager
 			string srcPkg = Path.GetFullPath(Path.Combine(PathUtils.GetProjectRoot(), "..", "Realm.MapEditorExtension", "package.json"));
 			if (File.Exists(srcPkg))
 			{
-				var jsonNode = JsonNode.Parse(File.ReadAllText(srcPkg));
+				var jsonNode = JsonNode.Parse(File.ReadAllText(srcPkg, System.Text.Encoding.UTF8));
 				string version = jsonNode?["version"]?.GetValue<string>();
 				if (!string.IsNullOrWhiteSpace(version))
 				{
@@ -144,7 +144,7 @@ public class VSCodeManager
 			string versionJson = Path.GetFullPath(Path.Combine(PathUtils.GetProjectRoot(), "..", "version.json"));
 			if (File.Exists(versionJson))
 			{
-				var jsonNode = JsonNode.Parse(File.ReadAllText(versionJson));
+				var jsonNode = JsonNode.Parse(File.ReadAllText(versionJson, System.Text.Encoding.UTF8));
 				string version = jsonNode?["extensionVersion"]?.GetValue<string>();
 				if (!string.IsNullOrWhiteSpace(version))
 				{
@@ -170,16 +170,30 @@ public class VSCodeManager
 		string wasiClangPath = !string.IsNullOrEmpty(wasiPath) ? Path.Combine(wasiPath, "bin", "clang.exe") : string.Empty;
 		string extVersion = GetRealmMapEditorVersion();
 		string extDir = Path.Combine(embedDir, "user-data-dir", "extensions", $"speige.realm-map-editor-{extVersion}");
+		string extensionsDir = Path.Combine(embedDir, "user-data-dir", "extensions");
 
-		return File.Exists(exePath)
-			&& new FileInfo(exePath).Length > 0
-			&& File.Exists(editorExe)
-			&& new FileInfo(editorExe).Length > 0
-			&& (File.Exists(completedMarkerPath) || File.Exists(bypassMarkerPath))
-			&& !string.IsNullOrEmpty(wasiClangPath)
-			&& File.Exists(wasiClangPath)
-			&& new FileInfo(wasiClangPath).Length > 0
-			&& Directory.Exists(extDir);
+		if (!File.Exists(exePath)
+			|| new FileInfo(exePath).Length == 0
+			|| !File.Exists(editorExe)
+			|| new FileInfo(editorExe).Length == 0
+			|| (!File.Exists(completedMarkerPath) && !File.Exists(bypassMarkerPath))
+			|| string.IsNullOrEmpty(wasiClangPath)
+			|| !File.Exists(wasiClangPath)
+			|| new FileInfo(wasiClangPath).Length == 0
+			|| !Directory.Exists(extDir))
+		{
+			return false;
+		}
+
+		foreach (string requiredExt in RequiredExtensions)
+		{
+			if (!IsExtensionInstalled(extensionsDir, requiredExt))
+			{
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	public void ForceReinstall()
@@ -1984,10 +1998,16 @@ public class VSCodeManager
 					using (var process = new Process())
 					{
 						process.StartInfo.FileName = exePath;
-						process.StartInfo.Arguments = $"--extensions-dir \"{extensionsDir}\" ext install {extensionId}";
+						process.StartInfo.Arguments = $"--extensions-dir \"{extensionsDir}\" --user-data-dir \"{serverDataDir}\" ext install {extensionId}";
 						process.StartInfo.CreateNoWindow = true;
 						process.StartInfo.UseShellExecute = false;
+						process.StartInfo.RedirectStandardOutput = true;
+						process.StartInfo.RedirectStandardError = true;
+						process.OutputDataReceived += (s, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) GD.Print("[vscode ext] " + e.Data); };
+						process.ErrorDataReceived += (s, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) GD.PrintErr("[vscode ext error] " + e.Data); };
 						process.Start();
+						process.BeginOutputReadLine();
+						process.BeginErrorReadLine();
 						AddProcessToJob(process);
 						process.WaitForExit();
 					}
@@ -2030,72 +2050,105 @@ public class VSCodeManager
 					string obsoletePath = Path.Combine(extensionsDir, ".obsolete");
 					if (File.Exists(obsoletePath))
 					{
-						var obsoleteJson = System.Text.Json.JsonSerializer.Deserialize<System.Collections.Generic.Dictionary<string, bool>>(File.ReadAllText(obsoletePath));
-						if (obsoleteJson != null)
+						try
 						{
-							bool changed = obsoleteJson.Remove($"{realmMapEditorId}-{extVersion}") | obsoleteJson.Remove("speige.realm-map-editor-1.0.0");
-							if (changed)
+							var fi = new FileInfo(obsoletePath);
+							if (fi.Length < 10 * 1024 * 1024)
 							{
-								File.WriteAllText(obsoletePath, System.Text.Json.JsonSerializer.Serialize(obsoleteJson));
-								GD.Print("VS Code: Removed Realm Map Editor from .obsolete.");
+								var obsoleteJson = System.Text.Json.JsonSerializer.Deserialize<System.Collections.Generic.Dictionary<string, bool>>(File.ReadAllText(obsoletePath, System.Text.Encoding.UTF8));
+								if (obsoleteJson != null)
+								{
+									bool changed = obsoleteJson.Remove($"{realmMapEditorId}-{extVersion}") | obsoleteJson.Remove("speige.realm-map-editor-1.0.0");
+									if (changed)
+									{
+										File.WriteAllText(obsoletePath, System.Text.Json.JsonSerializer.Serialize(obsoleteJson), System.Text.Encoding.UTF8);
+										GD.Print("VS Code: Removed Realm Map Editor from .obsolete.");
+									}
+								}
 							}
+							else
+							{
+								File.Delete(obsoletePath);
+							}
+						}
+						catch (Exception ex)
+						{
+							GD.PrintErr($"VS Code: Failed to clean .obsolete ({ex.Message}). Resetting...");
+							try { File.Delete(obsoletePath); } catch { }
 						}
 					}
 
 					string extensionsJsonPath = Path.Combine(extensionsDir, "extensions.json");
+					JsonNode jsonNode = null;
 					if (File.Exists(extensionsJsonPath))
 					{
-						var jsonNode = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(extensionsJsonPath));
-						if (jsonNode is System.Text.Json.Nodes.JsonArray jsonArray)
+						try
 						{
-							System.Text.Json.Nodes.JsonObject existingEntry = null;
-							foreach (var item in jsonArray)
+							var fi = new FileInfo(extensionsJsonPath);
+							if (fi.Length < 10 * 1024 * 1024)
 							{
-								if (item?["identifier"]?["id"]?.GetValue<string>() == realmMapEditorId)
-								{
-									existingEntry = item as System.Text.Json.Nodes.JsonObject;
-									break;
-								}
-							}
-
-							string dstAbsPath = Path.GetFullPath(dstPath).Replace("\\", "/");
-							if (existingEntry != null)
-							{
-								existingEntry["version"] = extVersion;
-								existingEntry["relativeLocation"] = $"{realmMapEditorId}-{extVersion}";
-								if (existingEntry["location"] is System.Text.Json.Nodes.JsonObject locObj)
-								{
-									locObj["path"] = "/" + dstAbsPath;
-								}
-								File.WriteAllText(extensionsJsonPath, jsonNode.ToJsonString());
+								jsonNode = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(extensionsJsonPath, System.Text.Encoding.UTF8));
 							}
 							else
 							{
-								var newEntry = new System.Text.Json.Nodes.JsonObject
-								{
-									["identifier"] = new System.Text.Json.Nodes.JsonObject { ["id"] = realmMapEditorId },
-									["version"] = extVersion,
-									["location"] = new System.Text.Json.Nodes.JsonObject
-									{
-										["$mid"] = 1,
-										["path"] = "/" + dstAbsPath,
-										["scheme"] = "file"
-									},
-									["relativeLocation"] = $"{realmMapEditorId}-{extVersion}",
-									["metadata"] = new System.Text.Json.Nodes.JsonObject
-									{
-										["installedTimestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-										["source"] = "local",
-										["isApplicationScoped"] = false,
-										["isMachineScoped"] = false
-									}
-								};
-								jsonArray.Add(newEntry);
-								File.WriteAllText(extensionsJsonPath, jsonNode.ToJsonString());
-								GD.Print("VS Code: Registered Realm Map Editor in extensions.json.");
+								GD.PrintErr($"VS Code: extensions.json was excessively large ({fi.Length} bytes). Resetting...");
+								try { File.Delete(extensionsJsonPath); } catch { }
 							}
 						}
+						catch (Exception ex)
+						{
+							GD.PrintErr($"VS Code: extensions.json was corrupted or unreadable ({ex.Message}). Resetting...");
+							try { File.Delete(extensionsJsonPath); } catch { }
+							jsonNode = null;
+						}
 					}
+
+					var jsonArray = jsonNode as System.Text.Json.Nodes.JsonArray ?? new System.Text.Json.Nodes.JsonArray();
+					System.Text.Json.Nodes.JsonObject existingEntry = null;
+					foreach (var item in jsonArray)
+					{
+						if (item?["identifier"]?["id"]?.GetValue<string>() == realmMapEditorId)
+						{
+							existingEntry = item as System.Text.Json.Nodes.JsonObject;
+							break;
+						}
+					}
+
+					string dstAbsPath = Path.GetFullPath(dstPath).Replace("\\", "/");
+					if (existingEntry != null)
+					{
+						existingEntry["version"] = extVersion;
+						existingEntry["relativeLocation"] = $"{realmMapEditorId}-{extVersion}";
+						if (existingEntry["location"] is System.Text.Json.Nodes.JsonObject locObj)
+						{
+							locObj["path"] = "/" + dstAbsPath;
+						}
+					}
+					else
+					{
+						var newEntry = new System.Text.Json.Nodes.JsonObject
+						{
+							["identifier"] = new System.Text.Json.Nodes.JsonObject { ["id"] = realmMapEditorId },
+							["version"] = extVersion,
+							["location"] = new System.Text.Json.Nodes.JsonObject
+							{
+								["$mid"] = 1,
+								["path"] = "/" + dstAbsPath,
+								["scheme"] = "file"
+							},
+							["relativeLocation"] = $"{realmMapEditorId}-{extVersion}",
+							["metadata"] = new System.Text.Json.Nodes.JsonObject
+							{
+								["installedTimestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+								["source"] = "local",
+								["isApplicationScoped"] = false,
+								["isMachineScoped"] = false
+							}
+						};
+						jsonArray.Add(newEntry);
+					}
+					File.WriteAllText(extensionsJsonPath, jsonArray.ToJsonString(), System.Text.Encoding.UTF8);
+					GD.Print("VS Code: Registered Realm Map Editor in extensions.json.");
 
 					GD.Print("VS Code: Realm Map Editor extension installed successfully.");
 				}

@@ -1681,10 +1681,10 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 							catName.Equals("attachments", StringComparison.OrdinalIgnoreCase) ||
 							catName.Equals("weapons", StringComparison.OrdinalIgnoreCase) ||
 							catName.Equals("projectiles", StringComparison.OrdinalIgnoreCase) ||
-							catName.Equals("glb_items", StringComparison.OrdinalIgnoreCase) ||
-							catName.Equals("glb_attachments", StringComparison.OrdinalIgnoreCase) ||
-							catName.Equals("glb_weapons", StringComparison.OrdinalIgnoreCase) ||
-							catName.Equals("glb_projectiles", StringComparison.OrdinalIgnoreCase);
+							catName.Equals("rmesh_items", StringComparison.OrdinalIgnoreCase) ||
+							catName.Equals("rmesh_attachments", StringComparison.OrdinalIgnoreCase) ||
+							catName.Equals("rmesh_weapons", StringComparison.OrdinalIgnoreCase) ||
+							catName.Equals("rmesh_projectiles", StringComparison.OrdinalIgnoreCase);
 
 						if (subCat.Value is JsonObject modelsObj)
 						{

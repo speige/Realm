@@ -3674,7 +3674,7 @@ public class {mapName} : IMapScript
 
 					foreach (var t in asm.GetExportedTypes())
 					{
-						if (typeof(IMapScript).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract)
+						if (typeof(IMapScript).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract && !typeof(IWasmRuntime).IsAssignableFrom(t) && t.GetConstructor(Type.EmptyTypes) != null)
 						{
 							_activeMapScript = (IMapScript?)Activator.CreateInstance(t);
 							if (_activeMapScript != null)
@@ -3694,44 +3694,47 @@ public class {mapName} : IMapScript
 		}
 		else
 		{
-			foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+			string searchName = mapName?.Replace("_", "").ToLower() ?? string.Empty;
+			if (!string.IsNullOrEmpty(searchName))
 			{
-				Type?[] types;
-				try
+				foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
 				{
-					types = assembly.GetTypes();
-				}
-				catch (System.Reflection.ReflectionTypeLoadException ex)
-				{
-					types = ex.Types;
-				}
-				catch (Exception)
-				{
-					continue;
-				}
-				if (types == null) continue;
-				foreach (var type in types)
-				{
-					if (type == null) continue;
-					if (typeof(IMapScript).IsAssignableFrom(type) && !type.IsInterface && !type.IsAbstract)
+					Type?[] types;
+					try
 					{
-						string typeName = type.Name.ToLower();
-						string searchName = mapName.Replace("_", "").ToLower();
-						if (typeName.Contains(searchName) || searchName.Contains(typeName))
+						types = assembly.GetTypes();
+					}
+					catch (System.Reflection.ReflectionTypeLoadException ex)
+					{
+						types = ex.Types;
+					}
+					catch (Exception)
+					{
+						continue;
+					}
+					if (types == null) continue;
+					foreach (var type in types)
+					{
+						if (type == null) continue;
+						if (typeof(IMapScript).IsAssignableFrom(type) && !type.IsInterface && !type.IsAbstract && !typeof(IWasmRuntime).IsAssignableFrom(type) && type.GetConstructor(Type.EmptyTypes) != null)
 						{
-							try
+							string typeName = type.Name.ToLower();
+							if (typeName.Contains(searchName) || searchName.Contains(typeName))
 							{
-								_activeMapScript = (IMapScript)Activator.CreateInstance(type);
-								break;
-							}
-							catch (Exception ex)
-							{
-								GD.PrintErr($"Failed to instantiate map script type {type.FullName}: {ex.Message}");
+								try
+								{
+									_activeMapScript = (IMapScript)Activator.CreateInstance(type);
+									break;
+								}
+								catch (Exception ex)
+								{
+									GD.PrintErr($"Failed to instantiate map script type {type.FullName}: {ex.Message}");
+								}
 							}
 						}
 					}
+					if (_activeMapScript != null) break;
 				}
-				if (_activeMapScript != null) break;
 			}
 		}
 
