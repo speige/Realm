@@ -13,6 +13,7 @@ using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using SharpToken;
 using Realm.Shared;
+using Realm.Shared.Distribution;
 using Realm.Shared.Metadata;
 
 public partial class LobbyManager : Node
@@ -65,12 +66,8 @@ public partial class LobbyManager : Node
         public string BinaryVersion { get; set; } = "";
     }
 
-    public class ServersConfig
-    {
-        public List<string> RegistryServers { get; set; } = new();
-    }
-
-
+    public List<string> AdminPublicKeys { get; private set; } = new();
+    public List<ServerEntry> OfficialServers { get; private set; } = new();
     public List<string> RegistryServers { get; private set; } = new() { "http://127.0.0.1:5000" };
     private int _currentServerIndex = 0;
     public string RegistryServerUrl => RegistryServers.Count > 0 ? RegistryServers[_currentServerIndex] : "http://127.0.0.1:5000";
@@ -284,22 +281,52 @@ public partial class LobbyManager : Node
             try
             {
                 var config = JsonSerializer.Deserialize<ServersConfig>(jsonText, Options);
-                if (config != null && config.RegistryServers != null && config.RegistryServers.Count > 0)
+                if (config != null)
                 {
+                    ServersConfigHelper.NormalizeConfig(config);
+                    AdminPublicKeys = config.AdminPublicKeys;
+                    OfficialServers = config.Servers;
                     RegistryServers = config.RegistryServers;
                     _currentServerIndex = 0;
-                    GD.Print($"[LobbyManager] Loaded registry servers: {string.Join(", ", RegistryServers)}");
+                    GD.Print($"[LobbyManager] Loaded servers from {path}: {string.Join(", ", RegistryServers)}");
                     return;
                 }
             }
             catch (Exception ex)
             {
-                GD.PrintErr($"[LobbyManager] Error parsing servers.json: {ex.Message}");
+                GD.PrintErr($"[LobbyManager] Error parsing {path}: {ex.Message}");
             }
         }
 
+        string templatePath = "res://servers.template.json";
+        if (FileAccess.FileExists(templatePath))
+        {
+            using var file = FileAccess.Open(templatePath, FileAccess.ModeFlags.Read);
+            string jsonText = file.GetAsText();
+            try
+            {
+                var config = JsonSerializer.Deserialize<ServersConfig>(jsonText, Options);
+                if (config != null)
+                {
+                    ServersConfigHelper.NormalizeConfig(config);
+                    AdminPublicKeys = config.AdminPublicKeys;
+                    OfficialServers = config.Servers;
+                    RegistryServers = config.RegistryServers;
+                    _currentServerIndex = 0;
+                    GD.Print($"[LobbyManager] Loaded servers from {templatePath}: {string.Join(", ", RegistryServers)}");
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                GD.PrintErr($"[LobbyManager] Error parsing {templatePath}: {ex.Message}");
+            }
+        }
 
-        RegistryServers = new List<string> { "http://127.0.0.1:5000" };
+        var fallback = ServersConfigHelper.Load();
+        AdminPublicKeys = fallback.AdminPublicKeys;
+        OfficialServers = fallback.Servers;
+        RegistryServers = fallback.RegistryServers;
         _currentServerIndex = 0;
         GD.Print($"[LobbyManager] Config servers.json not found or invalid, using fallback: {RegistryServerUrl}");
     }

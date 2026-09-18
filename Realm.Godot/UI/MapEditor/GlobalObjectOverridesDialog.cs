@@ -36,9 +36,9 @@ public class GlobalObjectOverridesUndoAction : IEditorAction
 		GameHost.Instance.SetModelCollisionCircleRatio(_assetKey, snapshot.CollisionCircleRatio);
 		GameHost.Instance.SetModelBrightness(_assetKey, snapshot.Brightness);
 		GameHost.Instance.SetModelColorTint(_assetKey, snapshot.ColorTint);
-		GameHost.Instance.SetModelNormalMode(_assetKey, snapshot.NormalMode);
 		GameHost.Instance.SetModelNormalizeLuminance(_assetKey, snapshot.NormalizeLuminance);
 		GameHost.Instance.SetModelIgnorePlayerColor(_assetKey, snapshot.IgnorePlayerColor);
+		GameHost.Instance.SetModelDespillPlayerColor(_assetKey, snapshot.DespillPlayerColor);
 		GameHost.Instance.SetModelSpawnShader(_assetKey, snapshot.SpawnShader);
 		GameHost.Instance.SetModelDeathShader(_assetKey, snapshot.DeathShader);
 
@@ -57,9 +57,9 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 		public float CollisionCircleRatio;
 		public float Brightness;
 		public Color ColorTint;
-		public GameHost.ModelNormalMode NormalMode;
 		public bool NormalizeLuminance;
 		public bool IgnorePlayerColor;
+		public bool DespillPlayerColor;
 		public string SpawnShader;
 		public string DeathShader;
 	}
@@ -79,9 +79,9 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 	private Label _lblBrightnessValue;
 	private HSlider _sldColorTint;
 	private ColorPickerButton _cpkColorTint;
-	private OptionButton _optNormalMode;
 	private CheckBox _chkNormalizeLuminance;
 	private CheckBox _chkIgnorePlayerColor;
+	private CheckBox _chkDespillPlayerColor;
 	private OptionButton _optSpawnShader;
 	private OptionButton _optDeathShader;
 
@@ -129,18 +129,6 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 			GameHost.Instance.SetModelColorTint(_currentAssetKey, color);
 		});
 
-		string[] normalOptions = new[]
-		{
-			TranslationServer.Translate("Original").ToString(),
-			TranslationServer.Translate("Smooth Normals").ToString(),
-			TranslationServer.Translate("Flat Normals").ToString()
-		};
-		_optNormalMode = AddOptionDropdown(grid, TranslationServer.Translate("Normals"), normalOptions, 2, (idx) =>
-		{
-			if (_isUpdatingUI || GameHost.Instance == null || string.IsNullOrEmpty(_currentAssetKey)) return;
-			GameHost.Instance.SetModelNormalMode(_currentAssetKey, (GameHost.ModelNormalMode)idx);
-		});
-
 		_chkNormalizeLuminance = AddCheckBox(grid, TranslationServer.Translate("Normalize Luminosity"), true, (pressed) =>
 		{
 			if (_isUpdatingUI || GameHost.Instance == null || string.IsNullOrEmpty(_currentAssetKey)) return;
@@ -151,6 +139,13 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 		{
 			if (_isUpdatingUI || GameHost.Instance == null || string.IsNullOrEmpty(_currentAssetKey)) return;
 			GameHost.Instance.SetModelIgnorePlayerColor(_currentAssetKey, pressed);
+			GameHost.Instance.RefreshAllPlacedObjectModels(_currentAssetKey);
+		});
+
+		_chkDespillPlayerColor = AddCheckBox(grid, TranslationServer.Translate("Despill Player Color"), true, (pressed) =>
+		{
+			if (_isUpdatingUI || GameHost.Instance == null || string.IsNullOrEmpty(_currentAssetKey)) return;
+			GameHost.Instance.SetModelDespillPlayerColor(_currentAssetKey, pressed);
 			GameHost.Instance.RefreshAllPlacedObjectModels(_currentAssetKey);
 		});
 
@@ -193,9 +188,9 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 			CollisionCircleRatio = GameHost.Instance.GetModelCollisionCircleRatio(_currentAssetKey),
 			Brightness = GameHost.Instance.GetModelBrightness(_currentAssetKey),
 			ColorTint = GameHost.Instance.GetModelColorTint(_currentAssetKey),
-			NormalMode = GameHost.Instance.GetModelNormalMode(_currentAssetKey),
 			NormalizeLuminance = GameHost.Instance.GetModelNormalizeLuminance(_currentAssetKey),
 			IgnorePlayerColor = GameHost.Instance.GetModelIgnorePlayerColor(_currentAssetKey),
+			DespillPlayerColor = GameHost.Instance.GetModelDespillPlayerColor(_currentAssetKey),
 			SpawnShader = GameHost.Instance.GetModelSpawnShader(_currentAssetKey),
 			DeathShader = GameHost.Instance.GetModelDeathShader(_currentAssetKey)
 		};
@@ -225,9 +220,9 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 			_sldColorTint.Value = _initialSnapshot.ColorTint.H;
 		}
 
-		_optNormalMode.Selected = (int)_initialSnapshot.NormalMode;
 		_chkNormalizeLuminance.ButtonPressed = _initialSnapshot.NormalizeLuminance;
 		_chkIgnorePlayerColor.ButtonPressed = _initialSnapshot.IgnorePlayerColor;
+		_chkDespillPlayerColor.ButtonPressed = _initialSnapshot.DespillPlayerColor;
 
 		var allShaders = SpawnDeathShaderManager.LoadAllCustomShaders();
 		if (_optSpawnShader != null)
@@ -295,9 +290,9 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 			CollisionCircleRatio = (float)_sldCollisionCircle.Value,
 			Brightness = (float)_sldBrightness.Value,
 			ColorTint = _cpkColorTint.Color,
-			NormalMode = (GameHost.ModelNormalMode)_optNormalMode.Selected,
 			NormalizeLuminance = _chkNormalizeLuminance.ButtonPressed,
 			IgnorePlayerColor = _chkIgnorePlayerColor.ButtonPressed,
+			DespillPlayerColor = _chkDespillPlayerColor.ButtonPressed,
 			SpawnShader = spawnKey,
 			DeathShader = deathKey
 		};
@@ -322,9 +317,9 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 		GameHost.Instance.SetModelCollisionCircleRatio(_currentAssetKey, _initialSnapshot.CollisionCircleRatio);
 		GameHost.Instance.SetModelBrightness(_currentAssetKey, _initialSnapshot.Brightness);
 		GameHost.Instance.SetModelColorTint(_currentAssetKey, _initialSnapshot.ColorTint);
-		GameHost.Instance.SetModelNormalMode(_currentAssetKey, _initialSnapshot.NormalMode);
 		GameHost.Instance.SetModelNormalizeLuminance(_currentAssetKey, _initialSnapshot.NormalizeLuminance);
 		GameHost.Instance.SetModelIgnorePlayerColor(_currentAssetKey, _initialSnapshot.IgnorePlayerColor);
+		GameHost.Instance.SetModelDespillPlayerColor(_currentAssetKey, _initialSnapshot.DespillPlayerColor);
 		GameHost.Instance.SetModelSpawnShader(_currentAssetKey, _initialSnapshot.SpawnShader);
 		GameHost.Instance.SetModelDeathShader(_currentAssetKey, _initialSnapshot.DeathShader);
 

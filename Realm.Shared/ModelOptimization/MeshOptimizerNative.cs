@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -27,6 +27,8 @@ public static unsafe class MeshOptimizerNative
 		}
 
 		string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+		string? processDir = !string.IsNullOrEmpty(Environment.ProcessPath) ? Path.GetDirectoryName(Environment.ProcessPath) : null;
+		string? asmDir = !string.IsNullOrEmpty(assembly.Location) ? Path.GetDirectoryName(assembly.Location) : null;
 		bool isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 		bool isLinux = RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
 		bool isOsx = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
@@ -35,12 +37,28 @@ public static unsafe class MeshOptimizerNative
 			(isLinux ? Path.Combine("runtimes", "linux-x64", "native", "libmeshoptimizer.so") :
 			Path.Combine("runtimes", "osx-x64", "native", "libmeshoptimizer.dylib"));
 
-		string[] candidatePaths = new string[]
+		string fileName = isWindows ? "meshoptimizer.dll" : (isLinux ? "libmeshoptimizer.so" : "libmeshoptimizer.dylib");
+
+		var candidatePaths = new List<string>
 		{
 			Path.Combine(baseDir, relativePath),
-			Path.Combine(baseDir, isWindows ? "meshoptimizer.dll" : (isLinux ? "libmeshoptimizer.so" : "libmeshoptimizer.dylib")),
-			Path.Combine(baseDir, "ThirdPartyBinaries", isWindows ? "meshoptimizer.dll" : (isLinux ? "libmeshoptimizer.so" : "libmeshoptimizer.dylib"))
+			Path.Combine(baseDir, fileName),
+			Path.Combine(baseDir, "ThirdPartyBinaries", fileName)
 		};
+
+		if (!string.IsNullOrEmpty(processDir))
+		{
+			candidatePaths.Add(Path.Combine(processDir, relativePath));
+			candidatePaths.Add(Path.Combine(processDir, fileName));
+			candidatePaths.Add(Path.Combine(processDir, "ThirdPartyBinaries", fileName));
+		}
+
+		if (!string.IsNullOrEmpty(asmDir))
+		{
+			candidatePaths.Add(Path.Combine(asmDir, relativePath));
+			candidatePaths.Add(Path.Combine(asmDir, fileName));
+			candidatePaths.Add(Path.Combine(asmDir, "ThirdPartyBinaries", fileName));
+		}
 
 		foreach (string candidate in candidatePaths)
 		{
@@ -48,6 +66,50 @@ public static unsafe class MeshOptimizerNative
 			{
 				return handle;
 			}
+		}
+
+		try
+		{
+			string tempDir = Path.Combine(Path.GetTempPath(), "realm_native_libs");
+			string tempDll = Path.Combine(tempDir, fileName);
+			if (File.Exists(tempDll) && NativeLibrary.TryLoad(tempDll, out handle))
+			{
+				return handle;
+			}
+
+			System.IO.Stream? stream = assembly.GetManifestResourceStream($"Realm.Shared.ThirdPartyBinaries.{fileName}");
+			if (stream == null)
+			{
+				foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
+				{
+					var names = a.GetManifestResourceNames();
+					foreach (var name in names)
+					{
+						if (name.EndsWith(fileName, StringComparison.OrdinalIgnoreCase))
+						{
+							stream = a.GetManifestResourceStream(name);
+							break;
+						}
+					}
+					if (stream != null) break;
+				}
+			}
+
+			if (stream != null)
+			{
+				Directory.CreateDirectory(tempDir);
+				using (var fileStream = File.Create(tempDll))
+				{
+					stream.CopyTo(fileStream);
+				}
+				if (NativeLibrary.TryLoad(tempDll, out handle))
+				{
+					return handle;
+				}
+			}
+		}
+		catch
+		{
 		}
 
 		return IntPtr.Zero;
@@ -133,6 +195,7 @@ public static unsafe class MeshOptimizerNative
 		float* vertex_positions,
 		nuint vertex_count,
 		nuint vertex_positions_stride,
+		byte* vertex_lock,
 		nuint target_index_count,
 		float target_error,
 		float* result_error);

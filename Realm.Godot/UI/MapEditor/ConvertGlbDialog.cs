@@ -21,6 +21,8 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 	private CheckBox _chkTeamColorMask;
 	private HBoxContainer _colorPickerRow;
 	private ColorPickerButton _colorPicker;
+	private Button _btnDetectMaskColor;
+	private CheckBox _chkAutoCorrectChromaKey;
 
 	private CheckBox _chkAutoRig;
 	private VBoxContainer _autoRigRow;
@@ -116,6 +118,7 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 		_chkTeamColorMask = AddCheckBox(vbox, TranslationServer.Translate("Apply team color mask"), false, (enabled) =>
 		{
 			if (_colorPickerRow != null) _colorPickerRow.Visible = enabled;
+			if (_chkAutoCorrectChromaKey != null) _chkAutoCorrectChromaKey.Visible = enabled;
 		}, TranslationServer.Translate("Masks target color in textures to receive dynamic player team colors in-game"));
 
 		_colorPickerRow = new HBoxContainer();
@@ -132,7 +135,19 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 		_colorPicker.CustomMinimumSize = new Vector2(40, 24);
 		_colorPicker.EditAlpha = false;
 		_colorPicker.Color = new Color(1.0f, 0.0f, 1.0f);
+		_colorPicker.PopupClosed += OnColorPickerPopupClosed;
 		_colorPickerRow.AddChild(_colorPicker);
+
+		_btnDetectMaskColor = new Button();
+		_btnDetectMaskColor.Set("icon_max_width", 0);
+		_btnDetectMaskColor.AddThemeConstantOverride("icon_max_width", 0);
+		_btnDetectMaskColor.Text = "🎨 " + TranslationServer.Translate("Detect mask color");
+		_btnDetectMaskColor.TooltipText = TranslationServer.Translate("Auto-detect dominant mask color from selected model texture");
+		_btnDetectMaskColor.AddThemeFontSizeOverride("font_size", 11);
+		_btnDetectMaskColor.CustomMinimumSize = new Vector2(0, 24);
+		_btnDetectMaskColor.FocusMode = FocusModeEnum.None;
+		_btnDetectMaskColor.Pressed += OnDetectMaskColorPressed;
+		_colorPickerRow.AddChild(_btnDetectMaskColor);
 
 		var lblColorHint = new Label();
 		lblColorHint.Text = TranslationServer.Translate("(Default: Hot Pink #FF00FF)");
@@ -141,6 +156,9 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 		_colorPickerRow.AddChild(lblColorHint);
 
 		vbox.AddChild(_colorPickerRow);
+
+		_chkAutoCorrectChromaKey = AddCheckBox(vbox, TranslationServer.Translate("Auto-correct mask color to texture"), true, null, TranslationServer.Translate("Automatically snaps the mask color to the closest matching color with highest luminosity in the texture"));
+		_chkAutoCorrectChromaKey.Visible = false;
 
 		AddSectionHeader(vbox, TranslationServer.Translate("SKELETAL AUTO-RIGGING"));
 
@@ -206,6 +224,51 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 		}
 	}
 
+	private void OnDetectMaskColorPressed()
+	{
+		string sourcePath = _txtSourceFile?.Text?.Trim() ?? string.Empty;
+		if (string.IsNullOrEmpty(sourcePath) || !File.Exists(sourcePath))
+		{
+			Hud?.ShowFeedback(TranslationServer.Translate("Please select a valid source 3D model file."));
+			return;
+		}
+
+		string? detectedKey = GlbPlayerColorProcessor.AutoDetectChromaKey(sourcePath);
+		if (!string.IsNullOrEmpty(detectedKey))
+		{
+			if (_chkTeamColorMask != null && !_chkTeamColorMask.ButtonPressed)
+			{
+				_chkTeamColorMask.ButtonPressed = true;
+				if (_colorPickerRow != null) _colorPickerRow.Visible = true;
+			}
+			if (_colorPicker != null)
+			{
+				_colorPicker.Color = Color.FromHtml(detectedKey);
+			}
+			Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Detected mask color: {0}"), detectedKey));
+		}
+		else
+		{
+			Hud?.ShowFeedback(TranslationServer.Translate("No dominant mask color detected."));
+		}
+	}
+
+	private void OnColorPickerPopupClosed()
+	{
+		if (_chkAutoCorrectChromaKey != null && !_chkAutoCorrectChromaKey.ButtonPressed) return;
+
+		string sourcePath = _txtSourceFile?.Text?.Trim() ?? string.Empty;
+		if (string.IsNullOrEmpty(sourcePath) || !File.Exists(sourcePath) || _colorPicker == null) return;
+
+		string hexColor = $"#{_colorPicker.Color.ToHtml(false)}";
+		string? correctedKey = GlbPlayerColorProcessor.FindClosestMatchingChromaKey(sourcePath, hexColor);
+		if (!string.IsNullOrEmpty(correctedKey) && !string.Equals(correctedKey, hexColor, StringComparison.OrdinalIgnoreCase))
+		{
+			_colorPicker.Color = Color.FromHtml(correctedKey);
+			Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Corrected mask color to texture: {0}"), correctedKey));
+		}
+	}
+
 	private void OnSourceFileChanged(string path)
 	{
 		if (string.IsNullOrWhiteSpace(path)) return;
@@ -230,6 +293,16 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 		else
 		{
 			_optSubCategory.Selected = 2;
+		}
+
+		if (_chkAutoCorrectChromaKey != null && _chkAutoCorrectChromaKey.ButtonPressed && File.Exists(path) && _colorPicker != null)
+		{
+			string hexColor = $"#{_colorPicker.Color.ToHtml(false)}";
+			string? correctedKey = GlbPlayerColorProcessor.FindClosestMatchingChromaKey(path, hexColor);
+			if (!string.IsNullOrEmpty(correctedKey) && !string.Equals(correctedKey, hexColor, StringComparison.OrdinalIgnoreCase))
+			{
+				_colorPicker.Color = Color.FromHtml(correctedKey);
+			}
 		}
 
 		ApplyCategoryDefaults();
@@ -283,6 +356,7 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 		{
 			_chkTeamColorMask.ButtonPressed = teamColor;
 			if (_colorPickerRow != null) _colorPickerRow.Visible = teamColor;
+			if (_chkAutoCorrectChromaKey != null) _chkAutoCorrectChromaKey.Visible = teamColor;
 		}
 		if (_chkAutoRig != null)
 		{
@@ -318,6 +392,8 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 		if (ApplyButton != null) ApplyButton.Disabled = converting;
 		if (CancelButton != null) CancelButton.Disabled = converting;
 		if (CloseButton != null) CloseButton.Disabled = converting;
+		if (_btnSelectFile != null) _btnSelectFile.Disabled = converting;
+		if (_btnDetectMaskColor != null) _btnDetectMaskColor.Disabled = converting;
 		if (_progressBar != null) _progressBar.Visible = converting;
 	}
 
@@ -347,8 +423,8 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 		{
 			assetName = Path.GetFileNameWithoutExtension(sourcePath).ToLowerInvariant().Replace(' ', '_');
 		}
-		string cleanBase = assetName.ToLowerInvariant().Replace(' ', '_').Replace(".glb", "");
-		string fileName = $"{cleanBase}.glb";
+		string cleanBase = assetName.ToLowerInvariant().Replace(' ', '_').Replace(".rmesh", "").Replace(".glb", "");
+		string fileName = $"{cleanBase}.rmesh";
 
 		string subCategory = _optSubCategory.Selected switch
 		{
@@ -366,6 +442,7 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 
 		bool doAutoRig = _chkAutoRig.ButtonPressed;
 		bool doTeamColor = _chkTeamColorMask.ButtonPressed;
+		bool autoCorrectChromaKey = _chkAutoCorrectChromaKey?.ButtonPressed ?? true;
 		Color maskColor = _colorPicker.Color;
 
 		SetConvertingState(true);
@@ -400,14 +477,17 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 					currentPath = riggedPath;
 				}
 
+				string? chromaKeyHex = null;
 				if (doTeamColor)
 				{
 					SetProgressStatus(TranslationServer.Translate("Step 2/4: Applying team color mask..."), doAutoRig ? 25 : 15, false);
 					string maskedPath = Path.Combine(tempWorkingDir, $"{cleanBase}_masked.glb");
 					string hexColor = $"#{maskColor.ToHtml(false)}";
+					chromaKeyHex = hexColor;
 					var maskResult = GlbPlayerColorProcessor.ProcessFile(currentPath, maskedPath, new GlbPlayerColorOptions
 					{
-						TargetHex = hexColor
+						ChromaKey = hexColor,
+						AutoCorrectChromaKey = autoCorrectChromaKey
 					});
 
 					if (!maskResult.Success)
@@ -415,28 +495,40 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 						errorMessage = string.Format(TranslationServer.Translate("Team color mask failed: {0}"), maskResult.ErrorMessage);
 						return;
 					}
+					if (!string.IsNullOrEmpty(maskResult.DetectedChromaKey))
+					{
+						chromaKeyHex = maskResult.DetectedChromaKey;
+					}
 					currentPath = maskedPath;
 				}
 
-				SetProgressStatus(TranslationServer.Translate("Step 3/4: Optimizing geometry & textures..."), 40, false);
-				byte[] srcBytes = File.ReadAllBytes(currentPath);
-
+				SetProgressStatus(TranslationServer.Translate("Step 3/4: Optimizing geometry & packaging RMESH..."), 40, false);
 				int maxRes = subCategory is "attachments" or "items" ? 512 : 1024;
-				var glbOpt = new GlbOptimizer();
-				var res = glbOpt.Optimize(srcBytes, new Realm.Shared.OptimizationOptions
+				string canonicalAssetType = subCategory switch
 				{
-					SimplificationRatio = 0.5f,
-					MaxTextureResolution = maxRes,
-					ForceReDecimate = true
-				});
+					"units" => "Character",
+					"buildings" => "Building",
+					"attachments" or "items" => "Item",
+					_ => "Prop"
+				};
 
-				if (res.Success && res.OutputGlbBytes != null)
+				var convRes = Realm.Shared.ModelOptimization.ModelConverter.ConvertToRmesh(
+					currentPath,
+					destPath,
+					canonicalAssetType,
+					force: true,
+					options: new Realm.Shared.OptimizationOptions
+					{
+						SimplificationRatio = 0.5f,
+						MaxTextureResolution = maxRes,
+						ForceReDecimate = true
+					},
+					chromaKey: chromaKeyHex);
+
+				if (!convRes.Success)
 				{
-					File.WriteAllBytes(destPath, res.OutputGlbBytes);
-				}
-				else
-				{
-					File.Copy(currentPath, destPath, true);
+					errorMessage = string.Format(TranslationServer.Translate("Conversion failed: {0}"), convRes.ErrorMessage);
+					return;
 				}
 
 				SetProgressStatus(TranslationServer.Translate("Step 4/4: Computing bounds & saving metadata..."), 80, false);
@@ -451,9 +543,9 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 					_ => 1.0f
 				};
 
-				byte[] finalBytes = File.ReadAllBytes(destPath);
-				string hash = RealmMetadataHelper.ComputeBlake3(finalBytes, ".glb");
-				RealmMetadataHelper.SyncBlake3Metadata(destPath);
+				string hash = convRes.OutputBytes != null
+					? RealmMetadataHelper.ComputeBlake3(convRes.OutputBytes, ".rmesh")
+					: RealmMetadataHelper.ComputeBlake3(destPath);
 				bool isPropOrRes = subCategory == "resources" || subCategory == "props";
 
 				var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath) ?? new JsonObject();
@@ -468,10 +560,16 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 					["y_offset"] = 0.0f,
 					["min_y"] = 0.0f,
 					["default_asset_type"] = subCategory,
-					["normal_mode"] = "Flat",
+					["despill_player_color"] = true,
 					["normalize_luminance"] = true,
-					["ignore_player_color"] = isPropOrRes
+					["ignore_player_color"] = isPropOrRes,
+					["team_color"] = convRes.SupportsTeamColor
 				};
+
+				if (!string.IsNullOrEmpty(chromaKeyHex))
+				{
+					modelEntry["chroma_key"] = chromaKeyHex;
+				}
 
 				glbObj[subCategory]![fileName] = modelEntry;
 				Realm.Godot.Utils.MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj, removeFromMetadata: true);
@@ -544,9 +642,112 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 				Realm.Godot.Utils.MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj, removeFromMetadata: true);
 			}
 
+			string unitId = Path.GetFileNameWithoutExtension(fileName);
+			MetadataService.Instance.UpdateMetadata(wsPath, meta =>
+			{
+				meta.SetModelYOffset(fileName, autoYOffset);
+				meta.SetModelScale(fileName, defaultScale);
+
+				switch (subCategory)
+				{
+					case "units" or "characters":
+						bool updatedU = meta.UpdateUnit(unitId, u =>
+						{
+							if (autoYOffset != 0f) u.YOffset = autoYOffset;
+							return u;
+						});
+						if (!updatedU)
+						{
+							meta.AddOrUpdateUnit(new GameHost.UnitMetadata
+							{
+								UnitId = unitId,
+								Name = unitId,
+								Description = "",
+								ModelPath = fileName,
+								Scale = defaultScale,
+								YOffset = autoYOffset,
+								PathingType = 9,
+								DespillPlayerColor = true,
+								NormalizeLuminance = true
+							});
+						}
+						break;
+					case "buildings":
+						bool updatedB = meta.UpdateBuilding(unitId, b =>
+						{
+							if (autoYOffset != 0f) b.YOffset = autoYOffset;
+							return b;
+						});
+						if (!updatedB)
+						{
+							meta.AddOrUpdateBuilding(new GameHost.UnitMetadata
+							{
+								UnitId = unitId,
+								Name = unitId,
+								Description = "",
+								ModelPath = fileName,
+								Scale = defaultScale,
+								YOffset = autoYOffset,
+								PathingType = 32,
+								DespillPlayerColor = true,
+								NormalizeLuminance = true
+							});
+						}
+						break;
+					case "resources":
+						bool updatedR = meta.UpdateResource(unitId, r =>
+						{
+							if (autoYOffset != 0f) r.YOffset = autoYOffset;
+							return r;
+						});
+						if (!updatedR)
+						{
+							meta.AddOrUpdateResource(new GameHost.ResourceMetadata
+							{
+								UnitId = unitId,
+								Name = unitId,
+								Description = "",
+								ModelPath = fileName,
+								Scale = defaultScale,
+								YOffset = autoYOffset,
+								PathingType = 255,
+								DespillPlayerColor = true,
+								NormalizeLuminance = true,
+								IgnorePlayerColor = true
+							});
+						}
+						break;
+					case "props":
+						bool updatedP = meta.UpdateProp(unitId, p =>
+						{
+							if (autoYOffset != 0f) p.YOffset = autoYOffset;
+							return p;
+						});
+						if (!updatedP)
+						{
+							meta.AddOrUpdateProp(new GameHost.PropMetadata
+							{
+								UnitId = unitId,
+								Name = unitId,
+								Description = "",
+								ModelPath = fileName,
+								Scale = defaultScale,
+								YOffset = autoYOffset,
+								PathingType = 255,
+								DespillPlayerColor = true,
+								NormalizeLuminance = true,
+								IgnorePlayerColor = true
+							});
+						}
+						break;
+				}
+			});
+
+			MetadataService.Instance.CleanMetadata(wsPath);
 			GameHost.Instance?.SetModelYOffset(fileName, autoYOffset);
 			GameHost.Instance?.SetModelScale(fileName, defaultScale);
 			GameHost.Instance?.FlushModelYOffsetSave();
+			GameHost.Instance?.LoadUnitMetadata(wsPath);
 		}
 		catch (Exception ex)
 		{

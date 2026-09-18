@@ -457,7 +457,7 @@
                 const knownTopKeys = [
                     'MapProperties', 'CustomUnits', 'CustomBuildings', 'CustomResources', 'CustomProps',
                     'CustomAbilities', 'CustomItems', 'CustomUpgrades', 'CustomWeapons', 'Assets', 
-                    'ModelOffsets', 'ModelScales', 'ModelCollisionCircleRatios', 'ModelBrightness', 'ModelNormalModes',
+                    'ModelOffsets', 'ModelScales', 'ModelCollisionCircleRatios', 'ModelBrightness', 'ModelDespillPlayerColor',
                     'ModelIgnorePlayerColor'
                 ];
                 for (const [key, val] of Object.entries(units)) {
@@ -479,9 +479,10 @@
                             u.PathingType = defaultPathing;
                         }
                     }
-                    if (u.NormalMode === undefined || u.NormalMode === null) {
-                        u.NormalMode = 'Flat';
+                    if (u.DespillPlayerColor === undefined || u.DespillPlayerColor === null) {
+                        u.DespillPlayerColor = true;
                     }
+                    delete u.NormalMode;
                     delete u.RecalculateNormals;
                     delete u.MovementType;
                     delete u.PathingCapabilities;

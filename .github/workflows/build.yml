@@ -50,6 +50,21 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
         run: New-Item -ItemType Directory -Force -Path publish
 
+      - name: Inject Secret servers.json
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        env:
+          SERVERS_JSON_SECRET: ${{ secrets.SERVERS_JSON }}
+        run: |
+          if ($env:SERVERS_JSON_SECRET -and $env:SERVERS_JSON_SECRET.Trim() -ne "") {
+            Set-Content -Path "Realm.Godot\servers.json" -Value $env:SERVERS_JSON_SECRET -Encoding utf8
+            Write-Host "Successfully injected SERVERS_JSON secret into Realm.Godot\servers.json"
+          } else {
+            Write-Host "SERVERS_JSON secret not set; falling back to Realm.Godot\servers.template.json."
+            if (Test-Path "Realm.Godot\servers.template.json") {
+              Copy-Item -Path "Realm.Godot\servers.template.json" -Destination "Realm.Godot\servers.json" -Force
+            }
+          }
+
       - name: Import Godot Assets
         if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
         run: |
@@ -72,6 +87,15 @@ jobs:
             $cliPath = (Get-ChildItem -Path "Realm.Tools.Cli\bin\Release" -Filter "Realm.Tools.Cli.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName)
           }
           Copy-Item -Path $cliPath -Destination "$PWD\publish\Realm.Tools.Cli.exe" -Force
+
+      - name: Copy servers.json to Publish Directory
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        run: |
+          if (Test-Path "Realm.Godot\servers.json") {
+            Copy-Item -Path "Realm.Godot\servers.json" -Destination "$PWD\publish\servers.json" -Force
+          } elseif (Test-Path "Realm.Godot\servers.template.json") {
+            Copy-Item -Path "Realm.Godot\servers.template.json" -Destination "$PWD\publish\servers.json" -Force
+          }
 
       - name: Create 7z Ultra Archive
         if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}

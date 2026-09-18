@@ -16,18 +16,52 @@ builder.Services.AddSingleton<SeederRegistry>();
 builder.Services.AddSingleton<DataStoreService>();
 
 var storagePath = builder.Configuration.GetValue<string>("storage-path") ?? builder.Configuration.GetValue<string>("StorageDirectory") ?? ".data/cas";
-var adminPublicKey = builder.Configuration.GetValue<string>("AdminPublicKey") ?? "";
 var capacityPercent = builder.Configuration.GetValue<int?>("CapacityPercentage") ?? 100;
 var seederId = builder.Configuration.GetValue<string>("SeederId") ?? "seed_node_server";
+
+var serversConfigFile = builder.Configuration.GetValue<string>("ServersConfigFile");
+var serversConfig = ServersConfigHelper.Load(serversConfigFile);
+
+var adminPublicKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+foreach (var k in serversConfig.AdminPublicKeys)
+{
+    if (!string.IsNullOrWhiteSpace(k)) adminPublicKeys.Add(k.Trim());
+}
+
+var singleAdminKey = builder.Configuration.GetValue<string>("AdminPublicKey");
+if (!string.IsNullOrWhiteSpace(singleAdminKey)) adminPublicKeys.Add(singleAdminKey.Trim());
+
+var adminKeysList = builder.Configuration.GetSection("AdminPublicKeys").Get<List<string>>();
+if (adminKeysList != null)
+{
+    foreach (var k in adminKeysList)
+    {
+        if (!string.IsNullOrWhiteSpace(k)) adminPublicKeys.Add(k.Trim());
+    }
+}
 
 var cas = new ContentAddressableStorage(storagePath);
 builder.Services.AddSingleton(cas);
 builder.Services.AddHttpClient();
-
+builder.Services.AddSingleton(serversConfig);
 
 var selfUrl = builder.Configuration.GetValue<string>("SelfUrl");
 var peersStr = builder.Configuration.GetValue<string>("Peers") ?? "";
 var peerUrls = peersStr.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
+foreach (var server in serversConfig.Servers)
+{
+    if (!string.IsNullOrWhiteSpace(server.Url))
+    {
+        if (!string.Equals(server.Url.TrimEnd('/'), selfUrl?.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
+        {
+            if (!peerUrls.Contains(server.Url, StringComparer.OrdinalIgnoreCase))
+            {
+                peerUrls.Add(server.Url);
+            }
+        }
+    }
+}
 
 var peerRegistry = new PeerRegistry
 {
@@ -35,6 +69,7 @@ var peerRegistry = new PeerRegistry
     PeerUrls = peerUrls
 };
 builder.Services.AddSingleton(peerRegistry);
+builder.Services.AddSingleton<ClusterEventService>();
 
 
 builder.Services.AddCors(options =>
@@ -189,7 +224,7 @@ app.MapPost("/lobbies/register", async (RegisterRequest req, LobbyRegistry regis
     string finalMapName = req.Map;
     string mapVersion = req.MapVersion ?? "1.0";
     string compositeKey = $"{req.Map}_{mapVersion}";
-    var stats = db.Get<MapStats>("map_stats", compositeKey);
+    var stats = db.Get<MapStats>("map_stats", compositeKey) ?? db.Get<MapStats>("map_stats", req.Map);
     bool isGreenlit = !isCustom || (stats != null && stats.IsGreenlit);
 
     if (!isGreenlit) {
@@ -570,6 +605,7 @@ app.MapGet("/auth/login", (string provider, int port) =>
 app.MapGet("/auth/authorize", (string provider, int port, string username, string? discord_id, DataStoreService db) =>
 {
     string finalUsername = username;
+    string playerId = "";
     if (provider == "discord")
     {
         string snowflake = discord_id ?? "";
@@ -579,6 +615,7 @@ app.MapGet("/auth/authorize", (string provider, int port, string username, strin
             long part2 = Random.Shared.Next(100000000, 999999999);
             snowflake = $"{part1}{part2}";
         }
+        playerId = $"discord_{snowflake}";
 
         var existingPlayer = db.Get<JsonDocument>("players", snowflake);
         if (existingPlayer != null)
@@ -601,8 +638,30 @@ app.MapGet("/auth/authorize", (string provider, int port, string username, strin
             db.Upsert("players", snowflake, playerDoc);
         }
     }
+    else
+    {
+        playerId = $"{provider}_{Guid.NewGuid().ToString("N")[..8]}";
+        var playerDoc = JsonSerializer.SerializeToDocument(new
+        {
+            id = playerId,
+            username = username,
+            provider = provider,
+            registration_date = DateTime.UtcNow
+        });
+        db.Upsert("players", playerId, playerDoc);
+    }
 
     var token = Guid.NewGuid().ToString("N");
+    var sessionDoc = JsonSerializer.SerializeToDocument(new
+    {
+        token = token,
+        username = finalUsername,
+        provider = provider,
+        player_id = playerId,
+        created_at = DateTime.UtcNow
+    });
+    db.Upsert("auth_sessions", token, sessionDoc);
+
     var callbackUrl = $"http://localhost:{port}/auth/callback/?username={Uri.EscapeDataString(finalUsername)}&token={token}&provider={provider}";
     return Results.Redirect(callbackUrl);
 });
@@ -776,14 +835,15 @@ app.MapPost("/api/manifests", async (HttpRequest request, ContentAddressableStor
         return Results.BadRequest(new { Message = "Invalid manifest" });
     }
 
-    var stats = db.Get<MapStats>("map_stats", manifest.MapName);
+    string compositeKey = $"{manifest.MapName}_{manifest.Version}";
+    var stats = db.Get<MapStats>("map_stats", compositeKey) ?? db.Get<MapStats>("map_stats", manifest.MapName);
     bool isGreenlit = stats != null && stats.IsGreenlit;
     string? bypassToken = request.Headers["X-Admin-Bypass"];
 
     if (!isGreenlit)
     {
-        bool bypassValid = !string.IsNullOrEmpty(adminPublicKey) &&
-                           AdminBypassAuth.VerifyBypassToken(adminPublicKey, manifest.MapName, manifest.Version, bypassToken);
+        bool bypassValid = adminPublicKeys.Count > 0 &&
+                           AdminBypassAuth.VerifyBypassToken(adminPublicKeys, manifest.MapName, manifest.Version, bypassToken);
         if (!bypassValid)
         {
             return Results.StatusCode(403);
@@ -862,25 +922,325 @@ app.MapPost("/seeders/download", async (SeederDownloadRequest req, SeederRegistr
 });
 
 
-app.MapPost("/api/publish_map", (PublishMapRequest req, DataStoreService db) =>
+app.MapPost("/api/publish_map/initiate", (PublishMapInitiateRequest req, DataStoreService db, ContentAddressableStorage cas) =>
+{
+    try
+    {
+        string jsonToProcess = req.ManifestJson;
+        if (string.IsNullOrWhiteSpace(jsonToProcess))
+        {
+            return Results.BadRequest(new PublishMapInitiateResponse
+            {
+                Success = false,
+                Message = "ManifestJson is required."
+            });
+        }
+
+        var mapDoc = JsonDocument.Parse(jsonToProcess);
+        var root = mapDoc.RootElement;
+
+        string mapTitle = req.MapTitle;
+        string mapVersion = string.IsNullOrWhiteSpace(req.MapVersion) ? "1.0" : req.MapVersion;
+
+        if (string.IsNullOrEmpty(mapTitle) && root.TryGetProperty("MapName", out var mapNameProp))
+        {
+            mapTitle = mapNameProp.GetString() ?? "";
+        }
+        if (root.TryGetProperty("Version", out var versionProp))
+        {
+            mapVersion = versionProp.GetString() ?? mapVersion;
+        }
+
+        if (string.IsNullOrEmpty(mapTitle) && root.TryGetProperty("MapProperties", out var mapProps))
+        {
+            if (mapProps.TryGetProperty("MapName", out var nameProp)) mapTitle = nameProp.GetString() ?? "";
+            if (mapProps.TryGetProperty("MapTitle", out var titleProp)) mapTitle = titleProp.GetString() ?? mapTitle;
+            if (mapProps.TryGetProperty("MapVersion", out var vProp)) mapVersion = vProp.GetString() ?? mapVersion;
+        }
+
+        if (string.IsNullOrEmpty(mapTitle))
+        {
+            return Results.BadRequest(new PublishMapInitiateResponse
+            {
+                Success = false,
+                Message = "MapTitle is required in manifest."
+            });
+        }
+
+        if (string.IsNullOrEmpty(req.Signature) || string.IsNullOrEmpty(req.PublicKey))
+        {
+            return Results.BadRequest(new PublishMapInitiateResponse
+            {
+                Success = false,
+                Message = "Signature and PublicKey are required."
+            });
+        }
+
+        byte[] pubKeyBytes = Convert.FromBase64String(req.PublicKey);
+        byte[] sigBytes = Convert.FromBase64String(req.Signature);
+        var pubKey = NSec.Cryptography.PublicKey.Import(NSec.Cryptography.SignatureAlgorithm.Ed25519, pubKeyBytes, NSec.Cryptography.KeyBlobFormat.RawPublicKey);
+
+        byte[] mapBytes = Encoding.UTF8.GetBytes(jsonToProcess);
+        string canonicalBlake3 = RealmMetadataHelper.ComputeBlake3(mapBytes, ".json");
+        string mapHashStr = $"{canonicalBlake3}.json";
+        byte[] mapHashBytes = Encoding.UTF8.GetBytes(mapHashStr);
+
+        bool isSigValid = NSec.Cryptography.SignatureAlgorithm.Ed25519.Verify(pubKey, mapHashBytes, sigBytes)
+                       || NSec.Cryptography.SignatureAlgorithm.Ed25519.Verify(pubKey, Encoding.UTF8.GetBytes(canonicalBlake3), sigBytes)
+                       || NSec.Cryptography.SignatureAlgorithm.Ed25519.Verify(pubKey, mapBytes, sigBytes);
+
+        if (!isSigValid)
+        {
+            return Results.BadRequest(new PublishMapInitiateResponse
+            {
+                Success = false,
+                Message = "Invalid map manifest signature."
+            });
+        }
+
+        string compositeKey = $"{mapTitle}_{mapVersion}";
+        var stats = db.Get<MapStats>("map_stats", compositeKey) ?? db.Get<MapStats>("map_stats", mapTitle);
+        if (stats == null || !stats.IsGreenlit)
+        {
+            return Results.Json(new PublishMapInitiateResponse
+            {
+                Success = false,
+                Status = "NotGreenlit",
+                IsGreenlit = false,
+                Message = $"Map '{mapTitle}' is not greenlit for publication to the public registry. Accumulate more community playtime and ratings or request an admin override."
+            }, statusCode: StatusCodes.Status403Forbidden);
+        }
+
+        var existingOwner = db.Get<string>("map_ownership", mapTitle);
+        if (existingOwner != null && !string.Equals(existingOwner, req.PublicKey, StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.BadRequest(new PublishMapInitiateResponse
+            {
+                Success = false,
+                Message = "A map with this title already exists and is owned by a different key."
+            });
+        }
+
+        var referencedHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (req.ReferencedHashes != null)
+        {
+            foreach (var h in req.ReferencedHashes)
+            {
+                if (!string.IsNullOrWhiteSpace(h)) referencedHashes.Add(ContentAddressableStorage.NormalizeBlake3Hash(h));
+            }
+        }
+        if (root.TryGetProperty("Files", out var filesProp) && filesProp.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var prop in filesProp.EnumerateObject())
+            {
+                string h = ContentAddressableStorage.NormalizeBlake3Hash(prop.Value.GetString() ?? "");
+                if (!string.IsNullOrWhiteSpace(h)) referencedHashes.Add(h);
+            }
+        }
+
+        var missingHashes = new List<string>();
+        foreach (var hash in referencedHashes)
+        {
+            if (!cas.HasAsset(hash))
+            {
+                missingHashes.Add(hash);
+            }
+        }
+
+        string sessionId = Guid.NewGuid().ToString("N");
+        var sessionDoc = JsonSerializer.SerializeToDocument(new
+        {
+            SessionId = sessionId,
+            MapTitle = mapTitle,
+            MapVersion = mapVersion,
+            ManifestJson = jsonToProcess,
+            PublicKey = req.PublicKey,
+            Signature = req.Signature,
+            ReferencedHashes = referencedHashes.ToList(),
+            CreatedAt = DateTime.UtcNow
+        });
+        db.Upsert("publish_sessions", sessionId, sessionDoc);
+
+        return Results.Ok(new PublishMapInitiateResponse
+        {
+            Success = true,
+            SessionId = sessionId,
+            MapId = compositeKey,
+            Status = missingHashes.Count == 0 ? "ReadyToFinalize" : "UploadsRequired",
+            MissingHashes = missingHashes,
+            IsGreenlit = true,
+            Message = missingHashes.Count == 0 ? "All assets already present on server." : $"{missingHashes.Count} assets require upload."
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new PublishMapInitiateResponse
+        {
+            Success = false,
+            Status = "Error",
+            Message = ex.Message
+        });
+    }
+});
+
+app.MapPost("/api/publish_map/finalize", (PublishMapFinalizeRequest req, DataStoreService db, ContentAddressableStorage cas, ClusterEventService clusterEvents, PeerRegistry registeredPeers, IHttpClientFactory httpClientFactory) =>
+{
+    try
+    {
+        if (string.IsNullOrWhiteSpace(req.SessionId) && (string.IsNullOrWhiteSpace(req.MapTitle) || string.IsNullOrWhiteSpace(req.PublicKey)))
+        {
+            return Results.BadRequest(new PublishMapFinalizeResponse
+            {
+                Success = false,
+                Message = "SessionId or MapTitle/PublicKey required."
+            });
+        }
+
+        JsonDocument? sessionDoc = !string.IsNullOrWhiteSpace(req.SessionId) ? db.Get<JsonDocument>("publish_sessions", req.SessionId) : null;
+        string manifestJson = "";
+        string mapTitle = req.MapTitle;
+        string mapVersion = string.IsNullOrWhiteSpace(req.MapVersion) ? "1.0" : req.MapVersion;
+        string publicKey = req.PublicKey;
+        string signature = req.Signature;
+        List<string> referencedHashes = new();
+
+        if (sessionDoc != null)
+        {
+            var root = sessionDoc.RootElement;
+            manifestJson = root.TryGetProperty("ManifestJson", out var mj) ? mj.GetString() ?? "" : "";
+            mapTitle = root.TryGetProperty("MapTitle", out var mt) ? mt.GetString() ?? mapTitle : mapTitle;
+            mapVersion = root.TryGetProperty("MapVersion", out var mv) ? mv.GetString() ?? mapVersion : mapVersion;
+            publicKey = root.TryGetProperty("PublicKey", out var pk) ? pk.GetString() ?? publicKey : publicKey;
+            signature = root.TryGetProperty("Signature", out var sig) ? sig.GetString() ?? signature : signature;
+
+            if (root.TryGetProperty("ReferencedHashes", out var rhProp) && rhProp.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var el in rhProp.EnumerateArray())
+                {
+                    var str = el.GetString();
+                    if (!string.IsNullOrEmpty(str)) referencedHashes.Add(str);
+                }
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(manifestJson))
+        {
+            return Results.BadRequest(new PublishMapFinalizeResponse
+            {
+                Success = false,
+                Message = "Publish session not found or expired."
+            });
+        }
+
+        var mapDoc = JsonDocument.Parse(manifestJson);
+        var missingHashes = new List<string>();
+        foreach (var hash in referencedHashes)
+        {
+            if (!cas.HasAsset(hash))
+            {
+                missingHashes.Add(hash);
+            }
+        }
+
+        if (missingHashes.Count > 0)
+        {
+            return Results.BadRequest(new PublishMapFinalizeResponse
+            {
+                Success = false,
+                Status = "MissingAssets",
+                Message = $"Cannot finalize publish: {missingHashes.Count} assets are still missing on the server."
+            });
+        }
+
+        string compositeKey = $"{mapTitle}_{mapVersion}";
+        var existingOwner = db.Get<string>("map_ownership", mapTitle);
+        if (existingOwner == null)
+        {
+            db.Upsert("map_ownership", mapTitle, publicKey);
+        }
+
+        string manifestDir = Path.Combine(cas.RootDirectory, "manifests");
+        if (!Directory.Exists(manifestDir)) Directory.CreateDirectory(manifestDir);
+        string manifestPath = Path.Combine(manifestDir, $"{compositeKey}_manifest.json");
+        File.WriteAllText(manifestPath, manifestJson);
+        string defaultManifestPath = Path.Combine(manifestDir, $"{mapTitle}_manifest.json");
+        File.WriteAllText(defaultManifestPath, manifestJson);
+
+        db.Upsert("published_maps", compositeKey, mapDoc);
+
+        var pubEvent = new ClusterEventDto
+        {
+            EventType = "map_published",
+            PublicKey = publicKey,
+            Signature = signature,
+            PayloadJson = JsonSerializer.Serialize(new MapPublishedEventPayload
+            {
+                MapTitle = mapTitle,
+                MapVersion = mapVersion,
+                ManifestJson = manifestJson,
+                ReferencedHashes = referencedHashes,
+                PublicKey = publicKey,
+                Signature = signature
+            })
+        };
+
+        clusterEvents.RecordEvent(pubEvent, db);
+        clusterEvents.BroadcastEvent(pubEvent, registeredPeers, httpClientFactory);
+
+        if (!string.IsNullOrWhiteSpace(req.SessionId))
+        {
+            db.Delete("publish_sessions", req.SessionId);
+        }
+
+        return Results.Ok(new PublishMapFinalizeResponse
+        {
+            Success = true,
+            MapId = compositeKey,
+            Status = "Published",
+            Message = $"Map '{compositeKey}' successfully published."
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new PublishMapFinalizeResponse
+        {
+            Success = false,
+            Status = "Error",
+            Message = ex.Message
+        });
+    }
+});
+
+app.MapPost("/api/publish_map", (PublishMapRequest req, DataStoreService db, ContentAddressableStorage cas, ClusterEventService clusterEvents, PeerRegistry registeredPeers, IHttpClientFactory httpClientFactory) =>
 {
     try {
-        var mapDoc = JsonDocument.Parse(req.MapJson);
+        string jsonToProcess = !string.IsNullOrWhiteSpace(req.ManifestJson) ? req.ManifestJson : req.MapJson;
+        if (string.IsNullOrWhiteSpace(jsonToProcess)) {
+            return Results.BadRequest(new { Message = "ManifestJson or MapJson is required." });
+        }
+
+        var mapDoc = JsonDocument.Parse(jsonToProcess);
         var root = mapDoc.RootElement;
         
         string mapTitle = "";
-        string mapVersion = "1.0"; // default if missing
+        string mapVersion = "1.0";
         
-        if (root.TryGetProperty("MapProperties", out var mapProps)) {
+        if (root.TryGetProperty("MapName", out var mapNameProp)) {
+            mapTitle = mapNameProp.GetString() ?? "";
+        }
+        if (root.TryGetProperty("Version", out var versionProp)) {
+            mapVersion = versionProp.GetString() ?? "1.0";
+        }
+        
+        if (string.IsNullOrEmpty(mapTitle) && root.TryGetProperty("MapProperties", out var mapProps)) {
             if (mapProps.TryGetProperty("MapName", out var nameProp)) mapTitle = nameProp.GetString() ?? "";
             if (mapProps.TryGetProperty("MapTitle", out var titleProp)) mapTitle = titleProp.GetString() ?? mapTitle;
-            if (mapProps.TryGetProperty("MapVersion", out var versionProp)) mapVersion = versionProp.GetString() ?? "1.0";
+            if (mapProps.TryGetProperty("MapVersion", out var vProp)) mapVersion = vProp.GetString() ?? "1.0";
         }
         
         if (string.IsNullOrEmpty(mapTitle)) {
-            return Results.BadRequest(new { Message = "MapTitle is required in map.json MapProperties" });
+            return Results.BadRequest(new { Message = "MapName or MapTitle is required in manifest." });
         }
-        
         
         if (string.IsNullOrEmpty(req.Signature) || string.IsNullOrEmpty(req.PublicKey)) {
             return Results.BadRequest(new { Message = "Map signature and public key are required." });
@@ -897,7 +1257,7 @@ app.MapPost("/api/publish_map", (PublishMapRequest req, DataStoreService db) =>
         
         var pubKey = NSec.Cryptography.PublicKey.Import(NSec.Cryptography.SignatureAlgorithm.Ed25519, pubKeyBytes, NSec.Cryptography.KeyBlobFormat.RawPublicKey);
         
-        byte[] mapBytes = System.Text.Encoding.UTF8.GetBytes(req.MapJson);
+        byte[] mapBytes = System.Text.Encoding.UTF8.GetBytes(jsonToProcess);
         string canonicalBlake3 = RealmMetadataHelper.ComputeBlake3(mapBytes, ".json");
         string mapHashStr = $"{canonicalBlake3}.json";
         byte[] mapHashBytes = System.Text.Encoding.UTF8.GetBytes(mapHashStr);
@@ -905,17 +1265,27 @@ app.MapPost("/api/publish_map", (PublishMapRequest req, DataStoreService db) =>
         if (!NSec.Cryptography.SignatureAlgorithm.Ed25519.Verify(pubKey, mapHashBytes, sigBytes)) {
             byte[] rawHashBytes = System.Text.Encoding.UTF8.GetBytes(canonicalBlake3);
             if (!NSec.Cryptography.SignatureAlgorithm.Ed25519.Verify(pubKey, rawHashBytes, sigBytes)) {
-                return Results.BadRequest(new { Message = "Invalid map signature." });
+                if (!NSec.Cryptography.SignatureAlgorithm.Ed25519.Verify(pubKey, mapBytes, sigBytes)) {
+                    return Results.BadRequest(new { Message = "Invalid map signature." });
+                }
             }
         }
 
         string compositeKey = $"{mapTitle}_{mapVersion}";
+        var stats = db.Get<MapStats>("map_stats", compositeKey) ?? db.Get<MapStats>("map_stats", mapTitle);
+        if (stats == null || !stats.IsGreenlit) {
+            return Results.Json(new {
+                Message = $"Map '{mapTitle}' is not greenlit for publication to the public registry. Accumulate more community playtime and ratings or request an admin override.",
+                IsGreenlit = false,
+                Stats = stats ?? new MapStats()
+            }, statusCode: StatusCodes.Status403Forbidden);
+        }
+
         var existingMap = db.Get<JsonDocument>("published_maps", compositeKey);
         if (existingMap != null) {
             return Results.BadRequest(new { Message = $"Map with Title '{mapTitle}' and Version '{mapVersion}' already exists." });
         }
         
-        var prevMapKey = $"{mapTitle}_1.0"; // Simplifying logic for previous versions to check if public keys match.
         var ownership = db.Get<string>("map_ownership", mapTitle);
         if (ownership != null && ownership != req.PublicKey) {
             return Results.BadRequest(new { Message = "A map with this title already exists and is owned by a different key." });
@@ -924,8 +1294,6 @@ app.MapPost("/api/publish_map", (PublishMapRequest req, DataStoreService db) =>
             db.Upsert("map_ownership", mapTitle, req.PublicKey);
         }
 
-        
-        // Verify contributors
         var contributors = new HashSet<string>();
         if (root.TryGetProperty("Contributors", out var contProp) && contProp.ValueKind == JsonValueKind.Array) {
             foreach (var element in contProp.EnumerateArray()) {
@@ -933,19 +1301,50 @@ app.MapPost("/api/publish_map", (PublishMapRequest req, DataStoreService db) =>
                 if (str != null) contributors.Add(str);
             }
         }
+        if (root.TryGetProperty("Author", out var authorProp) && authorProp.ValueKind == JsonValueKind.String) {
+            var authorStr = authorProp.GetString();
+            if (!string.IsNullOrEmpty(authorStr)) contributors.Add(authorStr);
+        }
         
-        // Check all referenced asset hashes
-        foreach (var hash in req.ReferencedHashes) {
-            var assetMeta = db.Get<JsonDocument>("asset_signatures", hash);
-            if (assetMeta != null) {
-                var author = assetMeta.RootElement.GetProperty("AuthorUsername").GetString();
-                if (!string.IsNullOrEmpty(author) && !contributors.Contains(author)) {
-                    return Results.BadRequest(new { Message = $"Author '{author}' from asset '{hash}' is missing from the Contributors list." });
+        if (req.ReferencedHashes != null) {
+            foreach (var hash in req.ReferencedHashes) {
+                var assetMeta = db.Get<JsonDocument>("asset_signatures", hash);
+                if (assetMeta != null) {
+                    var author = assetMeta.RootElement.GetProperty("AuthorUsername").GetString();
+                    if (!string.IsNullOrEmpty(author) && !contributors.Contains(author)) {
+                        return Results.BadRequest(new { Message = $"Author '{author}' from asset '{hash}' is missing from the Contributors list." });
+                    }
                 }
             }
         }
         
+        string manifestDir = Path.Combine(cas.RootDirectory, "manifests");
+        if (!Directory.Exists(manifestDir)) Directory.CreateDirectory(manifestDir);
+        string manifestPath = Path.Combine(manifestDir, $"{compositeKey}_manifest.json");
+        File.WriteAllText(manifestPath, jsonToProcess);
+        string defaultManifestPath = Path.Combine(manifestDir, $"{mapTitle}_manifest.json");
+        File.WriteAllText(defaultManifestPath, jsonToProcess);
+
         db.Upsert("published_maps", compositeKey, mapDoc);
+
+        var pubEvent = new ClusterEventDto
+        {
+            EventType = "map_published",
+            PublicKey = req.PublicKey,
+            Signature = req.Signature,
+            PayloadJson = JsonSerializer.Serialize(new MapPublishedEventPayload
+            {
+                MapTitle = mapTitle,
+                MapVersion = mapVersion,
+                ManifestJson = jsonToProcess,
+                ReferencedHashes = req.ReferencedHashes ?? new List<string>(),
+                PublicKey = req.PublicKey,
+                Signature = req.Signature
+            })
+        };
+        clusterEvents.RecordEvent(pubEvent, db);
+        clusterEvents.BroadcastEvent(pubEvent, registeredPeers, httpClientFactory);
+
         return Results.Ok(new { Status = "Published", MapId = compositeKey });
     }
     catch (Exception ex) {
@@ -953,7 +1352,265 @@ app.MapPost("/api/publish_map", (PublishMapRequest req, DataStoreService db) =>
     }
 });
 
-app.MapPost("/api/publish_map/upload_asset", async (HttpRequest request, DataStoreService db) =>
+app.MapGet("/api/cluster/events", (DateTime? sinceUtc, int? limit, ClusterEventService clusterEvents, DataStoreService db) =>
+{
+    var events = clusterEvents.GetEvents(sinceUtc, limit ?? 100, db);
+    return Results.Ok(events);
+});
+
+app.MapGet("/api/cluster/state_digest", (ClusterEventService clusterEvents, DataStoreService db, PeerRegistry registeredPeers) =>
+{
+    var digest = clusterEvents.ComputeStateDigest(db);
+    digest.OriginServerUrl = registeredPeers.SelfUrl;
+    return Results.Ok(digest);
+});
+
+app.MapGet("/api/cluster/snapshot", (ClusterEventService clusterEvents, DataStoreService db) =>
+{
+    var snapshot = clusterEvents.GenerateSnapshot(db);
+    return Results.Ok(snapshot);
+});
+
+app.MapPost("/api/cluster/snapshot", (HttpRequest request, ClusterSnapshotDto snapshot, ClusterEventService clusterEvents, DataStoreService db, ContentAddressableStorage cas) =>
+{
+    string? bypassHeader = request.Headers["X-Admin-Bypass"];
+    string? sigHeader = request.Headers["X-Cluster-Signature"];
+    string? pubKeyHeader = request.Headers["X-Admin-PublicKey"];
+
+    bool isAuth = (!string.IsNullOrEmpty(bypassHeader) && adminPublicKeys.Count > 0 && AdminBypassAuth.VerifyBypassToken(adminPublicKeys, "cluster", "snapshot", bypassHeader))
+        || (!string.IsNullOrEmpty(sigHeader) && (
+            (!string.IsNullOrEmpty(pubKeyHeader) && adminPublicKeys.Contains(pubKeyHeader.ToString().Trim()) && AuthorSignatureHelper.VerifySignature(pubKeyHeader.ToString().Trim(), "cluster_snapshot", sigHeader.ToString()))
+            || AuthorSignatureHelper.VerifySignatureAny(adminPublicKeys, "cluster_snapshot", sigHeader.ToString())
+        ));
+
+    if (!isAuth)
+    {
+        return Results.Json(new { Message = "Unauthorized snapshot import request." }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    var result = clusterEvents.ApplySnapshot(snapshot, db, cas, adminPublicKeys);
+    return Results.Ok(result);
+});
+
+app.MapPost("/api/cluster/event", async (ClusterEventDto evt, ClusterEventService clusterEvents, DataStoreService db, ContentAddressableStorage cas) =>
+{
+    bool applied = await clusterEvents.ApplyEventAsync(evt, db, cas, adminPublicKeys);
+    if (!applied)
+    {
+        return Results.BadRequest(new { Message = "Event verification or application failed." });
+    }
+    return Results.Ok(new { Status = "Applied", EventId = evt.EventId });
+});
+
+app.MapPost("/api/cluster/sync_events", async (List<ClusterEventDto> events, ClusterEventService clusterEvents, DataStoreService db, ContentAddressableStorage cas) =>
+{
+    int appliedCount = 0;
+    if (events != null)
+    {
+        foreach (var evt in events)
+        {
+            if (await clusterEvents.ApplyEventAsync(evt, db, cas, adminPublicKeys))
+            {
+                appliedCount++;
+            }
+        }
+    }
+    return Results.Ok(new { Status = "Sync Complete", TotalEvents = events?.Count ?? 0, AppliedCount = appliedCount });
+});
+
+app.MapPost("/api/admin/prune_cas", (HttpRequest request, ClusterEventService clusterEvents, DataStoreService db, ContentAddressableStorage cas) =>
+{
+    string? bypassHeader = request.Headers["X-Admin-Bypass"];
+    string? sigHeader = request.Headers["X-Cluster-Signature"];
+    string? pubKeyHeader = request.Headers["X-Admin-PublicKey"];
+
+    bool isAuth = (!string.IsNullOrEmpty(bypassHeader) && adminPublicKeys.Count > 0 && AdminBypassAuth.VerifyBypassToken(adminPublicKeys, "admin", "prune_cas", bypassHeader))
+        || (!string.IsNullOrEmpty(sigHeader) && (
+            (!string.IsNullOrEmpty(pubKeyHeader) && adminPublicKeys.Contains(pubKeyHeader.ToString().Trim()) && AuthorSignatureHelper.VerifySignature(pubKeyHeader.ToString().Trim(), "prune_cas", sigHeader.ToString()))
+            || AuthorSignatureHelper.VerifySignatureAny(adminPublicKeys, "prune_cas", sigHeader.ToString())
+        ));
+
+    if (!isAuth)
+    {
+        return Results.Json(new { Message = "Unauthorized CAS pruning request." }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    var pruneResult = clusterEvents.PruneCas(cas, db);
+    return Results.Ok(pruneResult);
+});
+
+app.MapPost("/api/cluster/sync_metrics", async (HttpRequest request, ClusterEventService clusterEvents, DataStoreService db, ContentAddressableStorage cas) =>
+{
+    using var reader = new StreamReader(request.Body, Encoding.UTF8);
+    string body = await reader.ReadToEndAsync();
+
+    string? sigHeader = request.Headers["X-Cluster-Signature"];
+    string? pubKeyHeader = request.Headers["X-Admin-PublicKey"];
+    string? bypassHeader = request.Headers["X-Admin-Bypass"];
+
+    bool isAuth = (!string.IsNullOrEmpty(bypassHeader) && adminPublicKeys.Count > 0 && AdminBypassAuth.VerifyBypassToken(adminPublicKeys, "cluster", "sync", bypassHeader))
+        || (!string.IsNullOrEmpty(sigHeader) && (
+            (!string.IsNullOrEmpty(pubKeyHeader) && adminPublicKeys.Contains(pubKeyHeader.ToString().Trim()) && (AuthorSignatureHelper.VerifySignature(pubKeyHeader.ToString().Trim(), "sync_metrics", sigHeader.ToString()) || AuthorSignatureHelper.VerifySignature(pubKeyHeader.ToString().Trim(), body, sigHeader.ToString())))
+            || AuthorSignatureHelper.VerifySignatureAny(adminPublicKeys, "sync_metrics", sigHeader.ToString())
+            || AuthorSignatureHelper.VerifySignatureAny(adminPublicKeys, body, sigHeader.ToString())
+        ));
+
+    if (!isAuth)
+    {
+        return Results.Json(new { Message = "Unauthorized cluster sync request." }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    var metricsList = JsonSerializer.Deserialize<List<MapStatsSyncDto>>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+    if (metricsList != null)
+    {
+        foreach (var item in metricsList)
+        {
+            if (string.IsNullOrWhiteSpace(item.MapId)) continue;
+
+            var existing = db.Get<MapStats>("map_stats", item.MapId) ?? new MapStats();
+            existing.TotalPlaytimeMinutes = Math.Max(existing.TotalPlaytimeMinutes, item.TotalPlaytimeMinutes);
+            existing.TotalGamesPlayed = Math.Max(existing.TotalGamesPlayed, item.TotalGamesPlayed);
+            existing.ReviewsCount = Math.Max(existing.ReviewsCount, item.TotalReviewsCount);
+            existing.VerifiedGoodReviewsCount = Math.Max(existing.VerifiedGoodReviewsCount, item.VerifiedGoodReviewsCount);
+            if (item.AverageRating > 0 && item.TotalReviewsCount > 0)
+            {
+                existing.TotalStars = Math.Max(existing.TotalStars, (int)Math.Round(item.AverageRating * item.TotalReviewsCount));
+            }
+            if (item.AdminOverrideGreenlit)
+            {
+                existing.AdminOverrideGreenlit = true;
+            }
+            db.Upsert("map_stats", item.MapId, existing);
+        }
+    }
+
+    return Results.Ok(new { Status = "Metrics Synchronized", Count = metricsList?.Count ?? 0 });
+});
+
+app.MapPost("/api/cluster/sync_published_maps", async (HttpRequest request, ClusterEventService clusterEvents, DataStoreService db, ContentAddressableStorage cas) =>
+{
+    using var reader = new StreamReader(request.Body, Encoding.UTF8);
+    string body = await reader.ReadToEndAsync();
+
+    string? sigHeader = request.Headers["X-Cluster-Signature"];
+    string? pubKeyHeader = request.Headers["X-Admin-PublicKey"];
+    string? bypassHeader = request.Headers["X-Admin-Bypass"];
+
+    bool isAuth = (!string.IsNullOrEmpty(bypassHeader) && adminPublicKeys.Count > 0 && AdminBypassAuth.VerifyBypassToken(adminPublicKeys, "cluster", "sync", bypassHeader))
+        || (!string.IsNullOrEmpty(sigHeader) && (
+            (!string.IsNullOrEmpty(pubKeyHeader) && adminPublicKeys.Contains(pubKeyHeader.ToString().Trim()) && (AuthorSignatureHelper.VerifySignature(pubKeyHeader.ToString().Trim(), "sync_published_maps", sigHeader.ToString()) || AuthorSignatureHelper.VerifySignature(pubKeyHeader.ToString().Trim(), body, sigHeader.ToString())))
+            || AuthorSignatureHelper.VerifySignatureAny(adminPublicKeys, "sync_published_maps", sigHeader.ToString())
+            || AuthorSignatureHelper.VerifySignatureAny(adminPublicKeys, body, sigHeader.ToString())
+        ));
+
+    if (!isAuth)
+    {
+        return Results.Json(new { Message = "Unauthorized cluster sync request." }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    var mapsList = JsonSerializer.Deserialize<List<PublishedMapSyncDto>>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+    if (mapsList != null)
+    {
+        string manifestDir = Path.Combine(cas.RootDirectory, "manifests");
+        if (!Directory.Exists(manifestDir)) Directory.CreateDirectory(manifestDir);
+
+        foreach (var map in mapsList)
+        {
+            if (string.IsNullOrWhiteSpace(map.MapId)) continue;
+
+            if (!string.IsNullOrWhiteSpace(map.ManifestJson))
+            {
+                string manifestPath = Path.Combine(manifestDir, $"{map.MapId}_manifest.json");
+                File.WriteAllText(manifestPath, map.ManifestJson);
+                if (!string.IsNullOrWhiteSpace(map.MapTitle))
+                {
+                    string defaultPath = Path.Combine(manifestDir, $"{map.MapTitle}_manifest.json");
+                    File.WriteAllText(defaultPath, map.ManifestJson);
+                }
+
+                try
+                {
+                    var doc = JsonDocument.Parse(map.ManifestJson);
+                    db.Upsert("published_maps", map.MapId, doc);
+                }
+                catch { }
+            }
+
+            if (!string.IsNullOrWhiteSpace(map.OwnerPublicKey) && !string.IsNullOrWhiteSpace(map.MapTitle))
+            {
+                var existingOwner = db.Get<string>("map_ownership", map.MapTitle);
+                if (existingOwner == null)
+                {
+                    db.Upsert("map_ownership", map.MapTitle, map.OwnerPublicKey);
+                }
+            }
+        }
+    }
+
+    return Results.Ok(new { Status = "Published Maps Synchronized", Count = mapsList?.Count ?? 0 });
+});
+
+app.MapPost("/api/cluster/sync_creators", async (HttpRequest request, ClusterEventService clusterEvents, DataStoreService db) =>
+{
+    using var reader = new StreamReader(request.Body, Encoding.UTF8);
+    string body = await reader.ReadToEndAsync();
+
+    string? sigHeader = request.Headers["X-Cluster-Signature"];
+    string? pubKeyHeader = request.Headers["X-Admin-PublicKey"];
+    string? bypassHeader = request.Headers["X-Admin-Bypass"];
+
+    bool isAuth = (!string.IsNullOrEmpty(bypassHeader) && adminPublicKeys.Count > 0 && AdminBypassAuth.VerifyBypassToken(adminPublicKeys, "cluster", "sync", bypassHeader))
+        || (!string.IsNullOrEmpty(sigHeader) && (
+            (!string.IsNullOrEmpty(pubKeyHeader) && adminPublicKeys.Contains(pubKeyHeader.ToString().Trim()) && (AuthorSignatureHelper.VerifySignature(pubKeyHeader.ToString().Trim(), "sync_creators", sigHeader.ToString()) || AuthorSignatureHelper.VerifySignature(pubKeyHeader.ToString().Trim(), body, sigHeader.ToString())))
+            || AuthorSignatureHelper.VerifySignatureAny(adminPublicKeys, "sync_creators", sigHeader.ToString())
+            || AuthorSignatureHelper.VerifySignatureAny(adminPublicKeys, body, sigHeader.ToString())
+        ));
+
+    if (!isAuth)
+    {
+        return Results.Json(new { Message = "Unauthorized cluster sync request." }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    var creatorsList = JsonSerializer.Deserialize<List<CreatorSyncDto>>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+    if (creatorsList != null)
+    {
+        foreach (var creator in creatorsList)
+        {
+            if (string.IsNullOrWhiteSpace(creator.PublicKey) || string.IsNullOrWhiteSpace(creator.Username)) continue;
+
+            string slug = creator.Username.ToLowerInvariant().Replace(" ", "-");
+            var existingLock = db.Get<JsonDocument>("name_locks", slug);
+            if (existingLock == null)
+            {
+                var lockDoc = JsonSerializer.SerializeToDocument(new
+                {
+                    username = creator.Username,
+                    owner_public_key = creator.PublicKey,
+                    registered_at = creator.RegisteredAt ?? DateTime.UtcNow
+                });
+                db.Upsert("name_locks", slug, lockDoc);
+            }
+
+            var existingCreator = db.Get<JsonDocument>("creators", creator.PublicKey);
+            if (existingCreator == null)
+            {
+                var creatorDoc = JsonSerializer.SerializeToDocument(new
+                {
+                    username = creator.Username,
+                    public_key = creator.PublicKey,
+                    donation_link = creator.DonationLink ?? "",
+                    contact_info = creator.ContactInfo ?? "",
+                    registered_at = creator.RegisteredAt ?? DateTime.UtcNow
+                });
+                db.Upsert("creators", creator.PublicKey, creatorDoc);
+            }
+        }
+    }
+
+    return Results.Ok(new { Status = "Creators Synchronized", Count = creatorsList?.Count ?? 0 });
+});
+
+app.MapPost("/api/publish_map/upload_asset", async (HttpRequest request, DataStoreService db, ContentAddressableStorage cas) =>
 {
     if (!request.HasFormContentType)
         return Results.BadRequest("Expected multipart/form-data");
@@ -964,6 +1621,19 @@ app.MapPost("/api/publish_map/upload_asset", async (HttpRequest request, DataSto
     string signature = form["Signature"].ToString();
     string authorUsername = form["AuthorUsername"].ToString();
     string publicKey = form["PublicKey"].ToString();
+    string mapTitle = form.TryGetValue("MapTitle", out var mt) ? mt.ToString() : "";
+    string mapVersion = form.TryGetValue("MapVersion", out var mv) ? mv.ToString() : "1.0";
+    string sessionId = form.TryGetValue("SessionId", out var sid) ? sid.ToString() : "";
+    
+    if (!string.IsNullOrEmpty(mapTitle))
+    {
+        string compositeKey = $"{mapTitle}_{(string.IsNullOrEmpty(mapVersion) ? "1.0" : mapVersion)}";
+        var stats = db.Get<MapStats>("map_stats", compositeKey) ?? db.Get<MapStats>("map_stats", mapTitle);
+        if (stats == null || !stats.IsGreenlit)
+        {
+            return Results.Json(new { Message = $"Cannot upload asset: map '{mapTitle}' is not greenlit." }, statusCode: StatusCodes.Status403Forbidden);
+        }
+    }
     
     if (string.IsNullOrEmpty(hash) || hash.Contains('/') || hash.Contains('\\')) return Results.BadRequest("Invalid Hash.");
 
@@ -993,6 +1663,12 @@ app.MapPost("/api/publish_map/upload_asset", async (HttpRequest request, DataSto
     var file = form.Files.GetFile("File");
     if (file != null && file.Length > 0)
     {
+        using var ms = new MemoryStream();
+        await file.CopyToAsync(ms);
+        byte[] fileBytes = ms.ToArray();
+        string ext = Path.GetExtension(file.FileName);
+        cas.StoreAsset(fileBytes, ext, null, publicKey, signature);
+
         string archiveDir = ".data/assets";
         if (!Directory.Exists(archiveDir))
             Directory.CreateDirectory(archiveDir);
@@ -1000,8 +1676,7 @@ app.MapPost("/api/publish_map/upload_asset", async (HttpRequest request, DataSto
         string filePath = Path.Combine(archiveDir, hash);
         if (!File.Exists(filePath))
         {
-            using var stream = new FileStream(filePath, FileMode.Create);
-            await file.CopyToAsync(stream);
+            await File.WriteAllBytesAsync(filePath, fileBytes);
         }
     }
     
@@ -1014,6 +1689,478 @@ app.MapGet("/api/publish_map/asset_author/{hash}", (string hash, DataStoreServic
         return Results.Ok(existingMeta);
     }
     return Results.NotFound();
+});
+
+app.MapPost("/api/creators/register", async (HttpRequest request, RegisterCreatorRequest req, DataStoreService db, ClusterEventService clusterEvents, PeerRegistry registeredPeers, IHttpClientFactory httpClientFactory) =>
+{
+    if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.PublicKey) || string.IsNullOrWhiteSpace(req.Signature))
+    {
+        return Results.BadRequest(new { Message = "Username, PublicKey, and Signature are required." });
+    }
+
+    string username = req.Username.Trim();
+    string pubKey = req.PublicKey.Trim();
+    string signature = req.Signature.Trim();
+
+    bool sigValid = AuthorSignatureHelper.VerifySignature(pubKey, $"{username}:{pubKey}", signature)
+        || AuthorSignatureHelper.VerifySignature(pubKey, username, signature);
+
+    if (!sigValid)
+    {
+        return Results.BadRequest(new { Message = "Invalid cryptographic signature for public key." });
+    }
+
+    string slug = username.ToLowerInvariant().Replace(" ", "-");
+    var existingLock = db.Get<JsonDocument>("name_locks", slug);
+    if (existingLock != null)
+    {
+        var root = existingLock.RootElement;
+        string owner = root.TryGetProperty("owner_public_key", out var op) ? op.GetString() ?? "" : "";
+        if (!string.Equals(owner, pubKey, StringComparison.OrdinalIgnoreCase))
+        {
+            string? bypassToken = request.Headers["X-Admin-Bypass"];
+            bool bypassValid = adminPublicKeys.Count > 0 &&
+                               AdminBypassAuth.VerifyBypassToken(adminPublicKeys, "admin", "override", bypassToken);
+
+            if (!bypassValid)
+            {
+                return Results.Conflict(new { Message = "This username is already officially registered to another creator key." });
+            }
+        }
+    }
+
+    var lockDoc = JsonSerializer.SerializeToDocument(new
+    {
+        username = username,
+        owner_public_key = pubKey,
+        registered_at = DateTime.UtcNow
+    });
+    db.Upsert("name_locks", slug, lockDoc);
+
+    var creatorDoc = JsonSerializer.SerializeToDocument(new
+    {
+        username = username,
+        public_key = pubKey,
+        donation_link = req.DonationLink ?? "",
+        contact_info = req.ContactInfo ?? "",
+        registered_at = DateTime.UtcNow
+    });
+    db.Upsert("creators", pubKey, creatorDoc);
+
+    var creatorEvent = new ClusterEventDto
+    {
+        EventType = "creator_registered",
+        PublicKey = pubKey,
+        Signature = signature,
+        PayloadJson = JsonSerializer.Serialize(new CreatorRegisteredEventPayload
+        {
+            Username = username,
+            PublicKey = pubKey,
+            Signature = signature,
+            DonationLink = req.DonationLink,
+            ContactInfo = req.ContactInfo,
+            AdminBypassToken = request.Headers["X-Admin-Bypass"].ToString()
+        })
+    };
+    clusterEvents.MarkEventProcessed(creatorEvent.EventId, db);
+    clusterEvents.BroadcastEvent(creatorEvent, registeredPeers, httpClientFactory);
+
+    return Results.Ok(new { Status = "Registered", Username = username, PublicKey = pubKey });
+});
+
+app.MapGet("/api/creators/check/{pubKey}", (string pubKey, DataStoreService db) =>
+{
+    var creator = db.Get<JsonDocument>("creators", pubKey);
+    if (creator != null)
+    {
+        var root = creator.RootElement;
+        string username = root.TryGetProperty("username", out var uProp) ? uProp.GetString() ?? "" : "";
+        return Results.Ok(new { Registered = true, Username = username, PublicKey = pubKey });
+    }
+    return Results.NotFound(new { Registered = false, Message = "Creator key not registered." });
+});
+
+app.MapGet("/api/creators", (DataStoreService db) =>
+{
+    var creators = db.GetAll<JsonDocument>("creators").Select(doc =>
+    {
+        var root = doc.RootElement;
+        return new
+        {
+            PublicKey = root.TryGetProperty("public_key", out var pk) ? pk.GetString() ?? "" : "",
+            Username = root.TryGetProperty("username", out var un) ? un.GetString() ?? "" : "",
+            DonationLink = root.TryGetProperty("donation_link", out var dl) ? dl.GetString() ?? "" : "",
+            ContactInfo = root.TryGetProperty("contact_info", out var ci) ? ci.GetString() ?? "" : ""
+        };
+    }).Where(c => !string.IsNullOrEmpty(c.PublicKey)).ToList();
+
+    return Results.Ok(creators);
+});
+
+app.MapGet("/api/creators/{pubKey}", (string pubKey, DataStoreService db) =>
+{
+    var creator = db.Get<JsonDocument>("creators", pubKey);
+    return creator != null ? Results.Ok(creator) : Results.NotFound();
+});
+
+app.MapGet("/api/creators/{pubKey}/portfolio", (string pubKey, DataStoreService db) =>
+{
+    var creator = db.Get<JsonDocument>("creators", pubKey);
+    string creatorName = "";
+    if (creator != null && creator.RootElement.TryGetProperty("username", out var uProp))
+    {
+        creatorName = uProp.GetString() ?? "";
+    }
+
+    var assets = new List<object>();
+    var allSignatures = db.GetAll<JsonDocument>("asset_signatures");
+    foreach (var sig in allSignatures)
+    {
+        var root = sig.RootElement;
+        string sigPubKey = root.TryGetProperty("PublicKey", out var pkProp) ? pkProp.GetString() ?? "" : "";
+        string author = root.TryGetProperty("AuthorUsername", out var aProp) ? aProp.GetString() ?? "" : "";
+        string hash = root.TryGetProperty("Hash", out var hProp) ? hProp.GetString() ?? "" : "";
+
+        if (string.Equals(sigPubKey, pubKey, StringComparison.OrdinalIgnoreCase) ||
+            (!string.IsNullOrEmpty(creatorName) && string.Equals(author, creatorName, StringComparison.OrdinalIgnoreCase)))
+        {
+            assets.Add(new
+            {
+                Hash = hash,
+                AuthorUsername = author
+            });
+        }
+    }
+
+    return Results.Ok(assets);
+});
+
+app.MapGet("/api/discovery/maps", (DataStoreService db, ContentAddressableStorage cas) =>
+{
+    var discoveryList = new List<DiscoveryMapDto>();
+    var seenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    static string FormatByteSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        if (bytes < 1024 * 1024 * 1024) return $"{bytes / (1024.0 * 1024.0):F1} MB";
+        return $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB";
+    }
+
+    var publishedDocs = db.GetAll<JsonDocument>("published_maps");
+    foreach (var doc in publishedDocs)
+    {
+        try
+        {
+            var root = doc.RootElement;
+            string mapTitle = root.TryGetProperty("MapName", out var mn) ? mn.GetString() ?? "" : "";
+            string mapVersion = root.TryGetProperty("Version", out var ver) ? ver.GetString() ?? "1.0.0" : "1.0.0";
+            if (string.IsNullOrWhiteSpace(mapTitle)) continue;
+
+            string compositeKey = $"{mapTitle}_{mapVersion}";
+            if (seenKeys.Contains(compositeKey)) continue;
+            seenKeys.Add(compositeKey);
+
+            var stats = db.Get<MapStats>("map_stats", compositeKey) ?? db.Get<MapStats>("map_stats", mapTitle);
+            bool isGreenlit = stats != null && stats.IsGreenlit;
+
+            string creator = root.TryGetProperty("Author", out var auth) ? auth.GetString() ?? "" : "";
+            if (string.IsNullOrEmpty(creator) && root.TryGetProperty("Contributors", out var conts) && conts.ValueKind == JsonValueKind.Array && conts.GetArrayLength() > 0)
+            {
+                creator = conts[0].GetString() ?? "";
+            }
+            if (string.IsNullOrEmpty(creator))
+            {
+                var ownerKey = db.Get<string>("map_ownership", mapTitle);
+                if (!string.IsNullOrEmpty(ownerKey))
+                {
+                    var creatorDoc = db.Get<JsonDocument>("creators", ownerKey);
+                    if (creatorDoc != null && creatorDoc.RootElement.TryGetProperty("username", out var un))
+                    {
+                        creator = un.GetString() ?? "";
+                    }
+                }
+            }
+            if (string.IsNullOrEmpty(creator)) creator = "Realm Builder";
+
+            string description = root.TryGetProperty("Description", out var d) ? d.GetString() ?? "" : "";
+            var tags = new List<string>();
+            if (root.TryGetProperty("Tags", out var tagsProp) && tagsProp.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var t in tagsProp.EnumerateArray())
+                {
+                    string? s = t.GetString();
+                    if (!string.IsNullOrEmpty(s)) tags.Add(s);
+                }
+            }
+
+            long totalBytes = 0;
+            string thumbnailHash = "";
+            var screenshotHashes = new List<string>();
+
+            if (root.TryGetProperty("Files", out var filesProp) && filesProp.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var fileProp in filesProp.EnumerateObject())
+                {
+                    string path = fileProp.Name;
+                    string rawHash = fileProp.Value.GetString() ?? "";
+                    string norm = ContentAddressableStorage.NormalizeBlake3Hash(rawHash);
+
+                    string ext = Path.GetExtension(path).ToLowerInvariant();
+                    if (ext is ".png" or ".jpg" or ".jpeg" or ".webp")
+                    {
+                        if (string.IsNullOrEmpty(thumbnailHash) && (path.Contains("thumb", StringComparison.OrdinalIgnoreCase) || path.Contains("icon", StringComparison.OrdinalIgnoreCase) || path.Contains("cover", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            thumbnailHash = norm;
+                        }
+                        else
+                        {
+                            screenshotHashes.Add(norm);
+                        }
+                    }
+
+                    string? assetPath = cas.FindAssetFilePath(norm);
+                    if (assetPath != null && File.Exists(assetPath))
+                    {
+                        totalBytes += new FileInfo(assetPath).Length;
+                    }
+                }
+            }
+
+            if (string.IsNullOrEmpty(thumbnailHash) && screenshotHashes.Count > 0)
+            {
+                thumbnailHash = screenshotHashes[0];
+            }
+
+            float ratingStars = stats != null && stats.AverageRating > 0 ? (float)stats.AverageRating : 4.5f;
+            int totalReviews = stats != null ? stats.ReviewsCount : 0;
+            int verifiedReviews = stats != null ? stats.VerifiedGoodReviewsCount : 0;
+            int playtimeMinutes = stats != null ? (int)stats.TotalPlaytimeMinutes : 0;
+            int gamesPlayed = stats != null ? stats.TotalGamesPlayed : 0;
+
+            discoveryList.Add(new DiscoveryMapDto
+            {
+                MapId = compositeKey,
+                Title = mapTitle,
+                Version = mapVersion,
+                Creator = creator,
+                Description = description,
+                Genre = tags.Count > 0 ? tags[0] : "Custom Map",
+                ThumbnailHash = thumbnailHash,
+                Screenshots = screenshotHashes,
+                Features = tags,
+                Tags = tags,
+                RatingStars = ratingStars,
+                TotalReviews = totalReviews,
+                VerifiedGoodReviews = verifiedReviews,
+                AverageRating = ratingStars,
+                PlaytimeMinutes = playtimeMinutes,
+                GamesPlayed = gamesPlayed,
+                TotalSizeBytes = totalBytes,
+                FileSizeFormatted = FormatByteSize(totalBytes),
+                EngineVersion = "Godot Realm Engine v1.0",
+                MaxPlayers = "8 Players",
+                IsGreenlit = isGreenlit
+            });
+        }
+        catch { }
+    }
+
+    var manifestDir = Path.Combine(cas.RootDirectory, "manifests");
+    if (Directory.Exists(manifestDir))
+    {
+        foreach (var file in Directory.EnumerateFiles(manifestDir, "*_manifest.json"))
+        {
+            try
+            {
+                string json = File.ReadAllText(file);
+                var manifest = MapManifest.LoadFromJson(json);
+                if (manifest == null || string.IsNullOrWhiteSpace(manifest.MapName)) continue;
+
+                string compositeKey = $"{manifest.MapName}_{manifest.Version}";
+                if (seenKeys.Contains(compositeKey)) continue;
+                seenKeys.Add(compositeKey);
+
+                var stats = db.Get<MapStats>("map_stats", compositeKey) ?? db.Get<MapStats>("map_stats", manifest.MapName);
+                bool isGreenlit = stats != null && stats.IsGreenlit;
+
+                long totalBytes = 0;
+                string thumbnailHash = "";
+                var screenshotHashes = new List<string>();
+
+                foreach (var pair in manifest.Files)
+                {
+                    string path = pair.Key;
+                    string norm = ContentAddressableStorage.NormalizeBlake3Hash(pair.Value);
+                    string ext = Path.GetExtension(path).ToLowerInvariant();
+                    if (ext is ".png" or ".jpg" or ".jpeg" or ".webp")
+                    {
+                        if (string.IsNullOrEmpty(thumbnailHash) && (path.Contains("thumb", StringComparison.OrdinalIgnoreCase) || path.Contains("icon", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            thumbnailHash = norm;
+                        }
+                        else
+                        {
+                            screenshotHashes.Add(norm);
+                        }
+                    }
+
+                    string? assetPath = cas.FindAssetFilePath(norm);
+                    if (assetPath != null && File.Exists(assetPath))
+                    {
+                        totalBytes += new FileInfo(assetPath).Length;
+                    }
+                }
+
+                if (string.IsNullOrEmpty(thumbnailHash) && screenshotHashes.Count > 0)
+                {
+                    thumbnailHash = screenshotHashes[0];
+                }
+
+                float ratingStars = stats != null && stats.AverageRating > 0 ? (float)stats.AverageRating : 4.5f;
+
+                discoveryList.Add(new DiscoveryMapDto
+                {
+                    MapId = compositeKey,
+                    Title = manifest.MapName,
+                    Version = manifest.Version,
+                    Creator = !string.IsNullOrEmpty(manifest.Author) ? manifest.Author : "Realm Builder",
+                    Description = manifest.Description,
+                    Genre = manifest.Tags != null && manifest.Tags.Count > 0 ? manifest.Tags[0] : "Custom Map",
+                    ThumbnailHash = thumbnailHash,
+                    Screenshots = screenshotHashes,
+                    Features = manifest.Tags ?? new List<string>(),
+                    Tags = manifest.Tags ?? new List<string>(),
+                    RatingStars = ratingStars,
+                    TotalReviews = stats?.ReviewsCount ?? 0,
+                    VerifiedGoodReviews = stats?.VerifiedGoodReviewsCount ?? 0,
+                    AverageRating = ratingStars,
+                    PlaytimeMinutes = stats != null ? (int)stats.TotalPlaytimeMinutes : 0,
+                    GamesPlayed = stats?.TotalGamesPlayed ?? 0,
+                    TotalSizeBytes = totalBytes,
+                    FileSizeFormatted = FormatByteSize(totalBytes),
+                    EngineVersion = "Godot Realm Engine v1.0",
+                    MaxPlayers = "8 Players",
+                    IsGreenlit = isGreenlit
+                });
+            }
+            catch { }
+        }
+    }
+
+    return Results.Ok(discoveryList);
+});
+
+app.MapGet("/api/admin/info", (DataStoreService db) =>
+{
+    var adminsList = new List<object>();
+    foreach (var key in adminPublicKeys)
+    {
+        string username = "Admin";
+        var adminCreator = db.Get<JsonDocument>("creators", key);
+        if (adminCreator != null && adminCreator.RootElement.TryGetProperty("username", out var uProp))
+        {
+            string? name = uProp.GetString();
+            if (!string.IsNullOrEmpty(name)) username = name;
+        }
+        adminsList.Add(new { PublicKey = key, Username = username });
+    }
+
+    return Results.Ok(new
+    {
+        AdminPublicKeys = adminPublicKeys.ToList(),
+        Admins = adminsList,
+        IsGraduatedAdmin = adminPublicKeys.Count > 0
+    });
+});
+
+app.MapPost("/api/admin/greenlight", (AdminGreenlightRequest req, DataStoreService db, ClusterEventService clusterEvents, PeerRegistry registeredPeers, IHttpClientFactory httpClientFactory) =>
+{
+    if (string.IsNullOrWhiteSpace(req.MapTitle))
+    {
+        return Results.BadRequest(new { Message = "MapTitle is required." });
+    }
+
+    if (adminPublicKeys.Count == 0)
+    {
+        return Results.Json(new { Message = "Server has no AdminPublicKeys configured in servers.json or appsettings.json." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    if (string.IsNullOrWhiteSpace(req.AdminPublicKey) || !adminPublicKeys.Contains(req.AdminPublicKey.Trim()))
+    {
+        return Results.Json(new { Message = "Unauthorized admin public key." }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    string mapTitle = req.MapTitle.Trim();
+    string mapVersion = string.IsNullOrWhiteSpace(req.MapVersion) ? "1.0" : req.MapVersion.Trim();
+    string payload = $"greenlight:{mapTitle.ToLowerInvariant()}:{mapVersion.ToLowerInvariant()}";
+
+    bool isSigValid = AuthorSignatureHelper.VerifySignature(req.AdminPublicKey, payload, req.Signature)
+        || AuthorSignatureHelper.VerifySignature(req.AdminPublicKey, $"{mapTitle}:{mapVersion}", req.Signature)
+        || AdminBypassAuth.VerifyBypassToken(req.AdminPublicKey, mapTitle, mapVersion, req.Signature);
+
+    if (!isSigValid)
+    {
+        return Results.BadRequest(new { Message = "Invalid admin signature." });
+    }
+
+    string compositeKey = $"{mapTitle}_{mapVersion}";
+    var stats = db.Get<MapStats>("map_stats", compositeKey)
+        ?? db.Get<MapStats>("map_stats", mapTitle)
+        ?? new MapStats();
+
+    stats.AdminOverrideGreenlit = true;
+    db.Upsert("map_stats", compositeKey, stats);
+    db.Upsert("map_stats", mapTitle, stats);
+
+    var greenlightEvent = new ClusterEventDto
+    {
+        EventType = "admin_greenlight",
+        PublicKey = req.AdminPublicKey.Trim(),
+        Signature = req.Signature.Trim(),
+        PayloadJson = JsonSerializer.Serialize(new AdminGreenlightEventPayload
+        {
+            MapTitle = mapTitle,
+            MapVersion = mapVersion,
+            AdminPublicKey = req.AdminPublicKey.Trim(),
+            Signature = req.Signature.Trim()
+        })
+    };
+    clusterEvents.MarkEventProcessed(greenlightEvent.EventId, db);
+    clusterEvents.BroadcastEvent(greenlightEvent, registeredPeers, httpClientFactory);
+
+    return Results.Ok(new
+    {
+        Status = "Greenlit",
+        MapTitle = mapTitle,
+        MapVersion = mapVersion,
+        IsGreenlit = true,
+        AdminOverride = true
+    });
+});
+
+app.MapGet("/api/maps/greenlight_status/{mapId}", (string mapId, DataStoreService db) =>
+{
+    var stats = db.Get<MapStats>("map_stats", mapId);
+    if (stats == null && mapId.Contains('_'))
+    {
+        int lastUnderscore = mapId.LastIndexOf('_');
+        string baseTitle = mapId[..lastUnderscore];
+        stats = db.Get<MapStats>("map_stats", baseTitle);
+    }
+    stats ??= new MapStats();
+
+    return Results.Ok(new
+    {
+        MapId = mapId,
+        IsGreenlit = stats.IsGreenlit,
+        AdminOverride = stats.AdminOverrideGreenlit,
+        VerifiedGoodReviewsCount = stats.VerifiedGoodReviewsCount,
+        RequiredVerifiedGoodReviewsCount = 100,
+        TotalReviewsCount = stats.ReviewsCount,
+        AverageRating = stats.AverageRating
+    });
 });
 
 app.MapGet("/api/data/{collection}/{id}", (string collection, string id, DataStoreService db, HttpContext context) =>
@@ -1194,6 +2341,155 @@ app.Map("/seeders/ws", async (HttpContext context, SeederRegistry registry) =>
     }
 });
 
+app.MapPost("/api/maps/report_metrics", (MapMetricsReport req, DataStoreService db, ClusterEventService clusterEvents, PeerRegistry registeredPeers, IHttpClientFactory httpClientFactory) =>
+{
+    if (string.IsNullOrWhiteSpace(req.MapTitle))
+    {
+        return Results.BadRequest(new { Message = "MapTitle is required." });
+    }
+
+    string mapTitle = req.MapTitle.Trim();
+    string mapVersion = string.IsNullOrWhiteSpace(req.MapVersion) ? "1.0" : req.MapVersion.Trim();
+    string compositeKey = $"{mapTitle}_{mapVersion}";
+
+    string playerIdentifier = !string.IsNullOrWhiteSpace(req.PlayerId) ? req.PlayerId.Trim() : "Anonymous";
+    bool isVerifiedAccount = false;
+
+    if (!string.IsNullOrWhiteSpace(req.AuthToken))
+    {
+        var sessionDoc = db.Get<JsonDocument>("auth_sessions", req.AuthToken);
+        if (sessionDoc != null)
+        {
+            var root = sessionDoc.RootElement;
+            string? provider = root.TryGetProperty("provider", out var pProp) ? pProp.GetString() : null;
+            string? user = root.TryGetProperty("username", out var uProp) ? uProp.GetString() : null;
+            if (!string.IsNullOrEmpty(user))
+            {
+                playerIdentifier = user;
+            }
+            if (!string.IsNullOrEmpty(provider) && !provider.Equals("guest", StringComparison.OrdinalIgnoreCase))
+            {
+                isVerifiedAccount = true;
+            }
+        }
+    }
+    else if (!string.IsNullOrWhiteSpace(req.AuthProvider) && !req.AuthProvider.Equals("guest", StringComparison.OrdinalIgnoreCase))
+    {
+        isVerifiedAccount = true;
+    }
+
+    string engagementKey = $"{playerIdentifier}_{compositeKey}".ToLowerInvariant();
+    var engagement = db.Get<PlayerMapEngagement>("player_engagement", engagementKey)
+        ?? new PlayerMapEngagement { PlayerId = playerIdentifier };
+
+    bool wasVerifiedGood = engagement.IsVerifiedGoodReview;
+    bool hadSubmittedRating = engagement.SubmittedRating.HasValue;
+    int prevRating = engagement.SubmittedRating ?? 0;
+
+    engagement.TotalPlaytimeMinutes += Math.Max(0.0, req.PlaytimeMinutes);
+    if (req.IsCompleteGame)
+    {
+        engagement.GamesPlayed += 1;
+    }
+    if (isVerifiedAccount)
+    {
+        engagement.IsVerifiedAccount = true;
+    }
+
+    var stats = db.Get<MapStats>("map_stats", compositeKey)
+        ?? db.Get<MapStats>("map_stats", mapTitle)
+        ?? new MapStats();
+
+    stats.TotalPlaytimeMinutes += Math.Max(0.0, req.PlaytimeMinutes);
+    if (req.IsCompleteGame)
+    {
+        stats.TotalGamesPlayed += 1;
+    }
+
+    if (req.Stars >= 1 && req.Stars <= 5)
+    {
+        if (hadSubmittedRating)
+        {
+            stats.TotalStars += (req.Stars - prevRating);
+        }
+        else
+        {
+            stats.ReviewsCount += 1;
+            stats.TotalStars += req.Stars;
+        }
+        engagement.SubmittedRating = req.Stars;
+    }
+
+    bool isNowVerifiedGood = engagement.IsVerifiedGoodReview;
+    if (!wasVerifiedGood && isNowVerifiedGood)
+    {
+        stats.VerifiedGoodReviewsCount += 1;
+    }
+    else if (wasVerifiedGood && !isNowVerifiedGood)
+    {
+        stats.VerifiedGoodReviewsCount = Math.Max(0, stats.VerifiedGoodReviewsCount - 1);
+    }
+
+    db.Upsert("player_engagement", engagementKey, engagement);
+    db.Upsert("map_stats", compositeKey, stats);
+    db.Upsert("map_stats", mapTitle, stats);
+
+    var metricEvent = new ClusterEventDto
+    {
+        EventType = "map_metric_report",
+        PayloadJson = JsonSerializer.Serialize(new MapMetricReportEventPayload
+        {
+            MapTitle = mapTitle,
+            MapVersion = mapVersion,
+            PlayerId = playerIdentifier,
+            PlaytimeMinutes = Math.Max(0.0, req.PlaytimeMinutes),
+            Stars = req.Stars,
+            IsCompleteGame = req.IsCompleteGame,
+            AuthProvider = req.AuthProvider
+        })
+    };
+    clusterEvents.MarkEventProcessed(metricEvent.EventId, db);
+    clusterEvents.BroadcastEvent(metricEvent, registeredPeers, httpClientFactory);
+
+    return Results.Ok(new
+    {
+        Success = true,
+        MapId = compositeKey,
+        IsVerifiedAccount = engagement.IsVerifiedAccount,
+        IsEligibleReviewer = engagement.IsEligibleReviewer,
+        IsVerifiedGoodReview = engagement.IsVerifiedGoodReview,
+        PlayerTotalPlaytime = engagement.TotalPlaytimeMinutes,
+        PlayerGamesPlayed = engagement.GamesPlayed,
+        MapStats = stats,
+        IsGreenlit = stats.IsGreenlit
+    });
+});
+
+_ = Task.Run(async () =>
+{
+    while (true)
+    {
+        try
+        {
+            await Task.Delay(3000);
+            var clusterSvc = app.Services.GetRequiredService<ClusterEventService>();
+            var dbSvc = app.Services.GetRequiredService<DataStoreService>();
+            var casSvc = app.Services.GetRequiredService<ContentAddressableStorage>();
+            var peersSvc = app.Services.GetRequiredService<PeerRegistry>();
+            var httpFactory = app.Services.GetRequiredService<IHttpClientFactory>();
+
+            await clusterSvc.RunQuorumSyncAsync(peersSvc, httpFactory, dbSvc, casSvc, adminPublicKeys);
+            clusterSvc.PruneOldEvents(dbSvc, TimeSpan.FromHours(24));
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[QuorumLoop] Sync error: {ex.Message}");
+        }
+
+        await Task.Delay(TimeSpan.FromSeconds(60));
+    }
+});
+
 app.Run();
 
 
@@ -1204,6 +2500,20 @@ public class MapMetricsReport
     public double PlaytimeMinutes { get; set; }
     public int Stars { get; set; }
     public bool IsCompleteGame { get; set; }
+    public string? PlayerId { get; set; }
+    public string? AuthToken { get; set; }
+    public string? AuthProvider { get; set; }
+}
+
+public class PlayerMapEngagement
+{
+    public string PlayerId { get; set; } = "";
+    public double TotalPlaytimeMinutes { get; set; }
+    public int GamesPlayed { get; set; }
+    public int? SubmittedRating { get; set; }
+    public bool IsVerifiedAccount { get; set; }
+    public bool IsEligibleReviewer => IsVerifiedAccount && TotalPlaytimeMinutes >= 30.0 && GamesPlayed >= 3;
+    public bool IsVerifiedGoodReview => IsEligibleReviewer && SubmittedRating.HasValue && SubmittedRating.Value >= 3;
 }
 
 public class MapStats
@@ -1212,5 +2522,27 @@ public class MapStats
     public int TotalGamesPlayed { get; set; }
     public int ReviewsCount { get; set; }
     public int TotalStars { get; set; }
-    public bool IsGreenlit => TotalPlaytimeMinutes >= 30 && TotalGamesPlayed >= 3 && ReviewsCount >= 100 && (ReviewsCount > 0 && (double)TotalStars / ReviewsCount >= 3.0);
+    public int VerifiedGoodReviewsCount { get; set; }
+    public bool AdminOverrideGreenlit { get; set; }
+
+    public double AverageRating => ReviewsCount > 0 ? (double)TotalStars / ReviewsCount : 0.0;
+
+    public bool IsGreenlit => AdminOverrideGreenlit || VerifiedGoodReviewsCount >= 100;
+}
+
+public class AdminGreenlightRequest
+{
+    public string MapTitle { get; set; } = "";
+    public string MapVersion { get; set; } = "1.0";
+    public string AdminPublicKey { get; set; } = "";
+    public string Signature { get; set; } = "";
+}
+
+public class RegisterCreatorRequest
+{
+    public string Username { get; set; } = "";
+    public string PublicKey { get; set; } = "";
+    public string Signature { get; set; } = "";
+    public string? DonationLink { get; set; }
+    public string? ContactInfo { get; set; }
 }

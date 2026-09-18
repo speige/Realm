@@ -14,6 +14,8 @@ $editorDir = Join-Path $embedDir "editor"
 $versionFile = Join-Path $embedDir "installed_vscode_version.json"
 $completedMarkerPath = Join-Path $embedDir "install_completed.marker"
 
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
 Write-Host "Target editor installation directory: $appDataDir"
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 New-Item -ItemType Directory -Force -Path $userDataDir | Out-Null
@@ -23,6 +25,17 @@ New-Item -ItemType Directory -Force -Path $editorDir | Out-Null
 $oldExtDest = Join-Path $extsDir "realm-map-editor"
 if (Test-Path $oldExtDest) {
     Remove-Item -Path $oldExtDest -Recurse -Force
+}
+
+$extensionsJsonCheck = Join-Path $extsDir "extensions.json"
+if (Test-Path $extensionsJsonCheck) {
+    try {
+        $fi = Get-Item $extensionsJsonCheck -ErrorAction SilentlyContinue
+        if ($fi -and $fi.Length -gt 10MB) {
+            Write-Host "Removing excessively large extensions.json ($($fi.Length) bytes)..."
+            Remove-Item -Path $extensionsJsonCheck -Force -ErrorAction SilentlyContinue
+        }
+    } catch {}
 }
 
 $wasiVersion = "34"
@@ -94,7 +107,7 @@ if ($Force) {
     $installedVersionData = $null
     if (Test-Path $versionFile) {
         try {
-            $installedVersionData = Get-Content $versionFile -Raw | ConvertFrom-Json
+            $installedVersionData = [System.IO.File]::ReadAllText($versionFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
         } catch {}
     }
 
@@ -136,7 +149,7 @@ if ($Force) {
                         installed_utc = (Get-Date).ToUniversalTime().ToString("o")
                     }
                     $metaText = $meta | ConvertTo-Json
-                    [System.IO.File]::WriteAllText($versionFile, $metaText, [System.Text.Encoding]::UTF8)
+                    [System.IO.File]::WriteAllText($versionFile, $metaText, $utf8NoBom)
                 }
             } catch {
                 Write-Host "VS Code verified at $editorDir"
@@ -176,11 +189,11 @@ if ($shouldInstallVSCode) {
 
     $productJsonFiles = Get-ChildItem -Recurse -Filter "product.json" $editorDir
     foreach ($pj in $productJsonFiles) {
-        $content = Get-Content $pj.FullName -Raw
+        $content = [System.IO.File]::ReadAllText($pj.FullName, [System.Text.Encoding]::UTF8)
         if ($content -match 'vscode-cdn\.net') {
             Write-Host "Patching webview CDN endpoint in $($pj.FullName)..."
             $content = $content -replace '"webviewContentExternalBaseUrlTemplate":\s*"https://\{\{uuid\}\}\.vscode-cdn\.net/\{\{quality\}\}/\{\{commit\}\}/out/vs/workbench/contrib/webview/browser/pre/"', '"webviewContentExternalBaseUrlTemplate": "{{commit}}/out/vs/workbench/contrib/webview/browser/pre/"'
-            Set-Content -Path $pj.FullName -Value $content -NoNewline
+            [System.IO.File]::WriteAllText($pj.FullName, $content, $utf8NoBom)
         }
     }
 
@@ -191,7 +204,7 @@ if ($shouldInstallVSCode) {
             installed_utc = (Get-Date).ToUniversalTime().ToString("o")
         }
         $metaText = $meta | ConvertTo-Json
-        [System.IO.File]::WriteAllText($versionFile, $metaText, [System.Text.Encoding]::UTF8)
+        [System.IO.File]::WriteAllText($versionFile, $metaText, $utf8NoBom)
     } else {
         $prodVer = (Get-Item $editorExe).VersionInfo.ProductVersion
         $meta = @{
@@ -200,7 +213,7 @@ if ($shouldInstallVSCode) {
             installed_utc = (Get-Date).ToUniversalTime().ToString("o")
         }
         $metaText = $meta | ConvertTo-Json
-        [System.IO.File]::WriteAllText($versionFile, $metaText, [System.Text.Encoding]::UTF8)
+        [System.IO.File]::WriteAllText($versionFile, $metaText, $utf8NoBom)
     }
 }
 
@@ -219,7 +232,7 @@ $extVersion = "0.0.1"
 $extPkgJson = Join-Path $extSrc "package.json"
 if (Test-Path $extPkgJson) {
     try {
-        $pkgObj = Get-Content $extPkgJson -Raw | ConvertFrom-Json
+        $pkgObj = [System.IO.File]::ReadAllText($extPkgJson, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
         if ($pkgObj.version) {
             $extVersion = $pkgObj.version
         }
@@ -232,7 +245,22 @@ New-Item -ItemType Directory -Force -Path $extDest | Out-Null
 $shouldInstallExt = $Force -or (-not (Test-Path (Join-Path $extDest "package.json")))
 if ($shouldInstallExt -and $extSrc -and (Test-Path $extSrc)) {
     Write-Host "Installing Realm Map Editor extension version $extVersion to $extDest..."
-    Copy-Item -Path (Join-Path $extSrc "*") -Destination $extDest -Recurse -Force
+    if (Test-Path (Join-Path $extSrc "package.json")) {
+        Copy-Item -Path (Join-Path $extSrc "package.json") -Destination (Join-Path $extDest "package.json") -Force
+    }
+    if (Test-Path (Join-Path $extSrc "map_schema.json")) {
+        Copy-Item -Path (Join-Path $extSrc "map_schema.json") -Destination (Join-Path $extDest "map_schema.json") -Force
+    }
+    if (Test-Path (Join-Path $extSrc "dist")) {
+        $destDist = Join-Path $extDest "dist"
+        New-Item -ItemType Directory -Force -Path $destDist | Out-Null
+        Copy-Item -Path (Join-Path $extSrc "dist\*") -Destination $destDist -Recurse -Force
+    }
+    if (Test-Path (Join-Path $extSrc "media")) {
+        $destMedia = Join-Path $extDest "media"
+        New-Item -ItemType Directory -Force -Path $destMedia | Out-Null
+        Copy-Item -Path (Join-Path $extSrc "media\*") -Destination $destMedia -Recurse -Force
+    }
 } else {
     Write-Host "Realm Map Editor extension ($extVersion) verified at $extDest"
 }
@@ -251,7 +279,7 @@ foreach ($extId in $requiredExtensions) {
     $extMatch = Get-ChildItem -Path $extsDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "$extId*" -or $_.Name -like "*$extId*" }
     if ((-not $extMatch) -or $Force) {
         Write-Host "Installing extension $extId from Marketplace..."
-        & $cliPath --extensions-dir $extsDir ext install $extId
+        & $cliPath --extensions-dir $extsDir --user-data-dir $userDataDir ext install $extId
     } else {
         Write-Host "Extension $extId already installed."
     }

@@ -371,9 +371,7 @@ public partial class MapSettingsDialog : FloatingDialogBase
 		string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
 		if (MetadataService.Instance.TryLoadMetadata(wsPath, out var metadata))
 		{
-			string? name = !string.IsNullOrEmpty(metadata.MapProperties?.MapName)
-				? metadata.MapProperties.MapName
-				: metadata.MapProperties?.Name;
+			string? name = metadata.MapProperties?.MapName;
 			if (!string.IsNullOrEmpty(name) && _txtMapName != null)
 			{
 				_txtMapName.Text = name.Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
@@ -392,9 +390,9 @@ public partial class MapSettingsDialog : FloatingDialogBase
 						var props = mapDoc["MapProperties"] as JsonObject;
 						if (props != null)
 						{
-						if (_txtMapName != null && string.IsNullOrEmpty(_txtMapName.Text) && props.ContainsKey("Name"))
+						if (_txtMapName != null && string.IsNullOrEmpty(_txtMapName.Text) && props.ContainsKey("MapName"))
 							{
-							_txtMapName.Text = (props["Name"]?.GetValue<string>() ?? "").Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
+							_txtMapName.Text = (props["MapName"]?.GetValue<string>() ?? "").Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
 							}
 
 						if (_optMapType != null && props.ContainsKey("MapType"))
@@ -441,7 +439,6 @@ public partial class MapSettingsDialog : FloatingDialogBase
 				MetadataService.Instance.UpdateMetadata(wsPath, meta =>
 				{
 					meta.MapProperties.MapName = cleanMapName;
-					meta.MapProperties.Name = cleanMapName;
 					meta.MapProperties.CameraBoundsLeft = GameHost.Instance?.EditorCameraBoundsLeft;
 					meta.MapProperties.CameraBoundsRight = GameHost.Instance?.EditorCameraBoundsRight;
 					meta.MapProperties.CameraBoundsTop = GameHost.Instance?.EditorCameraBoundsTop;

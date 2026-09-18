@@ -594,7 +594,10 @@ public partial class GameOver : Control
 			MapVersion = "1.0",
 			PlaytimeMinutes = playtimeMinutes,
 			Stars = stars,
-			IsCompleteGame = isComplete
+			IsCompleteGame = isComplete,
+			PlayerId = LobbyManager.Instance?.AuthenticatedUsername ?? "Anonymous",
+			AuthToken = LobbyManager.Instance?.AuthToken,
+			AuthProvider = LobbyManager.Instance?.AuthProvider
 		};
 		
 		string seedServerUrl = GodotObject.IsInstanceValid(LobbyManager.Instance) ? LobbyManager.Instance.RegistryServerUrl : "http://localhost:5000";

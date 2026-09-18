@@ -50,6 +50,24 @@ public static class AuthorSignatureHelper
         }
     }
 
+    public static bool VerifySignatureAny(System.Collections.Generic.IEnumerable<string> publicKeys, string message, string signatureBase64)
+    {
+        if (publicKeys == null || string.IsNullOrWhiteSpace(signatureBase64))
+        {
+            return false;
+        }
+
+        foreach (var key in publicKeys)
+        {
+            if (!string.IsNullOrWhiteSpace(key) && VerifySignature(key, message, signatureBase64))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static string MergeMetadataHeaders(string? existingMetadataJson, string incomingMetadataJson, bool isAuthorizedOverwrite)
     {
         if (string.IsNullOrWhiteSpace(existingMetadataJson))

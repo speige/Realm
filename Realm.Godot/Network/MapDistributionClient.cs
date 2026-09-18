@@ -140,12 +140,64 @@ public class MapDistributionClient
                 DownloadProgressChanged?.Invoke(1.0f);
             }
 
+            AssetIndexService.Instance.RegisterManifest(manifest, localManifestPath, isP2P: false);
             MapAssetManager.Log("[MapDistributionClient] Map distribution client delta handshake completed successfully.");
             return true;
         }
         catch (Exception ex)
         {
             MapAssetManager.LogErr($"[MapDistributionClient] Handshake exception: {ex.Message}");
+            return false;
+        }
+    }
+
+    public async Task<bool> DownloadMapPackageFromRegistryAsync(
+        string mapId,
+        string registryServerUrl,
+        Action<float>? progressCallback = null,
+        System.Threading.CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            string baseUrl = registryServerUrl.TrimEnd('/');
+            var distClient = new Realm.Shared.Distribution.DistributionClient(baseUrl, _httpClient);
+            var manifest = await distClient.GetManifestAsync(mapId, cancellationToken);
+            if (manifest == null || manifest.Files == null || manifest.Files.Count == 0)
+            {
+                MapAssetManager.LogErr($"[MapDistributionClient] Failed to load manifest for map '{mapId}' from {baseUrl}");
+                return false;
+            }
+
+            string localManifestDir = MapAssetManager.GlobalArchiveDirectory;
+            if (!Directory.Exists(localManifestDir))
+            {
+                Directory.CreateDirectory(localManifestDir);
+            }
+
+            string localManifestPath = Path.Combine(localManifestDir, $"{manifest.MapName}_manifest.json");
+            File.WriteAllText(localManifestPath, manifest.ToJson());
+
+            var seeders = await distClient.GetActiveSeedersAsync(cancellationToken);
+            bool success = await distClient.DownloadMissingAssetsMultiThreadedAsync(
+                manifest,
+                MapAssetManager.Storage,
+                seeders,
+                fallbackHostUrl: baseUrl,
+                progressCallback: progressCallback,
+                maximumConcurrency: 6,
+                cancellationToken: cancellationToken);
+
+            if (success)
+            {
+                AssetIndexService.Instance.RegisterManifest(manifest, localManifestPath, isP2P: false);
+                MapAssetManager.Log($"[MapDistributionClient] Map '{mapId}' successfully downloaded from registry and indexed.");
+            }
+
+            return success;
+        }
+        catch (Exception ex)
+        {
+            MapAssetManager.LogErr($"[MapDistributionClient] Exception downloading map '{mapId}' from registry: {ex.Message}");
             return false;
         }
     }

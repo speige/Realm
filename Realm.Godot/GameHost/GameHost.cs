@@ -53,6 +53,7 @@ public partial class GameHost : Node3D, IGameAPI
 	private Realm.Godot.Services.ModelOptimization.ModelOptimizerService _modelOptimizerService;
 	private TerrainNavMeshService _terrainNavMeshService;
 	private Realm.Godot.Services.MetadataService _metadataService;
+	private Realm.Godot.Services.MapUpgradeService _mapUpgradeService;
 
 	public CheatService CheatService => _cheatService;
 	public EnvironmentService EnvironmentService => _environmentService;
@@ -60,6 +61,7 @@ public partial class GameHost : Node3D, IGameAPI
 	public ShroudService ShroudService => _shroudService;
 	public Realm.Godot.Services.ModelOptimization.ModelOptimizerService ModelOptimizerService => _modelOptimizerService;
 	public Realm.Godot.Services.MetadataService MetadataService => _metadataService;
+	public Realm.Godot.Services.MapUpgradeService MapUpgradeService => _mapUpgradeService;
 
 	public bool UnlimitedPowerEnabled { get; set; } = false;
 	public bool GigachadEnabled { get; set; } = false;
@@ -667,12 +669,6 @@ public partial class GameHost : Node3D, IGameAPI
 	}
 
 
-	public enum ModelNormalMode
-	{
-		Original = 0,
-		Smooth = 1,
-		Flat = 2
-	}
 
 	public struct AttachmentMetadata
 	{
@@ -1145,8 +1141,8 @@ public partial class GameHost : Node3D, IGameAPI
 		public UnitMetadata()
 		{
 			Brightness = 0.5f;
-			NormalMode = ModelNormalMode.Flat;
 			NormalizeLuminance = true;
+			DespillPlayerColor = true;
 		}
 
 		public string UnitId { get; set; }
@@ -1174,14 +1170,9 @@ public partial class GameHost : Node3D, IGameAPI
 		public float CollisionCircle { get; set; }
 		public float Brightness { get; set; } = 0.5f;
 		public string Tint { get; set; }
-		public ModelNormalMode NormalMode { get; set; } = ModelNormalMode.Flat;
-		public bool RecalculateNormals
-		{
-			get => NormalMode == ModelNormalMode.Smooth;
-			set => NormalMode = value ? ModelNormalMode.Smooth : ModelNormalMode.Flat;
-		}
 		public bool NormalizeLuminance { get; set; } = true;
 		public bool IgnorePlayerColor { get; set; }
+		public bool DespillPlayerColor { get; set; } = true;
 		public string[]? BuildOptions { get; set; }
 		public bool IsHero { get; set; }
 		public string[]? Abilities { get; set; }
@@ -1357,9 +1348,9 @@ public partial class GameHost : Node3D, IGameAPI
 		public PropMetadata()
 		{
 			Brightness = 0.5f;
-			NormalMode = ModelNormalMode.Flat;
 			NormalizeLuminance = true;
 			IgnorePlayerColor = true;
+			DespillPlayerColor = true;
 		}
 
 		public string UnitId { get; set; }
@@ -1372,14 +1363,9 @@ public partial class GameHost : Node3D, IGameAPI
 		public float CollisionCircle { get; set; }
 		public float Brightness { get; set; } = 0.5f;
 		public string Tint { get; set; }
-		public ModelNormalMode NormalMode { get; set; } = ModelNormalMode.Flat;
-		public bool RecalculateNormals
-		{
-			get => NormalMode == ModelNormalMode.Smooth;
-			set => NormalMode = value ? ModelNormalMode.Smooth : ModelNormalMode.Flat;
-		}
 		public bool NormalizeLuminance { get; set; } = true;
 		public bool IgnorePlayerColor { get; set; } = true;
+		public bool DespillPlayerColor { get; set; } = true;
 		public int PathingType { get; set; }
 		public string SpawnShader { get; set; }
 		public string DeathShader { get; set; }
@@ -1395,9 +1381,9 @@ public partial class GameHost : Node3D, IGameAPI
 		public ResourceMetadata()
 		{
 			Brightness = 0.5f;
-			NormalMode = ModelNormalMode.Flat;
 			NormalizeLuminance = true;
 			IgnorePlayerColor = true;
+			DespillPlayerColor = true;
 		}
 
 		public string UnitId { get; set; }
@@ -1414,14 +1400,9 @@ public partial class GameHost : Node3D, IGameAPI
 		public float CollisionCircle { get; set; }
 		public float Brightness { get; set; } = 0.5f;
 		public string Tint { get; set; }
-		public ModelNormalMode NormalMode { get; set; } = ModelNormalMode.Flat;
-		public bool RecalculateNormals
-		{
-			get => NormalMode == ModelNormalMode.Smooth;
-			set => NormalMode = value ? ModelNormalMode.Smooth : ModelNormalMode.Flat;
-		}
 		public bool NormalizeLuminance { get; set; } = true;
 		public bool IgnorePlayerColor { get; set; } = true;
+		public bool DespillPlayerColor { get; set; } = true;
 		public int PathingType { get; set; }
 		public string SpawnShader { get; set; }
 		public string DeathShader { get; set; }
@@ -1563,6 +1544,8 @@ public partial class GameHost : Node3D, IGameAPI
 
 	public struct GlbItemMetadata
 	{
+		public GlbItemMetadata() { }
+
 		public string Hash { get; set; }
 		public string DefaultAssetType { get; set; }
 		public float MinY { get; set; }
@@ -1574,9 +1557,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public float Contrast { get; set; }
 		public float Saturation { get; set; }
 		public bool NormalizeLuminance { get; set; }
-		public ModelNormalMode NormalMode { get; set; }
-		public bool GenerateNormals { get; set; }
-		public bool RecalculateNormals { get; set; }
+		public bool DespillPlayerColor { get; set; } = true;
 		public float RotX { get; set; }
 		public float RotY { get; set; }
 		public float RotZ { get; set; }
@@ -3403,7 +3384,7 @@ public class {mapName} : IMapScript
 			: $"res://Maps/{mapName}/metadata.json";
 
 		var metaService = _metadataService ?? Realm.Godot.Services.MetadataService.Instance;
-		var metadata = metaService.LoadMetadata(path, fallbackToTemplate: true);
+		var metadata = metaService.LoadMetadata(path);
 
 		var newUnits = new Dictionary<string, UnitMetadata>(StringComparer.OrdinalIgnoreCase);
 		var newBuildings = new Dictionary<string, UnitMetadata>(StringComparer.OrdinalIgnoreCase);
@@ -3674,7 +3655,7 @@ public class {mapName} : IMapScript
 
 					foreach (var t in asm.GetExportedTypes())
 					{
-						if (typeof(IMapScript).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract)
+						if (typeof(IMapScript).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract && !typeof(IWasmRuntime).IsAssignableFrom(t) && t.GetConstructor(Type.EmptyTypes) != null)
 						{
 							_activeMapScript = (IMapScript?)Activator.CreateInstance(t);
 							if (_activeMapScript != null)
@@ -3694,44 +3675,47 @@ public class {mapName} : IMapScript
 		}
 		else
 		{
-			foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+			string searchName = mapName?.Replace("_", "").ToLower() ?? string.Empty;
+			if (!string.IsNullOrEmpty(searchName))
 			{
-				Type?[] types;
-				try
+				foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
 				{
-					types = assembly.GetTypes();
-				}
-				catch (System.Reflection.ReflectionTypeLoadException ex)
-				{
-					types = ex.Types;
-				}
-				catch (Exception)
-				{
-					continue;
-				}
-				if (types == null) continue;
-				foreach (var type in types)
-				{
-					if (type == null) continue;
-					if (typeof(IMapScript).IsAssignableFrom(type) && !type.IsInterface && !type.IsAbstract)
+					Type?[] types;
+					try
 					{
-						string typeName = type.Name.ToLower();
-						string searchName = mapName.Replace("_", "").ToLower();
-						if (typeName.Contains(searchName) || searchName.Contains(typeName))
+						types = assembly.GetTypes();
+					}
+					catch (System.Reflection.ReflectionTypeLoadException ex)
+					{
+						types = ex.Types;
+					}
+					catch (Exception)
+					{
+						continue;
+					}
+					if (types == null) continue;
+					foreach (var type in types)
+					{
+						if (type == null) continue;
+						if (typeof(IMapScript).IsAssignableFrom(type) && !type.IsInterface && !type.IsAbstract && !typeof(IWasmRuntime).IsAssignableFrom(type) && type.GetConstructor(Type.EmptyTypes) != null)
 						{
-							try
+							string typeName = type.Name.ToLower();
+							if (typeName.Contains(searchName) || searchName.Contains(typeName))
 							{
-								_activeMapScript = (IMapScript)Activator.CreateInstance(type);
-								break;
-							}
-							catch (Exception ex)
-							{
-								GD.PrintErr($"Failed to instantiate map script type {type.FullName}: {ex.Message}");
+								try
+								{
+									_activeMapScript = (IMapScript)Activator.CreateInstance(type);
+									break;
+								}
+								catch (Exception ex)
+								{
+									GD.PrintErr($"Failed to instantiate map script type {type.FullName}: {ex.Message}");
+								}
 							}
 						}
 					}
+					if (_activeMapScript != null) break;
 				}
-				if (_activeMapScript != null) break;
 			}
 		}
 
@@ -4824,16 +4808,11 @@ public class {mapName} : IMapScript
 			return radius;
 		}
 
-		// Prefer the radius measured at import time (persisted per model key) so custom map
-		// assets get a correct collision footprint without needing code-side collision shapes.
-		if (node != null)
+		string modelKey = node != null ? GetModelAssetKey(node) : GetModelAssetKey(id);
+		if (!string.IsNullOrEmpty(modelKey) && ModelObstacleRadii.TryGetValue(modelKey, out float measuredRadius) && measuredRadius > 0f)
 		{
-			string modelKey = GetModelAssetKey(node);
-			if (!string.IsNullOrEmpty(modelKey) && ModelObstacleRadii.TryGetValue(modelKey, out float measuredRadius) && measuredRadius > 0f)
-			{
-				ObstacleRadiusCache[id] = measuredRadius;
-				return measuredRadius;
-			}
+			ObstacleRadiusCache[id] = measuredRadius;
+			return measuredRadius;
 		}
 
 		float calculatedRadius = 0.5f;

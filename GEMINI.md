@@ -48,6 +48,11 @@
 - `MapTemplate/lib/Realm.MapAPI.{dll,pdb,xml}` is the canonical committed API binary. When changing `Realm.MapAPI` source, rebuild it (`dotnet build Realm.MapAPI`) so the `CopyToMapTemplate` target refreshes `MapTemplate/lib` and commit the updated binaries together with the API changes.
 - Shared map folders are portable when they contain a relative `.csproj` and the `lib/` folder. Saved/opened map folders are auto-repaired by `EnsureCsproj` on the next workspace setup.
 
+### Map File Format & Zero-Fallback Policy:
+- Strict Canonical Schema: Runtime loaders, parsers, and editor services must maintain zero fallback paths and strictly expect canonical variable names and data structures (e.g., `MapName`, `MapDescription`, `CustomUnits`, `CustomBuildings`, `CustomResources`, `CustomProps`, `CustomAbilities`, `CustomWeapons`, `CustomUpgrades`, `CustomItems`, `CustomAttachments`, `CustomVfx`, `swatchIndex`, `Scale_Factor`, `vfx_spritesheets`, `noise_textures`, `ribbons`). Never add backwards-compatibility fallbacks, casing aliases, or fallback-to-template shims in runtime loading logic.
+- Map Migrations (`MapUpgradeService`): Backwards compatibility for older maps is handled exclusively via sequential `IMapMigration` classes inside `MapUpgradeService`, modeled after Entity Framework Migrations. Each release build only transitions from the immediate prior version (`v0.0.0 -> v0.0.1 -> v0.0.2...`), allowing multi-version outdated maps to upgrade sequentially in sequence.
+- `GameBuildNumber`: Every `metadata.json` must include a `GameBuildNumber` string matching `RealmVersion.GameBuildNumber`. This value is hardcoded and only changed manually when publishing and tagging an official release. Matches in the game lobby are locked to the map's `GameBuildNumber`.
+
 ## AI "Vibe" Coding & Maintenance Instructions:
 - Avoid using proprietary or copyrighted terms from other games
 - For fast lookup during queries without breaking the PURE DATA PRINCIPLE, do not put Godot Nodes inside components. Instead, map the relationship using unique entity IDs, or look up corresponding visual nodes via a managed registry outside the ECS system arrays.
@@ -55,4 +60,4 @@
 
 ## Test CLI example
 dotnet test Realm.Godot/Realm.Godot.csproj -e GODOT_BIN="C:\Program Files\Godot_v4.7-stable_mono_win64\Godot_v4.7-stable_mono_win64.exe" --filter "FullyQualifiedName~Realm.Godot.Tests.MapEditorUxTests.TestCustomWeaponProjectileLayersAndVisualRendering"
-- Don't run tests unless explicity told to do so
+- Don't run tests unless explicitly told to do so

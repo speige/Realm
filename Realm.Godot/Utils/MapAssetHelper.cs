@@ -423,7 +423,7 @@ public static class MapAssetHelper
 		EnsureMetadataTopLevelObject(metadataRoot, "ModelCollisionCircleRatios");
 		EnsureMetadataTopLevelObject(metadataRoot, "ModelObstacleRadii");
 		EnsureMetadataTopLevelObject(metadataRoot, "ModelBrightness");
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelNormalModes");
+		EnsureMetadataTopLevelObject(metadataRoot, "ModelDespillPlayerColor");
 		EnsureMetadataTopLevelObject(metadataRoot, "ModelNormalizeLuminance");
 		EnsureMetadataTopLevelObject(metadataRoot, "ModelIgnorePlayerColor");
 		EnsureMetadataTopLevelObject(metadataRoot, "ModelSpawnShaders");
@@ -434,7 +434,7 @@ public static class MapAssetHelper
 		var collisionCircleObject = metadataRoot["ModelCollisionCircleRatios"]!.AsObject();
 		var obstacleRadiiObject = metadataRoot["ModelObstacleRadii"]!.AsObject();
 		var brightnessObject = metadataRoot["ModelBrightness"]!.AsObject();
-		var normalModesObject = metadataRoot["ModelNormalModes"]!.AsObject();
+		var despillObject = metadataRoot["ModelDespillPlayerColor"]!.AsObject();
 		var normalizeLuminanceObject = metadataRoot["ModelNormalizeLuminance"]!.AsObject();
 		var ignorePlayerColorObject = metadataRoot["ModelIgnorePlayerColor"]!.AsObject();
 		var spawnShadersObject = metadataRoot["ModelSpawnShaders"]!.AsObject();
@@ -469,9 +469,9 @@ public static class MapAssetHelper
 						{
 							brightnessObject[fileName] = brightness;
 						}
-						if (modelProperties.TryGetPropertyValue("normal_mode", out var normalModeNode) && normalModeNode != null)
+						if (modelProperties.TryGetPropertyValue("despill_player_color", out var despillNode) && despillNode != null && bool.TryParse(despillNode.ToString(), out bool despill))
 						{
-							normalModesObject[fileName] = normalModeNode.ToString();
+							despillObject[fileName] = despill;
 						}
 						if (modelProperties.TryGetPropertyValue("normalize_luminance", out var normalizeLuminanceNode) && normalizeLuminanceNode != null && bool.TryParse(normalizeLuminanceNode.ToString(), out bool normalizeLuminance))
 						{
@@ -526,7 +526,7 @@ public static class MapAssetHelper
 
 			if (categoryKey == "glb")
 			{
-				foreach (var mapKey in new[] { "ModelOffsets", "ModelScales", "ModelCollisionCircleRatios", "ModelObstacleRadii", "ModelBrightness", "ModelNormalModes", "ModelNormalizeLuminance", "ModelIgnorePlayerColor", "ModelSpawnShaders", "ModelDeathShaders" })
+				foreach (var mapKey in new[] { "ModelOffsets", "ModelScales", "ModelCollisionCircleRatios", "ModelObstacleRadii", "ModelBrightness", "ModelDespillPlayerColor", "ModelNormalizeLuminance", "ModelIgnorePlayerColor", "ModelSpawnShaders", "ModelDeathShaders" })
 				{
 					if (metadataRoot.TryGetPropertyValue(mapKey, out var mapNode) && mapNode is JsonObject mapObject)
 					{
@@ -566,18 +566,10 @@ public static class MapAssetHelper
 		{
 			MergeCategoryAttributes(unionedAssets, "vfx_spritesheets", vfxObject);
 		}
-		else if (metadataRoot["vfx"] is JsonObject vfxAltObject)
-		{
-			MergeCategoryAttributes(unionedAssets, "vfx_spritesheets", vfxAltObject);
-		}
 
 		if (metadataRoot["noise_textures"] is JsonObject noiseObject)
 		{
 			MergeCategoryAttributes(unionedAssets, "noise_textures", noiseObject);
-		}
-		else if (metadataRoot["noise"] is JsonObject noiseAltObject)
-		{
-			MergeCategoryAttributes(unionedAssets, "noise_textures", noiseAltObject);
 		}
 
 		if (metadataRoot["icons"] is JsonObject iconsObject)
@@ -594,19 +586,6 @@ public static class MapAssetHelper
 		{
 			MergeCategoryAttributes(unionedAssets, "ribbons", ribbonsObject);
 		}
-		else if (metadataRoot["ribbon_textures"] is JsonObject ribbonsAltObject)
-		{
-			MergeCategoryAttributes(unionedAssets, "ribbons", ribbonsAltObject);
-		}
-
-		if (metadataRoot["Assets"] is JsonObject legacyAssets)
-		{
-			MergeAssetsInto(unionedAssets, legacyAssets);
-		}
-		if (metadataRoot["MapProperties"]?["Assets"] is JsonObject legacyMapPropsAssets)
-		{
-			MergeAssetsInto(unionedAssets, legacyMapPropsAssets);
-		}
 
 		AttachCustomEntitiesToGlb(unionedAssets, metadataRoot, targetDirectory);
 		AttachModelMetadataAttributes(unionedAssets, metadataRoot);
@@ -617,17 +596,11 @@ public static class MapAssetHelper
 		var arrayMappings = new (string ArrayKey, string SubCategory)[]
 		{
 			("CustomUnits", "units"),
-			("Units", "units"),
 			("CustomBuildings", "buildings"),
-			("Buildings", "buildings"),
 			("CustomResources", "resources"),
-			("Resources", "resources"),
 			("CustomProps", "props"),
-			("Props", "props"),
 			("CustomAttachments", "attachments"),
-			("Attachments", "attachments"),
-			("CustomWeapons", "weapons"),
-			("Weapons", "weapons")
+			("CustomWeapons", "weapons")
 		};
 
 		foreach (var (arrayKey, subCat) in arrayMappings)
@@ -647,12 +620,16 @@ public static class MapAssetHelper
 						if (!string.IsNullOrEmpty(modelPath))
 						{
 							string fileName = Path.GetFileName(modelPath);
-							if (!fileName.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) && !fileName.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
+							string? diskPath = FindModelOnDisk(targetDirectory, subCat, fileName, out string resolvedSub);
+							if (!string.IsNullOrEmpty(diskPath))
 							{
-								fileName += ".glb";
+								fileName = Path.GetFileName(diskPath);
+							}
+							else if (!fileName.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
+							{
+								fileName = Path.ChangeExtension(fileName, ".rmesh");
 							}
 
-							string? diskPath = FindModelOnDisk(targetDirectory, subCat, fileName);
 							EnsureGlbEntryExists(unionedAssets, subCat, fileName, diskPath);
 						}
 					}
@@ -663,7 +640,7 @@ public static class MapAssetHelper
 		string[] modelDictNames = new[]
 		{
 			"ModelOffsets", "ModelScales", "ModelCollisionCircleRatios", "ModelObstacleRadii",
-			"ModelBrightness", "ModelNormalModes", "ModelNormalizeLuminance",
+			"ModelBrightness", "ModelDespillPlayerColor", "ModelNormalizeLuminance",
 			"ModelIgnorePlayerColor", "ModelSpawnShaders", "ModelDeathShaders"
 		};
 
@@ -674,16 +651,16 @@ public static class MapAssetHelper
 				foreach (var prop in dictObj)
 				{
 					string rawName = prop.Key;
-					string fileName = rawName.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) || rawName.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase)
-						? rawName
-						: rawName + ".glb";
-
-					string? existingSub = FindExistingGlbSubCategory(unionedAssets, fileName);
+					string? existingSub = FindExistingGlbSubCategory(unionedAssets, rawName);
 					if (string.IsNullOrEmpty(existingSub))
 					{
-						string? diskPath = FindModelOnDisk(targetDirectory, null, fileName, out string foundSub);
-						existingSub = !string.IsNullOrEmpty(foundSub) ? foundSub : "props";
-						EnsureGlbEntryExists(unionedAssets, existingSub, fileName, diskPath);
+						string? diskPath = FindModelOnDisk(targetDirectory, null, rawName, out string foundSub);
+						if (!string.IsNullOrEmpty(diskPath))
+						{
+							string fileName = Path.GetFileName(diskPath);
+							existingSub = !string.IsNullOrEmpty(foundSub) ? foundSub : "props";
+							EnsureGlbEntryExists(unionedAssets, existingSub, fileName, diskPath);
+						}
 					}
 				}
 			}
@@ -801,32 +778,51 @@ public static class MapAssetHelper
 			return null;
 		}
 
+		string[] candidateFiles;
+		if (fileName.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
+		{
+			candidateFiles = new[] { fileName };
+		}
+		else
+		{
+			candidateFiles = new[] { $"{fileName}.rmesh", $"{Path.GetFileNameWithoutExtension(fileName)}.rmesh" };
+		}
+
 		if (!string.IsNullOrEmpty(preferredSubCategory))
 		{
 			string prefSub = NormalizeGlbSubCategory(preferredSubCategory);
-			string preferredPath = Path.Combine(modelsDir, prefSub, fileName);
-			if (File.Exists(preferredPath))
+			foreach (var cand in candidateFiles)
 			{
-				resolvedSubCategory = prefSub;
-				return preferredPath;
+				string preferredPath = Path.Combine(modelsDir, prefSub, cand);
+				if (File.Exists(preferredPath))
+				{
+					resolvedSubCategory = prefSub;
+					return preferredPath;
+				}
 			}
 		}
 
 		string[] subCategories = new[] { "units", "buildings", "resources", "props", "projectiles", "attachments", "weapons" };
 		foreach (var sub in subCategories)
 		{
-			string candPath = Path.Combine(modelsDir, sub, fileName);
-			if (File.Exists(candPath))
+			foreach (var cand in candidateFiles)
 			{
-				resolvedSubCategory = sub;
-				return candPath;
+				string candPath = Path.Combine(modelsDir, sub, cand);
+				if (File.Exists(candPath))
+				{
+					resolvedSubCategory = sub;
+					return candPath;
+				}
 			}
 		}
 
-		string directPath = Path.Combine(modelsDir, fileName);
-		if (File.Exists(directPath))
+		foreach (var cand in candidateFiles)
 		{
-			return directPath;
+			string directPath = Path.Combine(modelsDir, cand);
+			if (File.Exists(directPath))
+			{
+				return directPath;
+			}
 		}
 
 		return null;
@@ -841,11 +837,21 @@ public static class MapAssetHelper
 	{
 		if (unionedAssets["glb"] is JsonObject glbObj)
 		{
+			string[] candidates = fileName.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase)
+				? new[] { fileName }
+				: new[] { fileName, $"{fileName}.rmesh", $"{Path.GetFileNameWithoutExtension(fileName)}.rmesh" };
+
 			foreach (var subPair in glbObj)
 			{
-				if (subPair.Value is JsonObject subObj && subObj.ContainsKey(fileName))
+				if (subPair.Value is JsonObject subObj)
 				{
-					return subPair.Key;
+					foreach (var cand in candidates)
+					{
+						if (subObj.ContainsKey(cand))
+						{
+							return subPair.Key;
+						}
+					}
 				}
 			}
 		}
@@ -1010,7 +1016,7 @@ public static class MapAssetHelper
 		var collisionCircleObject = metadataRoot["ModelCollisionCircleRatios"] as JsonObject;
 		var obstacleRadiiObject = metadataRoot["ModelObstacleRadii"] as JsonObject;
 		var brightnessObject = metadataRoot["ModelBrightness"] as JsonObject;
-		var normalModesObject = metadataRoot["ModelNormalModes"] as JsonObject;
+		var despillObject = metadataRoot["ModelDespillPlayerColor"] as JsonObject;
 		var normalizeLuminanceObject = metadataRoot["ModelNormalizeLuminance"] as JsonObject;
 		var ignorePlayerColorObject = metadataRoot["ModelIgnorePlayerColor"] as JsonObject;
 		var spawnShadersObject = metadataRoot["ModelSpawnShaders"] as JsonObject;
@@ -1060,9 +1066,9 @@ public static class MapAssetHelper
 					{
 						modelObject["brightness"] = brightNode?.DeepClone();
 					}
-					if (normalModesObject != null && (normalModesObject.TryGetPropertyValue(fileName, out var normalNode) || normalModesObject.TryGetPropertyValue(baseName, out normalNode)))
+					if (despillObject != null && (despillObject.TryGetPropertyValue(fileName, out var despillNode) || despillObject.TryGetPropertyValue(baseName, out despillNode)))
 					{
-						modelObject["normal_mode"] = normalNode?.DeepClone();
+						modelObject["despill_player_color"] = despillNode?.DeepClone();
 					}
 					if (normalizeLuminanceObject != null && (normalizeLuminanceObject.TryGetPropertyValue(fileName, out var lumNode) || normalizeLuminanceObject.TryGetPropertyValue(baseName, out lumNode)))
 					{
@@ -1171,16 +1177,17 @@ public static class MapAssetHelper
 	public static string NormalizeGlbSubCategory(string subCategory)
 	{
 		string lower = subCategory.ToLowerInvariant();
-		if (lower.StartsWith("glb_")) lower = lower.Substring(4);
+		if (lower.StartsWith("rmesh_")) lower = lower.Substring(6);
 		return lower switch
 		{
-			"unit" or "units" or "character" => "units",
+			"unit" or "units" or "character" or "characters" => "units",
 			"building" or "buildings" => "buildings",
 			"resource" or "resources" or "environment" => "resources",
 			"prop" or "props" => "props",
 			"projectile" or "projectiles" => "projectiles",
 			"attachment" or "attachments" => "attachments",
 			"weapon" or "weapons" => "weapons",
+			"item" or "items" => "items",
 			_ => lower
 		};
 	}

@@ -98,7 +98,7 @@ public class ShroudService
 shader_type spatial;
 render_mode unshaded, depth_draw_never, cull_disabled, blend_mix;
 
-uniform sampler2D shroud_texture : hint_default_white;
+uniform sampler2D shroud_texture : hint_default_black;
 uniform vec2 shroud_world_min = vec2(-125.0, -125.0);
 uniform vec2 shroud_world_size = vec2(250.0, 250.0);
 
@@ -129,11 +129,6 @@ void fragment() {
 	{
 		if (GameHost.Instance != null && GameHost.Instance.IsMapEditorMode)
 		{
-			if (_isEditorShroudInitialized)
-			{
-				return;
-			}
-
 			if (GodotObject.IsInstanceValid(_shroudMeshInstance) && _shroudMeshInstance.Visible)
 			{
 				_shroudMeshInstance.Visible = false;
@@ -159,29 +154,38 @@ void fragment() {
 					decal.Visible = true;
 				}
 			}
+
 			if (GameHost.Instance?.GroundTerrain != null)
 			{
-				_isEditorShroudInitialized = true;
-				if (_shroudImage == null)
+				GameHost.Instance.GroundTerrain.SetShroudEnabled(false);
+				if (!_isEditorShroudInitialized)
 				{
-					_shroudImage = Image.CreateEmpty(32, 32, false, Image.Format.Rf);
+					_isEditorShroudInitialized = true;
+					if (_shroudImage == null)
+					{
+						_shroudImage = Image.CreateEmpty(32, 32, false, Image.Format.Rf);
+					}
+					_shroudImage.Fill(new Color(0f, 0f, 0f, 1f));
+					if (_shroudTexture == null)
+					{
+						_shroudTexture = ImageTexture.CreateFromImage(_shroudImage);
+					}
+					else
+					{
+						_shroudTexture.Update(_shroudImage);
+					}
+					GameHost.Instance.GroundTerrain.SetShroudTexture(_shroudTexture);
+					Realm.Godot.Utils.ModelShaderManager.SetShroudParameters(null, Vector2.Zero, Vector2.Zero, false);
 				}
-				_shroudImage.Fill(new Color(0f, 0f, 0f, 1f));
-				if (_shroudTexture == null)
-				{
-					_shroudTexture = ImageTexture.CreateFromImage(_shroudImage);
-				}
-				else
-				{
-					_shroudTexture.Update(_shroudImage);
-				}
-				GameHost.Instance.GroundTerrain.SetShroudTexture(_shroudTexture);
-				Realm.Godot.Utils.ModelShaderManager.SetShroudParameters(null, Vector2.Zero, Vector2.Zero, false);
 			}
 			return;
 		}
 
 		_isEditorShroudInitialized = false;
+		if (GameHost.Instance?.GroundTerrain != null)
+		{
+			GameHost.Instance.GroundTerrain.SetShroudEnabled(true);
+		}
 
 		string shroudType = ShroudType;
 		if (GodotObject.IsInstanceValid(_shroudMeshInstance))
@@ -210,7 +214,7 @@ void fragment() {
 
 	public void TriggerImmediateUpdate()
 	{
-		if (GameHost.Instance != null)
+		if (GameHost.Instance != null && !GameHost.Instance.IsMapEditorMode)
 		{
 			int specPerspective = GameHost.Instance.SpectatorService?.GetSpectatorPerspective() ?? -1;
 			UpdateShroud(GameHost.Instance.AllUnits, GameHost.Instance.AllProps, GameHost.Instance.AllDecals, specPerspective, ReplayPlaybackManager.Instance.IsPlayingReplay, LobbyManager.Instance != null && LobbyManager.Instance.LocalPlayer != null && LobbyManager.Instance.LocalPlayer.Team == "Spectator");
@@ -220,11 +224,15 @@ void fragment() {
 
 	public void CleanUp()
 	{
+		_isEditorShroudInitialized = false;
 		if (GodotObject.IsInstanceValid(_shroudMeshInstance))
 		{
 			_shroudMeshInstance.QueueFree();
 			_shroudMeshInstance = null;
 		}
+		_shroudImage = null;
+		_shroudTexture = null;
+		_cachedWorldEntity = Entity.Null;
 	}
 
 	private void UpdateShroud(List<Unit3D> allUnits, List<Prop3D> allProps, List<Decal> allDecals, int spectatorPerspective, bool isPlayingReplay, bool isSpectator)
@@ -528,16 +536,17 @@ void fragment() {
 
 		float halfW = 125.0f;
 		float halfD = 125.0f;
+		bool shroudEnabled = GameHost.Instance == null || !GameHost.Instance.IsMapEditorMode;
 		if (GameHost.Instance?.GroundTerrain != null)
 		{
 			halfW = (GameHost.Instance.GroundTerrain.Width * GameHost.Instance.GroundTerrain.QuadSize) * 0.5f;
 			halfD = (GameHost.Instance.GroundTerrain.Depth * GameHost.Instance.GroundTerrain.QuadSize) * 0.5f;
 			GameHost.Instance.GroundTerrain.SetShroudTexture(_shroudTexture);
+			GameHost.Instance.GroundTerrain.SetShroudEnabled(shroudEnabled);
 		}
 
 		Vector2 worldMin = new Vector2(-halfW, -halfD);
 		Vector2 worldSize = new Vector2(halfW * 2f, halfD * 2f);
-		bool shroudEnabled = GameHost.Instance == null || !GameHost.Instance.IsMapEditorMode;
 		Realm.Godot.Utils.ModelShaderManager.SetShroudParameters(_shroudTexture, worldMin, worldSize, shroudEnabled);
 
 		_shroudMeshMaterial?.SetShaderParameter("shroud_texture", _shroudTexture);

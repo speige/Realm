@@ -148,12 +148,22 @@ public partial class LobbyCreate : Control
 		{
 			string singleMapPathName = "melee";
 			string singleMapDisplayName = "Melee Battlefield";
+			string singleMapBuildNumber = Realm.Shared.RealmVersion.GameBuildNumber;
 			int singleSelectedIndex = _mapSelectButton.Selected;
 			if (singleSelectedIndex >= 0 && singleSelectedIndex < _availableMaps.Count)
 			{
 				singleMapPathName = _availableMaps[singleSelectedIndex].PathName;
 				singleMapDisplayName = _availableMaps[singleSelectedIndex].DisplayName;
+				singleMapBuildNumber = _availableMaps[singleSelectedIndex].GameBuildNumber;
 			}
+
+			if (!string.IsNullOrEmpty(singleMapBuildNumber) && !string.Equals(singleMapBuildNumber, Realm.Shared.RealmVersion.GameBuildNumber, StringComparison.OrdinalIgnoreCase))
+			{
+				UIManager.Instance.PlayWarningSound();
+				ShowMapBuildMismatchModal(singleMapPathName, singleMapDisplayName, singleMapBuildNumber, Realm.Shared.RealmVersion.GameBuildNumber);
+				return;
+			}
+
 			_createButton.Disabled = true;
 			LobbyManager.Instance.HostSinglePlayerGame(singleMapPathName, singleMapDisplayName);
 			_createButton.Disabled = false;
@@ -169,11 +179,20 @@ public partial class LobbyCreate : Control
 		
 		string mapPathName = "melee";
 		string mapDisplayName = "Melee Battlefield";
+		string mapBuildNumber = Realm.Shared.RealmVersion.GameBuildNumber;
 		int selectedIndex = _mapSelectButton.Selected;
 		if (selectedIndex >= 0 && selectedIndex < _availableMaps.Count)
 		{
 			mapPathName = _availableMaps[selectedIndex].PathName;
 			mapDisplayName = _availableMaps[selectedIndex].DisplayName;
+			mapBuildNumber = _availableMaps[selectedIndex].GameBuildNumber;
+		}
+
+		if (!string.IsNullOrEmpty(mapBuildNumber) && !string.Equals(mapBuildNumber, Realm.Shared.RealmVersion.GameBuildNumber, StringComparison.OrdinalIgnoreCase))
+		{
+			UIManager.Instance.PlayWarningSound();
+			ShowMapBuildMismatchModal(mapPathName, mapDisplayName, mapBuildNumber, Realm.Shared.RealmVersion.GameBuildNumber);
+			return;
 		}
 
 		_createButton.Disabled = true;
@@ -189,6 +208,109 @@ public partial class LobbyCreate : Control
 			UIManager.Instance.PlayWarningSound();
 			GD.PrintErr("[LobbyCreate] Failed to host lobby.");
 		}
+	}
+
+	private void ShowMapBuildMismatchModal(string mapPath, string mapDisplayName, string mapBuildNumber, string currentBuildNumber)
+	{
+		var warningPopup = new Panel();
+		warningPopup.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		warningPopup.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		AddChild(warningPopup);
+
+		var cardPanel = new Panel();
+		cardPanel.CustomMinimumSize = new Vector2(520, 290);
+		cardPanel.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
+		cardPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		warningPopup.AddChild(cardPanel);
+
+		var vbox = new VBoxContainer();
+		vbox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		vbox.CustomMinimumSize = new Vector2(480, 260);
+		vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		vbox.SizeFlagsVertical = SizeFlags.ExpandFill;
+		cardPanel.AddChild(vbox);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 15) });
+
+		var titleLabel = new Label();
+		UIStyle.ApplyTitle(titleLabel, Tr("MAP BUILD MISMATCH"), 20);
+		titleLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.4f, 0.3f));
+		vbox.AddChild(titleLabel);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 8) });
+
+		bool versionExistsLocally = System.IO.File.Exists(LobbyManager.GetVersionExecutablePath(mapBuildNumber));
+
+		var descLabel = new Label();
+		string promptText = Tr("This map is out of date. To host this match, download the matching game build or open the map in the Map Editor to upgrade it.");
+		descLabel.Text = $"{string.Format(Tr("Map: {0}"), mapDisplayName)}\n{string.Format(Tr("Map Build: {0}"), mapBuildNumber)} | {string.Format(Tr("Current Build: {0}"), currentBuildNumber)}\n\n{promptText}";
+		descLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		descLabel.AddThemeFontSizeOverride("font_size", 13);
+		descLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
+		vbox.AddChild(descLabel);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 15) });
+
+		var hBox = new HBoxContainer();
+		hBox.Alignment = BoxContainer.AlignmentMode.Center;
+		hBox.AddThemeConstantOverride("separation", 12);
+		vbox.AddChild(hBox);
+
+		var editorBtn = new Button();
+		editorBtn.Flat = false;
+		editorBtn.AddThemeConstantOverride("icon_max_width", 0);
+		editorBtn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		editorBtn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		editorBtn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		editorBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		UIStyle.ApplyButtonText(editorBtn, Tr("OPEN MAP EDITOR"), 13);
+		editorBtn.CustomMinimumSize = new Vector2(140, 38);
+		editorBtn.Pressed += () =>
+		{
+			UIManager.Instance.PlayClickSound();
+			warningPopup.QueueFree();
+			UIManager.Instance.TransitionTo(GameScreen.MapEditorHUD);
+		};
+		hBox.AddChild(editorBtn);
+
+		var versionBtn = new Button();
+		versionBtn.Flat = false;
+		versionBtn.AddThemeConstantOverride("icon_max_width", 0);
+		versionBtn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		versionBtn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		versionBtn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		versionBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		string btnText = versionExistsLocally ? string.Format(Tr("LAUNCH {0}"), mapBuildNumber) : string.Format(Tr("DOWNLOAD {0}"), mapBuildNumber);
+		UIStyle.ApplyButtonText(versionBtn, btnText, 13);
+		versionBtn.CustomMinimumSize = new Vector2(140, 38);
+		versionBtn.Pressed += () =>
+		{
+			UIManager.Instance.PlayClickSound();
+			warningPopup.QueueFree();
+			if (versionExistsLocally)
+			{
+				string exePath = LobbyManager.GetVersionExecutablePath(mapBuildNumber);
+				OS.CreateProcess(exePath, Array.Empty<string>());
+				GetTree().Quit();
+			}
+		};
+		hBox.AddChild(versionBtn);
+
+		var cancelBtn = new Button();
+		cancelBtn.Flat = false;
+		cancelBtn.AddThemeConstantOverride("icon_max_width", 0);
+		cancelBtn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		cancelBtn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		cancelBtn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		cancelBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		UIStyle.ApplyButtonText(cancelBtn, Tr("CANCEL"), 13);
+		cancelBtn.CustomMinimumSize = new Vector2(100, 38);
+		cancelBtn.Pressed += () =>
+		{
+			UIManager.Instance.PlayClickSound();
+			warningPopup.QueueFree();
+		};
+		hBox.AddChild(cancelBtn);
 	}
 
 	private void ShowSTUNErrorModal()

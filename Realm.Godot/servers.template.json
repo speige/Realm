@@ -1,0 +1,16 @@
+{
+  "adminPublicKeys": [
+    "7evqy7AtGhMV2lqeX306N/QJj+Evhk4AeaJuW53qPT8="
+  ],
+  "registryServers": [
+    "http://127.0.0.1:5000"
+  ],
+  "servers": [
+    {
+      "id": "official_primary",
+      "name": "Official Primary Cluster",
+      "url": "http://127.0.0.1:5000",
+      "region": "global"
+    }
+  ]
+}

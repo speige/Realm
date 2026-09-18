@@ -99,7 +99,7 @@ public class PeerMapDownloader
                 return false;
             }
 
-            string localManifestDir = MapAssetManager.GlobalArchiveDirectory;
+            string localManifestDir = MapAssetManager.P2PArchiveDirectory;
             if (!Directory.Exists(localManifestDir))
             {
                 Directory.CreateDirectory(localManifestDir);
@@ -132,7 +132,7 @@ public class PeerMapDownloader
                         return false;
                     }
 
-                    MapAssetManager.AddOrUpdateGlobalArchive(new Dictionary<string, byte[]> { { hash, fileData } });
+                    MapAssetManager.AddOrUpdateP2PArchive(new Dictionary<string, byte[]> { { hash, fileData } });
                     completed++;
                     float progress = (float)completed / missingHashes.Count;
                     DownloadProgressChanged?.Invoke(progress);
@@ -142,6 +142,8 @@ public class PeerMapDownloader
             {
                 DownloadProgressChanged?.Invoke(1.0f);
             }
+
+            AssetIndexService.Instance.RegisterManifest(manifest, localManifestPath, isP2P: true);
 
             CleanupSockets();
             return true;

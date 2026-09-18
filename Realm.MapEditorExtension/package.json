@@ -45,8 +45,44 @@
                                                                    }
                                                                ],
                                                   "priority":  "default"
+                                              },
+                                              {
+                                                  "viewType":  "realm.rmeshViewer",
+                                                  "displayName":  "Realm 3D Mesh Viewer",
+                                                  "selector":  [
+                                                                   {
+                                                                       "filenamePattern":  "*.rmesh"
+                                                                   }
+                                                               ],
+                                                  "priority":  "default"
+                                              },
+                                              {
+                                                  "viewType":  "realm.raudViewer",
+                                                  "displayName":  "Realm Audio Player",
+                                                  "selector":  [
+                                                                   {
+                                                                       "filenamePattern":  "*.raud"
+                                                                   }
+                                                               ],
+                                                  "priority":  "default"
                                               }
                                           ],
+                        "commands":  [
+                                         {
+                                             "command":  "realm.openRmesh3D",
+                                             "title":  "Open in 3D GLB Viewer",
+                                             "category":  "Realm"
+                                         }
+                                     ],
+                        "menus":  {
+                                      "explorer/context":  [
+                                                               {
+                                                                   "command":  "realm.openRmesh3D",
+                                                                   "when":  "resourceExtname == .rmesh",
+                                                                   "group":  "navigation"
+                                                               }
+                                                           ]
+                                  },
                         "jsonValidation":  [
                                                {
                                                    "fileMatch":  "**/metadata.json",

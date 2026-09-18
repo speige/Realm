@@ -54,6 +54,7 @@ public partial class GameHost
 		services.AddSingleton<Realm.Godot.Services.ModelOptimization.ModelOptimizerService>();
 		services.AddSingleton<AssetIndexService>();
 		services.AddSingleton<Realm.Godot.Services.MetadataService>();
+		services.AddSingleton<Realm.Godot.Services.MapUpgradeService>();
 		services.AddSingleton<SimulationService>(sp =>
 		{
 			return new SimulationService(sp.GetRequiredService<WorldAccessor>(), Entity.Null, GameHost.Instance?._pathfinder ?? new NavMeshPathfinder());
@@ -89,5 +90,6 @@ public partial class GameHost
 		_modelOptimizerService = ServiceLocator.Get<Realm.Godot.Services.ModelOptimization.ModelOptimizerService>();
 		_terrainNavMeshService = ServiceLocator.Get<TerrainNavMeshService>();
 		_metadataService = ServiceLocator.Get<Realm.Godot.Services.MetadataService>();
+		_mapUpgradeService = ServiceLocator.Get<Realm.Godot.Services.MapUpgradeService>();
 	}
 }

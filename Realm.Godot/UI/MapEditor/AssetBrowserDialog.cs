@@ -48,7 +48,9 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 	private bool _requireRealmMetadata = false;
 	private string? _selectedAssetTypeFilter;
 	private OptionButton _optAssetTypeFilter;
-	private string? _selectedDirectoryFilter;
+	private static string? _selectedDirectoryFilter;
+	private static string? _selectedMapNameFilter;
+	private static string? _selectedMapVersionFilter;
 	private IndexedAsset? _selectedAsset;
 	private Action<string>? _onAssetSelectedCallback;
 
@@ -370,7 +372,7 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 			.Select(e => e.StartsWith(".") ? e : "." + e)
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-		if (_allowedExtensions.Contains(".glb"))
+		if (_allowedExtensions.Contains(".rmesh"))
 		{
 			requireRealmMetadata = true;
 		}
@@ -408,9 +410,77 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 		}
 
 		_optDirectoryFilter.Clear();
-		_optDirectoryFilter.AddItem(TranslationServer.Translate("All Indexed Folders"), 0);
+		_optDirectoryFilter.AddItem(TranslationServer.Translate("All Indexed Folders & Maps"), 0);
+		_optDirectoryFilter.SetItemMetadata(0, "all");
+
+		int selectedIndex = 0;
+		int currentItemIndex = 1;
+
+		var downloadedPackages = AssetIndexService.Instance.GetDownloadedMapPackages();
+		var mapGroups = downloadedPackages
+			.GroupBy(p => p.MapName, StringComparer.OrdinalIgnoreCase)
+			.OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
+
+		foreach (var group in mapGroups)
+		{
+			string mapName = group.Key;
+			var sortedVersions = group.OrderBy(p => p.MapVersion, StringComparer.OrdinalIgnoreCase).ToList();
+			sortedVersions.Sort((a, b) => AssetIndexService.CompareVersions(b.MapVersion, a.MapVersion));
+
+			bool isFirst = true;
+			foreach (var pkg in sortedVersions)
+			{
+				string ver = pkg.MapVersion;
+				string label = isFirst
+					? $"📦 [Map] {mapName} ({ver} - {TranslationServer.Translate("Latest")})"
+					: $"📦 [Map] {mapName} ({ver})";
+				string metaKey = $"map:{mapName}|{ver}";
+
+				_optDirectoryFilter.AddItem(label, currentItemIndex);
+				_optDirectoryFilter.SetItemMetadata(currentItemIndex, metaKey);
+
+				if (!string.IsNullOrEmpty(_selectedMapNameFilter) &&
+					string.Equals(mapName, _selectedMapNameFilter, StringComparison.OrdinalIgnoreCase) &&
+					(string.IsNullOrEmpty(_selectedMapVersionFilter) || string.Equals(_selectedMapVersionFilter, "latest", StringComparison.OrdinalIgnoreCase) && isFirst || string.Equals(_selectedMapVersionFilter, ver, StringComparison.OrdinalIgnoreCase)))
+				{
+					selectedIndex = currentItemIndex;
+				}
+
+				currentItemIndex++;
+				isFirst = false;
+			}
+
+			var mapChip = new PanelContainer();
+			var mapChipStyle = new StyleBoxFlat();
+			mapChipStyle.BgColor = new Color(0.15f, 0.16f, 0.19f, 0.9f);
+			mapChipStyle.BorderColor = UIStyle.ColorGold;
+			mapChipStyle.SetBorderWidthAll(1);
+			mapChipStyle.CornerRadiusTopLeft = 3;
+			mapChipStyle.CornerRadiusTopRight = 3;
+			mapChipStyle.CornerRadiusBottomLeft = 3;
+			mapChipStyle.CornerRadiusBottomRight = 3;
+			mapChipStyle.ContentMarginLeft = 6;
+			mapChipStyle.ContentMarginRight = 6;
+			mapChipStyle.ContentMarginTop = 2;
+			mapChipStyle.ContentMarginBottom = 2;
+			mapChip.AddThemeStyleboxOverride("panel", mapChipStyle);
+			mapChip.TooltipText = $"{TranslationServer.Translate("Filter by map package")}: {mapName}";
+
+			var mapChipHBox = new HBoxContainer();
+			mapChipHBox.AddThemeConstantOverride("separation", 4);
+			mapChip.AddChild(mapChipHBox);
+
+			var lblMapName = new Label();
+			lblMapName.Text = $"📦 {mapName}";
+			lblMapName.AddThemeFontSizeOverride("font_size", 10);
+			lblMapName.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+			mapChipHBox.AddChild(lblMapName);
+
+			_folderChipsContainer.AddChild(mapChip);
+		}
 
 		var indexedDirs = AssetIndexService.Instance.GetIndexedDirectories();
+
 		for (int i = 0; i < indexedDirs.Count; i++)
 		{
 			string dirPath = indexedDirs[i];
@@ -425,7 +495,15 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 
 			bool isIndexing = AssetIndexService.Instance.IsDirectoryIndexing(dirPath);
 
-			_optDirectoryFilter.AddItem(isIndexing ? $"⏳ {folderName} ({TranslationServer.Translate("Indexing...")})" : folderName, i + 1);
+			int itemIdx = currentItemIndex++;
+			string metaKey = $"dir:{dirPath}";
+			_optDirectoryFilter.AddItem(isIndexing ? $"⏳ {folderName} ({TranslationServer.Translate("Indexing...")})" : folderName, itemIdx);
+			_optDirectoryFilter.SetItemMetadata(itemIdx, metaKey);
+
+			if (string.IsNullOrEmpty(_selectedMapNameFilter) && !string.IsNullOrEmpty(_selectedDirectoryFilter) && string.Equals(dirPath, _selectedDirectoryFilter, StringComparison.OrdinalIgnoreCase))
+			{
+				selectedIndex = itemIdx;
+			}
 
 			var chip = new PanelContainer();
 			var chipStyle = new StyleBoxFlat();
@@ -476,11 +554,14 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 			_folderChipsContainer.AddChild(chip);
 		}
 
-		if (_selectedDirectoryFilter != null && !indexedDirs.Contains(_selectedDirectoryFilter, StringComparer.OrdinalIgnoreCase))
+		if (selectedIndex == 0 && (_selectedDirectoryFilter != null || _selectedMapNameFilter != null))
 		{
 			_selectedDirectoryFilter = null;
-			_optDirectoryFilter.Selected = 0;
+			_selectedMapNameFilter = null;
+			_selectedMapVersionFilter = null;
 		}
+
+		_optDirectoryFilter.Selected = selectedIndex;
 	}
 
 	private void RefreshAssetTypeFilterOptions()
@@ -545,17 +626,35 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 
 	private void OnDirectoryFilterChanged(long index)
 	{
-		if (index == 0)
+		int idx = (int)index;
+		if (idx <= 0 || _optDirectoryFilter == null)
 		{
 			_selectedDirectoryFilter = null;
+			_selectedMapNameFilter = null;
+			_selectedMapVersionFilter = null;
 		}
 		else
 		{
-			var indexedDirs = AssetIndexService.Instance.GetIndexedDirectories();
-			int dirIdx = (int)index - 1;
-			if (dirIdx >= 0 && dirIdx < indexedDirs.Count)
+			string meta = _optDirectoryFilter.GetItemMetadata(idx).AsString();
+			if (meta.StartsWith("map:"))
 			{
-				_selectedDirectoryFilter = indexedDirs[dirIdx];
+				string payload = meta.Substring(4);
+				string[] parts = payload.Split('|');
+				_selectedDirectoryFilter = null;
+				_selectedMapNameFilter = parts[0];
+				_selectedMapVersionFilter = parts.Length > 1 ? parts[1] : "latest";
+			}
+			else if (meta.StartsWith("dir:"))
+			{
+				_selectedDirectoryFilter = meta.Substring(4);
+				_selectedMapNameFilter = null;
+				_selectedMapVersionFilter = null;
+			}
+			else
+			{
+				_selectedDirectoryFilter = null;
+				_selectedMapNameFilter = null;
+				_selectedMapVersionFilter = null;
 			}
 		}
 
@@ -600,7 +699,14 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 	{
 		string searchTerm = _txtSearch.Text?.Trim() ?? string.Empty;
 		_matchingAssets.Clear();
-		_matchingAssets.AddRange(AssetIndexService.Instance.SearchAssets(searchTerm, _allowedExtensions, _selectedDirectoryFilter, _requireRealmMetadata, _selectedAssetTypeFilter));
+		_matchingAssets.AddRange(AssetIndexService.Instance.SearchAssets(
+			searchTerm,
+			_allowedExtensions,
+			_selectedDirectoryFilter,
+			_requireRealmMetadata,
+			_selectedAssetTypeFilter,
+			_selectedMapNameFilter,
+			_selectedMapVersionFilter));
 
 		_lblResultsCount.Text = $"{_matchingAssets.Count} {TranslationServer.Translate("items found")}";
 		_lblEmptyState.Visible = _matchingAssets.Count == 0;
@@ -715,12 +821,26 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 			_btnEditAssetType.Disabled = (validTypes.Length == 0);
 
 			string ext = _selectedAsset.Extension?.ToLowerInvariant() ?? "";
-			bool isAudio = ext is ".ogg" or ".wav" or ".mp3";
+			bool isAudio = ext is ".raud" or ".ogg" or ".wav" or ".mp3";
 			if (isAudio && File.Exists(_selectedAsset.FilePath))
 			{
 				try
 				{
-					if (ext == ".ogg")
+					if (ext == ".raud")
+					{
+						byte[] raudBytes = File.ReadAllBytes(_selectedAsset.FilePath);
+						byte[]? oggBytes = Realm.Shared.Audio.RaudFile.GetTrack(raudBytes, 0);
+						if (oggBytes != null && oggBytes.Length > 0)
+						{
+							var oggStream = AudioStreamOggVorbis.LoadFromBuffer(oggBytes);
+							if (oggStream != null)
+							{
+								oggStream.Loop = false;
+								_audioPlayer.Stream = oggStream;
+							}
+						}
+					}
+					else if (ext == ".ogg")
 					{
 						var oggStream = AudioStreamOggVorbis.LoadFromFile(_selectedAsset.FilePath);
 						if (oggStream != null)

@@ -89,10 +89,17 @@ public class GlbOptimizer
 			return result;
 		}
 
-		byte[] sanitized = GlbManifestUtils.SanitizeMaterials(glbBytes);
+		byte[] smoothed = GlbMeshSmoother.SmoothMesh(glbBytes, GlbMeshSmoother.DefaultCreaseAngleDegrees);
+		byte[] sanitized = GlbManifestUtils.SanitizeMaterials(smoothed);
 
 		var (lodSuccess, lodGlbBytes, lodError) = GlbLodGenerator.GenerateLods(sanitized);
-		byte[] meshWithLods = lodSuccess && lodGlbBytes.Length > 0 ? lodGlbBytes : sanitized;
+		if (!lodSuccess)
+		{
+			result.Success = false;
+			result.ErrorMessage = $"LOD generation failed: {lodError}";
+			return result;
+		}
+		byte[] meshWithLods = lodGlbBytes.Length > 0 ? lodGlbBytes : sanitized;
 
 		var (toolSuccess, toolBytes, toolError) = NativeToolRunner.RunGltfPack(
 			meshWithLods,

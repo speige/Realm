@@ -5,11 +5,37 @@ import * as http from 'http';
 import { RealmMapEditorProvider } from './editorProvider';
 import { RealmRtexViewerProvider } from './rtexEditorProvider';
 import { RealmRanimViewerProvider } from './ranimEditorProvider';
+import { RealmRmeshViewerProvider, RmeshGlbFileSystemProvider, openRmeshInGlbViewer } from './rmeshEditorProvider';
+import { RealmRaudViewerProvider } from './raudEditorProvider';
 
 export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(RealmMapEditorProvider.register(context));
     context.subscriptions.push(RealmRtexViewerProvider.register(context));
     context.subscriptions.push(RealmRanimViewerProvider.register(context));
+    context.subscriptions.push(RealmRmeshViewerProvider.register(context));
+    context.subscriptions.push(RealmRaudViewerProvider.register(context));
+
+    context.subscriptions.push(
+        vscode.workspace.registerFileSystemProvider(
+            RmeshGlbFileSystemProvider.scheme,
+            new RmeshGlbFileSystemProvider(),
+            { isCaseSensitive: true, isReadonly: true }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('realm.openRmesh3D', async (uri?: vscode.Uri) => {
+            let targetPath = uri?.fsPath;
+            if (!targetPath && vscode.window.activeTextEditor) {
+                targetPath = vscode.window.activeTextEditor.document.uri.fsPath;
+            }
+            if (targetPath && targetPath.endsWith('.rmesh')) {
+                await openRmeshInGlbViewer(targetPath);
+            } else {
+                vscode.window.showWarningMessage('Please select a .rmesh file to view in 3D.');
+            }
+        })
+    );
 
     context.subscriptions.push(
         vscode.workspace.onWillSaveTextDocument(event => {

@@ -32,37 +32,10 @@ internal class UnitSpawnService
 			return modelPathOrId;
 		}
 
-		string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
-		string directCandidate = System.IO.Path.Combine(wsPath, modelPathOrId);
-		if (System.IO.File.Exists(directCandidate)) return directCandidate;
-
-		string filename = System.IO.Path.GetFileName(modelPathOrId);
-		if (!filename.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
+		string resolvedPath = Realm.Godot.Utils.ModelCache.ResolveModelPath(modelPathOrId);
+		if (!string.IsNullOrEmpty(resolvedPath) && (resolvedPath.StartsWith("res://") || System.IO.File.Exists(resolvedPath)))
 		{
-			filename += ".glb";
-		}
-
-		string primarySub = isBuilding ? "buildings" : "units";
-		string cand = System.IO.Path.Combine(wsPath, "Assets", "models", primarySub, filename);
-		if (System.IO.File.Exists(cand)) return cand;
-
-		string[] subDirs = new[] { "units", "buildings", "resources", "props", "projectiles", "attachments", "weapons" };
-		foreach (var sub in subDirs)
-		{
-			cand = System.IO.Path.Combine(wsPath, "Assets", "models", sub, filename);
-			if (System.IO.File.Exists(cand)) return cand;
-		}
-
-		string modelsCand = System.IO.Path.Combine(wsPath, "Assets", "models", filename);
-		if (System.IO.File.Exists(modelsCand)) return modelsCand;
-
-		string rootCand = System.IO.Path.Combine(wsPath, filename);
-		if (System.IO.File.Exists(rootCand)) return rootCand;
-
-		foreach (var sub in subDirs)
-		{
-			string resCand = $"res://Assets/models/{sub}/{filename}";
-			if (Godot.FileAccess.FileExists(resCand)) return resCand;
+			return resolvedPath;
 		}
 
 		return modelPathOrId;

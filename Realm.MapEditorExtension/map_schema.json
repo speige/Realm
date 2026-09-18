@@ -3,6 +3,9 @@
   "title": "MapUnitsRegistry",
   "type": "object",
   "properties": {
+    "GameBuildNumber": {
+      "type": "string"
+    },
     "MapProperties": {
       "type": "object",
       "properties": {
@@ -186,8 +189,7 @@
           "CollisionCircle": { "type": "number", "minimum": 0 },
           "Brightness": { "type": "number", "minimum": 0 },
           "Tint": { "type": "string" },
-          "NormalMode": { "type": "string", "enum": ["Original", "Smooth", "Flat"] },
-          "RecalculateNormals": { "type": "boolean" },
+          "DespillPlayerColor": { "type": "boolean" },
           "NormalizeLuminance": { "type": "boolean" },
           "IgnorePlayerColor": { "type": "boolean" },
           "MaxCapacity": { "type": "number", "minimum": 0 },
@@ -487,7 +489,7 @@
     "ModelObstacleRadii": { "type": "object" },
     "ModelBrightness": { "type": "object" },
     "ModelColorTint": { "type": "object" },
-    "ModelNormalModes": { "type": "object" },
+    "ModelDespillPlayerColor": { "type": "object" },
     "ModelIgnorePlayerColor": { "type": "object" }
   }
 }

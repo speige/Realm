@@ -40,39 +40,60 @@ public static class MapInfoHelper
 	{
 		string displayName = FormatMapDisplayName(mapFolder);
 		string description = "";
+		string gameBuildNumber = "v0.0.0";
 		
-		string path = $"{basePath}/{mapFolder}/map.json";
-		if (!FileAccess.FileExists(path))
+		string[] candidatePaths = new[]
 		{
-			path = $"user://maps/{mapFolder}/map.json";
-		}
-		if (!FileAccess.FileExists(path))
+			$"{basePath}/{mapFolder}/metadata.json",
+			$"user://maps/{mapFolder}/metadata.json",
+			$"res://Maps/{mapFolder}/metadata.json",
+			$"{basePath}/{mapFolder}/map.json",
+			$"user://maps/{mapFolder}/map.json",
+			$"res://Maps/{mapFolder}/map.json"
+		};
+
+		foreach (var path in candidatePaths)
 		{
-			path = $"res://Maps/{mapFolder}/map.json";
-		}
-		if (FileAccess.FileExists(path))
-		{
-			using var file = FileAccess.Open(path, FileAccess.ModeFlags.Read);
-			if (file != null)
+			if (FileAccess.FileExists(path))
 			{
-				try
+				using var file = FileAccess.Open(path, FileAccess.ModeFlags.Read);
+				if (file != null)
 				{
-					string jsonText = file.GetAsText();
-					using var jsonDoc = JsonDocument.Parse(jsonText);
-					if (jsonDoc.RootElement.TryGetProperty("MapProperties", out var mapProps))
+					try
 					{
-						if (mapProps.TryGetProperty("MapName", out var nameProp) && nameProp.ValueKind == JsonValueKind.String)
+						string jsonText = file.GetAsText();
+						using var jsonDoc = JsonDocument.Parse(jsonText);
+						var root = jsonDoc.RootElement;
+
+						if (root.TryGetProperty("GameBuildNumber", out var gbnProp) && gbnProp.ValueKind == JsonValueKind.String)
 						{
-							displayName = nameProp.GetString();
+							string? gbn = gbnProp.GetString();
+							if (!string.IsNullOrWhiteSpace(gbn))
+							{
+								gameBuildNumber = gbn.Trim();
+							}
 						}
-						if (mapProps.TryGetProperty("MapDescription", out var descProp) && descProp.ValueKind == JsonValueKind.String)
+
+						if (root.TryGetProperty("MapProperties", out var mapProps))
 						{
-							description = descProp.GetString() ?? "";
+							if (mapProps.TryGetProperty("MapName", out var nameProp) && nameProp.ValueKind == JsonValueKind.String)
+							{
+								string? nameVal = nameProp.GetString();
+								if (!string.IsNullOrWhiteSpace(nameVal))
+								{
+									displayName = nameVal;
+								}
+							}
+							if (mapProps.TryGetProperty("MapDescription", out var descProp) && descProp.ValueKind == JsonValueKind.String)
+							{
+								description = descProp.GetString() ?? "";
+							}
 						}
+						break;
 					}
-				}
-				catch
-				{
+					catch
+					{
+					}
 				}
 			}
 		}
@@ -81,7 +102,8 @@ public static class MapInfoHelper
 		{
 			PathName = mapFolder,
 			DisplayName = displayName,
-			Description = description
+			Description = description,
+			GameBuildNumber = gameBuildNumber
 		};
 	}
 

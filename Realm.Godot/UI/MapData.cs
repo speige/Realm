@@ -190,4 +190,77 @@ public class MapData
 			}
 		};
 	}
+
+	public static MapData FromDto(Realm.Shared.Distribution.DiscoveryMapDto dto, string? serverBaseUrl = null)
+	{
+		string thumbPath = "";
+		if (!string.IsNullOrEmpty(dto.ThumbnailHash))
+		{
+			string? localCasPath = MapAssetManager.Storage.FindAssetFilePath(dto.ThumbnailHash);
+			if (localCasPath != null && System.IO.File.Exists(localCasPath))
+			{
+				thumbPath = localCasPath;
+			}
+		}
+		if (string.IsNullOrEmpty(thumbPath))
+		{
+			thumbPath = !string.IsNullOrEmpty(dto.ThumbnailUrl) ? dto.ThumbnailUrl : "res://Assets/UI/moonlit_castle.png";
+		}
+
+		var screenshots = new System.Collections.Generic.List<string>();
+		if (dto.Screenshots != null && dto.Screenshots.Count > 0)
+		{
+			foreach (var s in dto.Screenshots)
+			{
+				string? localCas = MapAssetManager.Storage.FindAssetFilePath(s);
+				if (localCas != null && System.IO.File.Exists(localCas))
+				{
+					screenshots.Add(localCas);
+				}
+			}
+		}
+		if (screenshots.Count == 0)
+		{
+			screenshots.Add("res://Assets/UI/moonlit_castle.png");
+			screenshots.Add("res://Assets/UI/moonlit_forest.png");
+			screenshots.Add("res://Assets/UI/forest_path.png");
+		}
+
+		var features = dto.Features != null && dto.Features.Count > 0
+			? dto.Features.ToArray()
+			: new string[] { "Custom Assets", "Verified Map", "Community Rated" };
+
+		int totalVotes = dto.TotalReviews > 0 ? dto.TotalReviews : 10;
+		int v5 = (int)(totalVotes * 0.7);
+		int v3 = (int)(totalVotes * 0.2);
+		int v1 = System.Math.Max(0, totalVotes - v5 - v3);
+
+		return new MapData
+		{
+			MapId = !string.IsNullOrEmpty(dto.MapId) ? dto.MapId : $"{dto.Title}_{dto.Version}",
+			Title = dto.Title,
+			Creator = dto.Creator,
+			ThumbnailPath = thumbPath,
+			Description = !string.IsNullOrEmpty(dto.Description) ? dto.Description : "A custom map package published to the Realm network.",
+			Screenshots = screenshots.ToArray(),
+			Features = features,
+			RatingStars = dto.RatingStars > 0 ? dto.RatingStars : 5.0f,
+			Votes5Star = $"{v5:N0} Votes",
+			Votes3Star = $"{v3:N0} Votes",
+			Votes1Star = $"{v1:N0} Votes",
+			AvgRating = $"{dto.RatingStars:F1} / 5.0",
+			AvgPlaytime = dto.PlaytimeMinutes > 0 ? $"{dto.PlaytimeMinutes} min" : "30 min",
+			PlayerCount = dto.GamesPlayed > 0 ? $"{dto.GamesPlayed} Played" : "New Release",
+			CompletionRate = "85%",
+			FileSize = !string.IsNullOrEmpty(dto.FileSizeFormatted) ? dto.FileSizeFormatted : "10 MB",
+			EngineVersion = dto.EngineVersion,
+			MaxPlayers = dto.MaxPlayers,
+			Genre = !string.IsNullOrEmpty(dto.Genre) ? dto.Genre : "Custom Map",
+			Awards = dto.Awards != null && dto.Awards.Count > 0 ? dto.Awards.ToArray() : new string[]
+			{
+				"res://Assets/UI/gold_coin.png",
+				"res://Assets/UI/battle_shield.png"
+			}
+		};
+	}
 }

@@ -1212,11 +1212,6 @@ public static partial class MapWorkspaceService
 	{
 		if (root == null) return false;
 		bool modified = false;
-		string effectiveWsPath = !string.IsNullOrEmpty(wsPath)
-			? wsPath
-			: (GameHost.Instance != null && !string.IsNullOrEmpty(GameHost.Instance.CurrentMapDirectory)
-				? GameHost.Instance.CurrentMapDirectory
-				: ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath));
 
 		void CleanTexturesObject(JsonObject texturesObj)
 		{
@@ -1244,141 +1239,9 @@ public static partial class MapWorkspaceService
 			{
 				if (kvp.Value is JsonObject texObj)
 				{
-					if (texObj.ContainsKey("swatch_index"))
-					{
-						if (!texObj.ContainsKey("swatchIndex"))
-						{
-							texObj["swatchIndex"] = texObj["swatch_index"]?.DeepClone();
-						}
-						texObj.Remove("swatch_index");
-						modified = true;
-					}
-					if (texObj.ContainsKey("SwatchIndex"))
-					{
-						if (!texObj.ContainsKey("swatchIndex"))
-						{
-							texObj["swatchIndex"] = texObj["SwatchIndex"]?.DeepClone();
-						}
-						texObj.Remove("SwatchIndex");
-						modified = true;
-					}
-
 					if (texObj.TryGetPropertyValue("swatchIndex", out var sIdxNode) && sIdxNode != null && int.TryParse(sIdxNode.ToString(), out int parsedIdx) && parsedIdx >= 0)
 					{
 						usedIndices.Add(parsedIdx);
-					}
-
-					if (texObj.ContainsKey("Tile_Mode"))
-					{
-						if (!texObj.ContainsKey("tile_mode"))
-						{
-							texObj["tile_mode"] = texObj["Tile_Mode"]?.GetValue<string>();
-						}
-						texObj.Remove("Tile_Mode");
-						modified = true;
-					}
-					if (texObj.ContainsKey("UV_Scale"))
-					{
-						if (!texObj.ContainsKey("uv_scale"))
-						{
-							texObj["uv_scale"] = texObj["UV_Scale"]?.DeepClone();
-						}
-						texObj.Remove("UV_Scale");
-						modified = true;
-					}
-					if (texObj.ContainsKey("Stochastic_Tile_Size"))
-					{
-						if (!texObj.ContainsKey("stochastic_tile_size"))
-						{
-							texObj["stochastic_tile_size"] = texObj["Stochastic_Tile_Size"]?.DeepClone();
-						}
-						texObj.Remove("Stochastic_Tile_Size");
-						modified = true;
-					}
-					if (texObj.ContainsKey("Scale_Factor"))
-					{
-						if (!texObj.ContainsKey("scale_factor"))
-						{
-							texObj["scale_factor"] = texObj["Scale_Factor"]?.DeepClone();
-						}
-						texObj.Remove("Scale_Factor");
-						modified = true;
-					}
-					if (texObj.ContainsKey("ScaleFactor"))
-					{
-						if (!texObj.ContainsKey("scale_factor"))
-						{
-							texObj["scale_factor"] = texObj["ScaleFactor"]?.DeepClone();
-						}
-						texObj.Remove("ScaleFactor");
-						modified = true;
-					}
-					if (!texObj.ContainsKey("scale_factor"))
-					{
-						string rtexPath = Path.Combine(effectiveWsPath, "Assets", "textures", kvp.Key);
-						if (!File.Exists(rtexPath)) rtexPath = Path.Combine(effectiveWsPath, kvp.Key);
-						if (File.Exists(rtexPath))
-						{
-							try
-							{
-								string? rtexMeta = Realm.Shared.Metadata.RealmMetadataHelper.ExtractMetadata(rtexPath);
-								if (!string.IsNullOrEmpty(rtexMeta))
-								{
-									var rNode = JsonNode.Parse(rtexMeta);
-									if (rNode is JsonObject rObj && (rObj.TryGetPropertyValue("scale_factor", out var sfVal) || rObj.TryGetPropertyValue("Scale_Factor", out sfVal) || rObj.TryGetPropertyValue("scaleFactor", out sfVal)) && float.TryParse(sfVal?.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedRtexScale))
-									{
-										texObj["scale_factor"] = parsedRtexScale;
-										modified = true;
-									}
-								}
-							}
-							catch { }
-						}
-					}
-					if (texObj.ContainsKey("Brightness"))
-					{
-						if (!texObj.ContainsKey("brightness"))
-						{
-							texObj["brightness"] = texObj["Brightness"]?.DeepClone();
-						}
-						texObj.Remove("Brightness");
-						modified = true;
-					}
-					if (texObj.ContainsKey("Tint"))
-					{
-						if (!texObj.ContainsKey("tint"))
-						{
-							texObj["tint"] = texObj["Tint"]?.GetValue<string>();
-						}
-						texObj.Remove("Tint");
-						modified = true;
-					}
-					if (texObj.ContainsKey("Variants"))
-					{
-						if (!texObj.ContainsKey("variants"))
-						{
-							texObj["variants"] = texObj["Variants"]?.DeepClone();
-						}
-						texObj.Remove("Variants");
-						modified = true;
-					}
-					if (texObj.ContainsKey("Cross_Fade"))
-					{
-						if (!texObj.ContainsKey("cross_fade"))
-						{
-							texObj["cross_fade"] = texObj["Cross_Fade"]?.DeepClone();
-						}
-						texObj.Remove("Cross_Fade");
-						modified = true;
-					}
-					if (texObj.ContainsKey("Grid_Cross_Fade"))
-					{
-						if (!texObj.ContainsKey("cross_fade"))
-						{
-							texObj["cross_fade"] = texObj["Grid_Cross_Fade"]?.DeepClone();
-						}
-						texObj.Remove("Grid_Cross_Fade");
-						modified = true;
 					}
 				}
 			}
@@ -1403,14 +1266,6 @@ public static partial class MapWorkspaceService
 			}
 		}
 
-		if (root["Assets"] is JsonObject assetsObj && assetsObj["textures"] is JsonObject t1)
-		{
-			CleanTexturesObject(t1);
-		}
-		if (root["MapProperties"] is JsonObject mpObj && mpObj["Assets"] is JsonObject mpAssetsObj && mpAssetsObj["textures"] is JsonObject t2)
-		{
-			CleanTexturesObject(t2);
-		}
 		if (root["textures"] is JsonObject t3)
 		{
 			CleanTexturesObject(t3);

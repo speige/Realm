@@ -81,6 +81,41 @@ public partial class MapDiscovery : Control
 		ApplyStyles();
 		RegisterEvents();
 		RenderMapGrid();
+
+		LoadDiscoveryMapsAsync();
+	}
+
+	private async void LoadDiscoveryMapsAsync()
+	{
+		string seedServerUrl = GodotObject.IsInstanceValid(LobbyManager.Instance)
+			? LobbyManager.Instance.RegistryServerUrl
+			: "http://localhost:5000";
+
+		try
+		{
+			var distClient = new Realm.Shared.Distribution.DistributionClient(seedServerUrl);
+			var discoveryDtos = await distClient.GetDiscoveryMapsAsync();
+			if (discoveryDtos != null && discoveryDtos.Count > 0)
+			{
+				var liveMaps = discoveryDtos
+					.Select(dto => MapData.FromDto(dto, seedServerUrl))
+					.ToArray();
+
+				_allMaps = liveMaps;
+				RenderMapGrid();
+				return;
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapDiscovery] Failed to load maps from server: {ex.Message}");
+		}
+
+		if (_allMaps == null || _allMaps.Length == 0)
+		{
+			_allMaps = MapData.GetDummyMaps();
+			RenderMapGrid();
+		}
 	}
 
 	private void ApplyStyles()
@@ -428,14 +463,8 @@ public partial class MapDiscovery : Control
 		thumbnail.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 		thumbnail.StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered;
 		thumbnail.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
-		if (FileAccess.FileExists(map.ThumbnailPath))
-		{
-			thumbnail.Texture = GD.Load<Texture2D>(map.ThumbnailPath);
-		}
-		else
-		{
-			thumbnail.Texture = GD.Load<Texture2D>("res://icon.svg");
-		}
+		var loadedTex = LoadTextureSafe(map.ThumbnailPath);
+		thumbnail.Texture = loadedTex ?? GD.Load<Texture2D>("res://icon.svg");
 		imgContainer.AddChild(thumbnail);
 
 		var frameOverlay = new TextureRect();
@@ -523,5 +552,36 @@ public partial class MapDiscovery : Control
 		footer.AddChild(btnDetails);
 
 		return card;
+	}
+
+	private static Texture2D LoadTextureSafe(string resPath)
+	{
+		if (string.IsNullOrEmpty(resPath)) return null;
+
+		try
+		{
+			if (ResourceLoader.Exists(resPath))
+			{
+				var tex = GD.Load<Texture2D>(resPath);
+				if (tex != null) return tex;
+			}
+		}
+		catch { }
+
+		try
+		{
+			string globalPath = ProjectSettings.GlobalizePath(resPath);
+			if (System.IO.File.Exists(globalPath))
+			{
+				var image = Image.LoadFromFile(globalPath);
+				if (image != null)
+				{
+					return ImageTexture.CreateFromImage(image);
+				}
+			}
+		}
+		catch { }
+
+		return null;
 	}
 }

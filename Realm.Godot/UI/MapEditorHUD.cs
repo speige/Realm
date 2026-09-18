@@ -11,7 +11,9 @@ using System.Linq;
 using MirrorMode = Realm.Ecs.Components.Core.MirrorMode;
 using WaterType = Realm.Ecs.Components.Terrain.WaterType;
 using Realm.Shared;
+using Realm.Shared.Distribution;
 using Realm.Shared.Metadata;
+using Realm.Shared.ModelOptimization;
 using Realm.Godot.Utils;
 using Realm.Godot.VFX;
 using Realm.Godot.Services;
@@ -359,6 +361,7 @@ public partial class MapEditorHUD : Control
 	private string _tempWorkspacePath = MapWorkspaceService.GetDefaultWorkspaceGlobalPath();
 	public string TempWorkspacePath => _tempWorkspacePath;
 	private EditorService _editorService;
+	private MapUpgradeService _mapUpgradeService;
 	private long _lastTerrainSyncTime = 0;
 	private long _lastMetadataSyncTime = 0;
 	private bool _isSyncing = false;
@@ -405,6 +408,8 @@ public partial class MapEditorHUD : Control
 
 			string tempTerrainPath = System.IO.Path.Combine(wsPath, "terrain.json");
 			GameHost.Instance.SaveMapToFile(tempTerrainPath, performReload: false);
+			_lastTerrainSyncTime = GetMaxTerrainWriteTime(tempTerrainPath);
+			_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(wsPath, "metadata.json"));
 			int maxBackups = EditorSettingsDialog.CurrentSettings?.MaxBackupSnapshots ?? 3;
 			SaveLoadService.CreateWorkspaceBackup(wsPath, maxBackups);
 			ShowFeedback(TranslationServer.Translate("Auto-backup snapshot saved."));
@@ -432,6 +437,7 @@ public partial class MapEditorHUD : Control
 		{
 			Instance = this;
 			_editorService = ServiceLocator.TryGet<EditorService>();
+			_mapUpgradeService = ServiceLocator.TryGet<MapUpgradeService>();
 			UpdateFPSVisibility();
 			_tempWorkspacePath = MapWorkspaceService.GetDefaultWorkspaceGlobalPath();
 
@@ -2084,6 +2090,16 @@ public partial class MapEditorHUD : Control
 		hbox.AddThemeConstantOverride("separation", 20);
 		vbox.AddChild(hbox);
 
+		var btnPublish = new Button();
+		btnPublish.Text = "Publish Map";
+		btnPublish.CustomMinimumSize = new Vector2(140, 40);
+		btnPublish.Pressed += () =>
+		{
+			overlay.QueueFree();
+			PublishMapAction();
+		};
+		hbox.AddChild(btnPublish);
+
 		var btnClose = new Button();
 		btnClose.Text = "Close";
 		btnClose.CustomMinimumSize = new Vector2(120, 40);
@@ -2167,11 +2183,11 @@ public partial class MapEditorHUD : Control
 	{
 		if (isBuilding)
 		{
-			_entityPaletteController?.SelectCategoryItemExternal("Buildings", id + ".glb");
+			_entityPaletteController?.SelectCategoryItemExternal("Buildings", id);
 		}
 		else
 		{
-			_entityPaletteController?.SelectCategoryItemExternal("Units", id + ".glb");
+			_entityPaletteController?.SelectCategoryItemExternal("Units", id);
 		}
 	}
 
@@ -3205,9 +3221,148 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	private async System.Threading.Tasks.Task<bool> PromptAndUpgradeMapIfNeededAsync(string selectedFolder)
+	{
+		var upgradeService = _mapUpgradeService ?? MapUpgradeService.Instance;
+		if (upgradeService == null || !upgradeService.NeedsUpgrade(selectedFolder, out string currentVersion, out string targetVersion))
+		{
+			return true;
+		}
+
+		var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
+
+		var popup = new Panel();
+		popup.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		popup.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		AddChild(popup);
+
+		var cardPanel = new Panel();
+		cardPanel.CustomMinimumSize = new Vector2(540, 290);
+		cardPanel.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
+		cardPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		popup.AddChild(cardPanel);
+
+		var vbox = new VBoxContainer();
+		vbox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		vbox.CustomMinimumSize = new Vector2(500, 260);
+		vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		vbox.SizeFlagsVertical = SizeFlags.ExpandFill;
+		cardPanel.AddChild(vbox);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 15) });
+
+		var titleLabel = new Label();
+		UIStyle.ApplyTitle(titleLabel, Tr("MAP BUILD MISMATCH"), 20);
+		titleLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.4f, 0.3f));
+		vbox.AddChild(titleLabel);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 8) });
+
+		var descLabel = new Label();
+		descLabel.Text = $"{string.Format(Tr("Map: {0}"), System.IO.Path.GetFileName(selectedFolder))}\n{string.Format(Tr("Map Build: {0} | Editor Build: {1}"), currentVersion, targetVersion)}\n\n{Tr("This map format needs to be upgraded before it can be opened. Would you like to upgrade now?")}";
+		descLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		descLabel.AddThemeFontSizeOverride("font_size", 13);
+		descLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
+		vbox.AddChild(descLabel);
+
+		var progressBar = new ProgressBar();
+		progressBar.CustomMinimumSize = new Vector2(460, 20);
+		progressBar.MinValue = 0;
+		progressBar.MaxValue = 100;
+		progressBar.Value = 0;
+		progressBar.Visible = false;
+		vbox.AddChild(progressBar);
+
+		var statusLabel = new Label();
+		statusLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		statusLabel.AddThemeFontSizeOverride("font_size", 12);
+		statusLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		statusLabel.Visible = false;
+		vbox.AddChild(statusLabel);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 12) });
+
+		var buttonRow = new HBoxContainer();
+		buttonRow.Alignment = BoxContainer.AlignmentMode.Center;
+		buttonRow.AddThemeConstantOverride("separation", 20);
+		vbox.AddChild(buttonRow);
+
+		var upgradeBtn = new Button();
+		upgradeBtn.Flat = false;
+		upgradeBtn.AddThemeConstantOverride("icon_max_width", 0);
+		upgradeBtn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		upgradeBtn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		upgradeBtn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		upgradeBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		UIStyle.ApplyButtonText(upgradeBtn, Tr("UPGRADE MAP"), 14);
+		upgradeBtn.CustomMinimumSize = new Vector2(160, 38);
+		buttonRow.AddChild(upgradeBtn);
+
+		var cancelBtn = new Button();
+		cancelBtn.Flat = false;
+		cancelBtn.AddThemeConstantOverride("icon_max_width", 0);
+		cancelBtn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		cancelBtn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		cancelBtn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		cancelBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		UIStyle.ApplyButtonText(cancelBtn, Tr("CANCEL"), 14);
+		cancelBtn.CustomMinimumSize = new Vector2(120, 38);
+		buttonRow.AddChild(cancelBtn);
+
+		cancelBtn.Pressed += () =>
+		{
+			UIManager.Instance?.PlayClickSound();
+			popup.QueueFree();
+			tcs.TrySetResult(false);
+		};
+
+		upgradeBtn.Pressed += async () =>
+		{
+			UIManager.Instance?.PlayClickSound();
+			upgradeBtn.Disabled = true;
+			cancelBtn.Disabled = true;
+			progressBar.Visible = true;
+			statusLabel.Visible = true;
+
+			var progress = new Progress<MigrationProgressUpdate>(update =>
+			{
+				progressBar.Value = update.TotalSteps > 0 ? (double)update.StepIndex / update.TotalSteps * 100.0 : 0;
+				statusLabel.Text = $"[{update.StepIndex}/{update.TotalSteps}] {update.CurrentMigration}: {update.Message}";
+			});
+
+			var upgradeResult = await upgradeService.UpgradeMapAsync(selectedFolder, progress);
+
+			if (upgradeResult.Success)
+			{
+				statusLabel.Text = Tr("Upgrade completed successfully!");
+				statusLabel.AddThemeColorOverride("font_color", new Color(0.3f, 0.9f, 0.3f));
+				await ToSignal(GetTree().CreateTimer(0.6f), SceneTreeTimer.SignalName.Timeout);
+				popup.QueueFree();
+				tcs.TrySetResult(true);
+			}
+			else
+			{
+				statusLabel.Text = $"{Tr("Upgrade failed:")} {upgradeResult.ErrorMessage}";
+				statusLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.3f, 0.3f));
+				cancelBtn.Disabled = false;
+				UIStyle.ApplyButtonText(cancelBtn, Tr("CLOSE"), 14);
+			}
+		};
+
+		return await tcs.Task;
+	}
+
 	public bool LoadMapFolder(string selectedFolder)
 	{
 		if (!System.IO.Directory.Exists(selectedFolder)) return false;
+
+		var upgradeService = _mapUpgradeService ?? MapUpgradeService.Instance;
+		if (upgradeService != null && upgradeService.NeedsUpgrade(selectedFolder, out _, out _))
+		{
+			_ = LoadMapFolderAsync(selectedFolder);
+			return true;
+		}
+
 		_lastUsedFolder = selectedFolder;
 		_currentSourceFolder = selectedFolder;
 
@@ -3252,6 +3407,14 @@ public partial class MapEditorHUD : Control
 	public async System.Threading.Tasks.Task<bool> LoadMapFolderAsync(string selectedFolder)
 	{
 		if (!System.IO.Directory.Exists(selectedFolder)) return false;
+
+		bool canProceed = await PromptAndUpgradeMapIfNeededAsync(selectedFolder);
+		if (!canProceed)
+		{
+			ShowFeedback(TranslationServer.Translate("Map loading cancelled."));
+			return false;
+		}
+
 		_lastUsedFolder = selectedFolder;
 		_currentSourceFolder = selectedFolder;
 
@@ -3339,16 +3502,163 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	private void ShowGreenlightStatusDialog(string mapTitle, string mapVersion, int verifiedGoodReviews, int totalReviews, double averageRating, bool isGreenlit)
+	{
+		var overlay = new ColorRect();
+		overlay.Name = "GreenlightStatusOverlay";
+		overlay.Color = new Color(0, 0, 0, 0.75f);
+		overlay.SetAnchorsPreset(LayoutPreset.FullRect);
+		overlay.MouseFilter = Control.MouseFilterEnum.Stop;
+		overlay.ZIndex = 1000;
+		AddChild(overlay);
+
+		var center = new CenterContainer();
+		center.SetAnchorsPreset(LayoutPreset.FullRect);
+		overlay.AddChild(center);
+
+		var panel = new PanelContainer();
+		panel.CustomMinimumSize = new Vector2(640, 440);
+		var style = new StyleBoxFlat();
+		style.BgColor = new Color(0.12f, 0.14f, 0.20f, 0.98f);
+		style.BorderWidthTop = 2; style.BorderWidthBottom = 2; style.BorderWidthLeft = 2; style.BorderWidthRight = 2;
+		style.BorderColor = isGreenlit ? new Color(0.3f, 0.8f, 0.4f, 1f) : new Color(0.8f, 0.4f, 0.3f, 1f);
+		style.CornerRadiusTopLeft = 8; style.CornerRadiusTopRight = 8; style.CornerRadiusBottomLeft = 8; style.CornerRadiusBottomRight = 8;
+		panel.AddThemeStyleboxOverride("panel", style);
+		center.AddChild(panel);
+
+		var margin = new MarginContainer();
+		margin.AddThemeConstantOverride("margin_top", 22);
+		margin.AddThemeConstantOverride("margin_bottom", 22);
+		margin.AddThemeConstantOverride("margin_left", 26);
+		margin.AddThemeConstantOverride("margin_right", 26);
+		panel.AddChild(margin);
+
+		var vbox = new VBoxContainer();
+		vbox.AddThemeConstantOverride("separation", 14);
+		margin.AddChild(vbox);
+
+		var lblTitle = new Label();
+		lblTitle.Text = isGreenlit ? TranslationServer.Translate("MAP GREENLIT FOR PUBLISHING") : TranslationServer.Translate("MAP NOT YET GREENLIT");
+		lblTitle.HorizontalAlignment = HorizontalAlignment.Center;
+		lblTitle.AddThemeFontSizeOverride("font_size", 20);
+		lblTitle.AddThemeColorOverride("font_color", isGreenlit ? new Color(0.4f, 0.9f, 0.5f) : new Color(1f, 0.6f, 0.4f));
+		vbox.AddChild(lblTitle);
+
+		var lblDesc = new Label();
+		lblDesc.Text = isGreenlit 
+			? string.Format(TranslationServer.Translate("'{0}' v{1} has met the community greenlight requirement and can now be published to the public registry."), mapTitle, mapVersion)
+			: string.Format(TranslationServer.Translate("'{0}' v{1} is currently in Beta-Testing. Maps must achieve 100 Verified Good Reviews before graduating to the public registry."), mapTitle, mapVersion);
+		lblDesc.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+		lblDesc.HorizontalAlignment = HorizontalAlignment.Center;
+		lblDesc.AddThemeFontSizeOverride("font_size", 13);
+		lblDesc.AddThemeColorOverride("font_color", new Color(0.85f, 0.85f, 0.9f));
+		vbox.AddChild(lblDesc);
+
+		var metricsBox = new VBoxContainer();
+		metricsBox.AddThemeConstantOverride("separation", 8);
+		vbox.AddChild(metricsBox);
+
+		bool reviewsMet = verifiedGoodReviews >= 100;
+		var lblReviews = new Label();
+		lblReviews.Text = string.Format(TranslationServer.Translate("• Total Verified Good Reviews: {0} / 100 {1}"), verifiedGoodReviews, reviewsMet ? "✓" : "");
+		lblReviews.AddThemeColorOverride("font_color", reviewsMet ? new Color(0.4f, 0.9f, 0.5f) : new Color(0.9f, 0.8f, 0.6f));
+		lblReviews.AddThemeFontSizeOverride("font_size", 15);
+		metricsBox.AddChild(lblReviews);
+
+		if (totalReviews > 0)
+		{
+			var lblAggregate = new Label();
+			lblAggregate.Text = string.Format(TranslationServer.Translate("• Public Aggregate Reviews: {0} (Average Rating: {1:F1} ★)"), totalReviews, averageRating);
+			lblAggregate.AddThemeColorOverride("font_color", new Color(0.7f, 0.75f, 0.85f));
+			lblAggregate.AddThemeFontSizeOverride("font_size", 12);
+			metricsBox.AddChild(lblAggregate);
+		}
+
+		var tip = new Label();
+		tip.Text = TranslationServer.Translate("How Verified Good Reviews are determined:\nA review qualifies as Verified & Good when submitted by a player who:\n  1. Is logged in with a verified account (Steam, Discord, etc.)\n  2. Has played your map for at least 30 minutes across 3 or more completed games\n  3. Gives your map a rating of 3 stars or higher\n\nHost multiplayer lobbies or share your map peer-to-peer to build verified reviews from your community.");
+		tip.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+		tip.AddThemeFontSizeOverride("font_size", 11);
+		tip.AddThemeColorOverride("font_color", new Color(0.65f, 0.7f, 0.8f));
+		vbox.AddChild(tip);
+
+		var hbox = new HBoxContainer();
+		hbox.Alignment = BoxContainer.AlignmentMode.Center;
+		hbox.AddThemeConstantOverride("separation", 20);
+		vbox.AddChild(hbox);
+
+		var btnClose = new Button();
+		btnClose.Text = TranslationServer.Translate("OK");
+		btnClose.CustomMinimumSize = new Vector2(100, 36);
+		btnClose.Pressed += () => overlay.QueueFree();
+		hbox.AddChild(btnClose);
+	}
+
 	private async void PublishMapAction()
 	{
 		if (GameHost.Instance != null)
 		{
 			GameHost.Instance.SaveMapToFile();
 		}
+
+		string workspace = ProjectSettings.GlobalizePath(TempWorkspaceGodotPath);
+		string mapTitle = "UntitledMap";
+		string mapVersion = "1.0";
+		string metaJsonPath = System.IO.Path.Combine(workspace, "metadata.json");
+		string mapJsonPath = System.IO.Path.Combine(workspace, "map.json");
+		string activeConfigPath = System.IO.File.Exists(metaJsonPath) ? metaJsonPath : mapJsonPath;
+
+		if (System.IO.File.Exists(activeConfigPath))
+		{
+			try
+			{
+				var doc = JsonNode.Parse(System.IO.File.ReadAllText(activeConfigPath));
+				if (doc != null)
+				{
+					if (doc["MapProperties"] is JsonObject props)
+					{
+						mapTitle = props["MapTitle"]?.ToString() ?? props["MapName"]?.ToString() ?? props["Name"]?.ToString() ?? mapTitle;
+						mapVersion = props["MapVersion"]?.ToString() ?? props["Version"]?.ToString() ?? mapVersion;
+					}
+					else
+					{
+						mapTitle = doc["MapName"]?.ToString() ?? doc["MapTitle"]?.ToString() ?? mapTitle;
+						mapVersion = doc["Version"]?.ToString() ?? doc["MapVersion"]?.ToString() ?? mapVersion;
+					}
+				}
+			}
+			catch { }
+		}
+
+		string seedServerUrl = GameHost.Instance != null && GodotObject.IsInstanceValid(LobbyManager.Instance) ? LobbyManager.Instance.RegistryServerUrl : "http://localhost:5000";
+
+		try
+		{
+			using var checkClient = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+			string statusUrl = $"{seedServerUrl.TrimEnd('/')}/api/maps/greenlight_status/{Uri.EscapeDataString(mapTitle)}_{Uri.EscapeDataString(mapVersion)}";
+			var statusRes = await checkClient.GetAsync(statusUrl);
+			if (statusRes.IsSuccessStatusCode)
+			{
+				string statusJson = await statusRes.Content.ReadAsStringAsync();
+				var statusNode = JsonNode.Parse(statusJson);
+				bool isGreenlit = statusNode?["isGreenlit"]?.GetValue<bool>() ?? false;
+				int verifiedGoodReviews = statusNode?["verifiedGoodReviewsCount"]?.GetValue<int>() ?? 0;
+				int totalReviews = statusNode?["totalReviewsCount"]?.GetValue<int>() ?? 0;
+				double averageRating = statusNode?["averageRating"]?.GetValue<double>() ?? 0.0;
+
+				if (!isGreenlit)
+				{
+					ShowGreenlightStatusDialog(mapTitle, mapVersion, verifiedGoodReviews, totalReviews, averageRating, isGreenlit: false);
+					return;
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			ShowFeedback($"Warning: Could not verify greenlight status: {ex.Message}");
+		}
+
 		ShowFeedback(TranslationServer.Translate("Compiling terrain shaders & entity data..."));
 		
-		// Compile triggers to .dll
-		string workspace = ProjectSettings.GlobalizePath(TempWorkspaceGodotPath);
 		try
 		{
 			if (System.IO.Directory.Exists(workspace))
@@ -3383,169 +3693,112 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			var authorshipKey = GetOrGenerateAuthorshipKey();
-			string currentUsername = "MapAuthor"; // Could be fetched from a config
-			
-			var referencedHashes = new List<string>();
-			var allFiles = System.IO.Directory.GetFiles(workspace, "*", System.IO.SearchOption.AllDirectories);
-			
-			string seedServerUrl = GameHost.Instance != null && GodotObject.IsInstanceValid(LobbyManager.Instance) ? LobbyManager.Instance.RegistryServerUrl : "http://localhost:5000";
-			
-			using (var httpClient = new System.Net.Http.HttpClient())
+			string currentUsername = LobbyManager.Instance?.AuthenticatedUsername ?? "MapAuthor";
+			string pubKeyBase64 = Convert.ToBase64String(authorshipKey.PublicKey.Export(KeyBlobFormat.RawPublicKey));
+
+			if (System.IO.File.Exists(activeConfigPath))
 			{
-				foreach (var file in allFiles)
+				try
 				{
-					if (file.EndsWith("map.json") || file.EndsWith("authorship_key.pem")) continue;
-					
-					byte[] fileBytes = System.IO.File.ReadAllBytes(file);
-					string ext = System.IO.Path.GetExtension(file).ToLowerInvariant();
-					string blake3 = RealmMetadataHelper.ComputeBlake3(fileBytes, ext);
-					string hash = string.IsNullOrEmpty(ext) ? blake3 : $"{blake3}{ext}";
-					
-					byte[] hashBytes = System.Text.Encoding.UTF8.GetBytes(hash);
+					var metaDoc = JsonNode.Parse(System.IO.File.ReadAllText(activeConfigPath)) as JsonObject;
+					if (metaDoc != null)
+					{
+						metaDoc["EngineVersion"] = RealmVersion.GameBinaryVersion;
+						System.IO.File.WriteAllText(activeConfigPath, metaDoc.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+					}
+				}
+				catch { }
+			}
+
+			var manifest = MapManifest.CreateFromDirectory(workspace, mapTitle, currentUsername, mapVersion);
+			string manifestJsonPath = System.IO.Path.Combine(workspace, "manifest.json");
+			string manifestJsonContent = manifest.ToJson();
+			System.IO.File.WriteAllText(manifestJsonPath, manifestJsonContent);
+
+			byte[] manifestBytes = System.Text.Encoding.UTF8.GetBytes(manifestJsonContent);
+			string manifestBlake3 = RealmMetadataHelper.ComputeBlake3(manifestBytes, ".json");
+			string manifestHash = $"{manifestBlake3}.json";
+			byte[] manifestHashBytes = System.Text.Encoding.UTF8.GetBytes(manifestHash);
+			byte[] manifestSigBytes = SignatureAlgorithm.Ed25519.Sign(authorshipKey, manifestHashBytes);
+			string manifestSigBase64 = Convert.ToBase64String(manifestSigBytes);
+
+			var distClient = new DistributionClient(seedServerUrl);
+
+			var initReq = new PublishMapInitiateRequest
+			{
+				ManifestJson = manifestJsonContent,
+				MapTitle = mapTitle,
+				MapVersion = mapVersion,
+				PublicKey = pubKeyBase64,
+				Signature = manifestSigBase64,
+				ReferencedHashes = manifest.Files.Values.ToList()
+			};
+
+			var initRes = await distClient.InitiatePublishAsync(initReq);
+			if (!initRes.Success)
+			{
+				ShowFeedback("Failed to initiate publish: " + initRes.Message);
+				return;
+			}
+
+			if (initRes.MissingHashes.Count > 0)
+			{
+				var hashToRelativePath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+				foreach (var pair in manifest.Files)
+				{
+					string norm = ContentAddressableStorage.NormalizeBlake3Hash(pair.Value);
+					hashToRelativePath[norm] = pair.Key;
+					hashToRelativePath[pair.Value] = pair.Key;
+				}
+
+				foreach (var missingHash in initRes.MissingHashes)
+				{
+					if (!hashToRelativePath.TryGetValue(missingHash, out var relPath)) continue;
+					string fullFilePath = System.IO.Path.Combine(workspace, relPath);
+					if (!System.IO.File.Exists(fullFilePath)) continue;
+
+					byte[] fileBytes = System.IO.File.ReadAllBytes(fullFilePath);
+					byte[] hashBytes = System.Text.Encoding.UTF8.GetBytes(missingHash);
 					byte[] signatureBytes = SignatureAlgorithm.Ed25519.Sign(authorshipKey, hashBytes);
 					string signatureStr = Convert.ToBase64String(signatureBytes);
-					
-					referencedHashes.Add(hash);
-					
-					var existsRes = await httpClient.GetAsync(seedServerUrl + "/api/publish_map/asset_author/" + hash);
-					if (!existsRes.IsSuccessStatusCode)
+
+					bool uploaded = await distClient.UploadMissingAssetAsync(
+						missingHash,
+						fileBytes,
+						System.IO.Path.GetFileName(fullFilePath),
+						currentUsername,
+						pubKeyBase64,
+						signatureStr,
+						mapTitle,
+						mapVersion,
+						initRes.SessionId
+					);
+
+					if (!uploaded)
 					{
-						using var form = new System.Net.Http.MultipartFormDataContent();
-						form.Add(new System.Net.Http.StringContent(hash), "Hash");
-						form.Add(new System.Net.Http.StringContent(signatureStr), "Signature");
-						form.Add(new System.Net.Http.StringContent(currentUsername), "AuthorUsername");
-						form.Add(new System.Net.Http.StringContent(Convert.ToBase64String(authorshipKey.PublicKey.Export(KeyBlobFormat.RawPublicKey))), "PublicKey");
-						
-						var fileContent = new System.Net.Http.ByteArrayContent(fileBytes);
-						form.Add(fileContent, "File", System.IO.Path.GetFileName(file));
-						
-						await httpClient.PostAsync(seedServerUrl + "/api/publish_map/upload_asset", form);
+						ShowFeedback($"Failed to upload asset: {relPath}");
+						return;
 					}
 				}
 			}
-			
-			// Load map.json, check and update contributors
-			string mapJsonPath = System.IO.Path.Combine(workspace, "map.json");
-			if (System.IO.File.Exists(mapJsonPath))
-			{
-				string mapJsonContent = System.IO.File.ReadAllText(mapJsonPath);
-				
-				var options = new JsonSerializerOptions { WriteIndented = true };
-				var mapDoc = JsonNode.Parse(mapJsonContent) as JsonObject;
-				
-				if (mapDoc != null)
-				{
-					var contributorsList = new HashSet<string>();
-					if (mapDoc.TryGetPropertyValue("Contributors", out var contNode) && contNode is JsonArray arr)
-					{
-						foreach (var node in arr)
-						{
-							if (node != null)
-							{
-								contributorsList.Add(node.GetValue<string>());
-							}
-						}
-					}
-					else
-					{
-						mapDoc["Contributors"] = new JsonArray();
-					}
-					
-					// Ensure all asset authors are in the contributors and attributions list
-					var authorCounts = new System.Collections.Generic.Dictionary<string, int>();
-					using (var httpClient = new System.Net.Http.HttpClient())
-					{
-						foreach (var hash in referencedHashes)
-						{
-							var assetAuthorRes = await httpClient.GetAsync(seedServerUrl + "/api/publish_map/asset_author/" + hash);
-							if (assetAuthorRes.IsSuccessStatusCode)
-							{
-								string assetAuthorJson = await assetAuthorRes.Content.ReadAsStringAsync();
-								var assetMeta = JsonNode.Parse(assetAuthorJson);
-								if (assetMeta != null && assetMeta["AuthorUsername"] != null)
-								{
-									string author = assetMeta["AuthorUsername"].GetValue<string>();
-									if (!string.IsNullOrEmpty(author))
-									{
-										contributorsList.Add(author);
-										if (!authorCounts.ContainsKey(author)) authorCounts[author] = 0;
-										authorCounts[author]++;
-									}
-								}
-							}
-						}
-					}
-					
-					// Add self
-					contributorsList.Add(currentUsername);
-					
-					var newContributorsArr = new JsonArray();
-					foreach (var cont in contributorsList)
-					{
-						newContributorsArr.Add(cont);
-					}
-					mapDoc["Contributors"] = newContributorsArr;
 
-					// Build Attributions
-					var attributionsArr = new JsonArray();
-					var sortedAuthors = authorCounts.Keys.ToList();
-					sortedAuthors.Sort((a, b) => authorCounts[b].CompareTo(authorCounts[a])); // Sort descending
-					foreach (var a in sortedAuthors)
-					{
-						attributionsArr.Add(a);
-					}
-					mapDoc["Attributions"] = attributionsArr;
-					
-					mapDoc["EngineVersion"] = RealmVersion.GameBinaryVersion;
-					
-					string updatedMapJson = mapDoc.ToJsonString(options);
-					System.IO.File.WriteAllText(mapJsonPath, updatedMapJson);
-					
-					byte[] mapBytes = System.IO.File.ReadAllBytes(mapJsonPath);
-					string mapBlake3 = RealmMetadataHelper.ComputeBlake3(mapBytes, ".json");
-					string mapHash = $"{mapBlake3}.json";
-					byte[] mapHashBytes = System.Text.Encoding.UTF8.GetBytes(mapHash);
-					byte[] mapSigBytes = SignatureAlgorithm.Ed25519.Sign(authorshipKey, mapHashBytes);
-					
-					using (var httpClient = new System.Net.Http.HttpClient())
-					{
-						using var form = new System.Net.Http.MultipartFormDataContent();
-						form.Add(new System.Net.Http.StringContent(mapHash), "Hash");
-						form.Add(new System.Net.Http.StringContent(Convert.ToBase64String(mapSigBytes)), "Signature");
-						form.Add(new System.Net.Http.StringContent(currentUsername), "AuthorUsername");
-						form.Add(new System.Net.Http.StringContent(Convert.ToBase64String(authorshipKey.PublicKey.Export(KeyBlobFormat.RawPublicKey))), "PublicKey");
-						
-						var fileContent = new System.Net.Http.ByteArrayContent(mapBytes);
-						form.Add(fileContent, "File", "map.json");
-						
-						await httpClient.PostAsync(seedServerUrl + "/api/publish_map/upload_asset", form);
-						
-						var publishReq = new 
-						{
-							MapJson = updatedMapJson,
-							ReferencedHashes = referencedHashes,
-							Signature = Convert.ToBase64String(mapSigBytes),
-							PublicKey = Convert.ToBase64String(authorshipKey.PublicKey.Export(KeyBlobFormat.RawPublicKey))
-						};
-						
-						var pubContent = new StringContent(JsonSerializer.Serialize(publishReq), System.Text.Encoding.UTF8, "application/json");
-						var pubRes = await httpClient.PostAsync(seedServerUrl + "/api/publish_map", pubContent);
-						
-						if (pubRes.IsSuccessStatusCode)
-						{
-							ShowFeedback(TranslationServer.Translate("Map compiled & published successfully!"));
-						}
-						else
-						{
-							string errText = await pubRes.Content.ReadAsStringAsync();
-							ShowFeedback("Failed to publish: " + errText);
-						}
-					}
-				}
+			var finalizeReq = new PublishMapFinalizeRequest
+			{
+				SessionId = initRes.SessionId,
+				MapTitle = mapTitle,
+				MapVersion = mapVersion,
+				PublicKey = pubKeyBase64,
+				Signature = manifestSigBase64
+			};
+
+			var finalRes = await distClient.FinalizePublishAsync(finalizeReq);
+			if (finalRes.Success)
+			{
+				ShowFeedback(TranslationServer.Translate("Map compiled & published successfully!"));
 			}
 			else
 			{
-				ShowFeedback(TranslationServer.Translate("map.json not found in workspace, unable to publish."));
+				ShowFeedback("Failed to finalize publish: " + finalRes.Message);
 			}
 		}
 		catch (Exception ex)
@@ -3553,7 +3806,6 @@ public partial class MapEditorHUD : Control
 			ShowFeedback(string.Format(TranslationServer.Translate("Publish error: {0}"), ex.Message));
 		}
 	}
-
 
 	public void ShowConfirmationDialog(string message, Action onConfirm, string confirmText = "YES", string cancelText = "NO", Action onCancel = null)
 	{
@@ -6683,14 +6935,6 @@ public partial class MapEditorHUD : Control
 								{
 									sIdx = parsed;
 								}
-								else if (sObj.TryGetPropertyValue("swatch_index", out var idxNode2) && idxNode2 != null && int.TryParse(idxNode2.ToString(), out int parsed2))
-								{
-									sIdx = parsed2;
-								}
-								else if (sObj.TryGetPropertyValue("SwatchIndex", out var idxNode3) && idxNode3 != null && int.TryParse(idxNode3.ToString(), out int parsed3))
-								{
-									sIdx = parsed3;
-								}
 							}
 							parsedItems.Add((baseName, filename, sIdx, order++));
 						}
@@ -8105,6 +8349,35 @@ public partial class MapEditorHUD : Control
 				}
 				GameHost.UnitRegistry[entityId] = uMeta;
 			}
+			else if (domain.Equals("buildings", StringComparison.OrdinalIgnoreCase) && GameHost.BuildingRegistry.TryGetValue(entityId, out var bMeta))
+			{
+				if (fieldName == "PortraitModelPath")
+				{
+					bMeta.PortraitModelPath = newModelPath;
+				}
+				else
+				{
+					bMeta.ModelPath = newModelPath;
+				}
+				GameHost.BuildingRegistry[entityId] = bMeta;
+			}
+			else if (domain.Equals("resources", StringComparison.OrdinalIgnoreCase) && GameHost.ResourceRegistry.TryGetValue(entityId, out var rMeta))
+			{
+				if (fieldName == "PortraitModelPath")
+				{
+					rMeta.PortraitModelPath = newModelPath;
+				}
+				else
+				{
+					rMeta.ModelPath = newModelPath;
+				}
+				GameHost.ResourceRegistry[entityId] = rMeta;
+			}
+			else if (domain.Equals("props", StringComparison.OrdinalIgnoreCase) && GameHost.PropRegistry.TryGetValue(entityId, out var pMeta))
+			{
+				pMeta.ModelPath = newModelPath;
+				GameHost.PropRegistry[entityId] = pMeta;
+			}
 
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
 				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
@@ -8150,6 +8423,13 @@ public partial class MapEditorHUD : Control
 				}
 			});
 			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+
+			GameHost.Instance?.LoadUnitMetadata(wsPath);
+			if (fieldName != "PortraitModelPath")
+			{
+				GameHost.Instance?.RefreshAllPlacedObjectModels(entityId);
+			}
+			_entityPaletteController?.SelectCategory(_entityPaletteController.CurrentCategory, triggerAddObject: false);
 		}
 		catch (Exception ex)
 		{
@@ -8700,10 +8980,6 @@ public partial class MapEditorHUD : Control
 			{
 				if (TrySanitizeCandidate(metadata.MapProperties?.MapName, out var name1))
 					return name1;
-				if (TrySanitizeCandidate(metadata.MapProperties?.Name, out var name2))
-					return name2;
-				if (TrySanitizeCandidate(metadata.MapProperties?.Title, out var name3))
-					return name3;
 			}
 
 			string mapJsonPath = System.IO.Path.Combine(workspacePath, "map.json");
@@ -8712,7 +8988,7 @@ public partial class MapEditorHUD : Control
 				var mapDoc = System.Text.Json.Nodes.JsonNode.Parse(System.IO.File.ReadAllText(mapJsonPath)) as System.Text.Json.Nodes.JsonObject;
 				if (mapDoc != null && mapDoc.TryGetPropertyValue("MapProperties", out var mp) && mp is System.Text.Json.Nodes.JsonObject mpObj)
 				{
-					if (mpObj.TryGetPropertyValue("Name", out var n) && TrySanitizeCandidate(n?.ToString(), out var mapDocName))
+					if (mpObj.TryGetPropertyValue("MapName", out var n) && TrySanitizeCandidate(n?.ToString(), out var mapDocName))
 						return mapDocName;
 				}
 			}
@@ -8848,7 +9124,7 @@ public partial class MapEditorHUD : Control
 						["scale"] = defaultScale,
 						["y_offset"] = autoYOffset,
 						["default_asset_type"] = subCategory.ToLowerInvariant(),
-						["normal_mode"] = "Flat",
+						["despill_player_color"] = true,
 						["normalize_luminance"] = true,
 						["ignore_player_color"] = isPropOrRes
 					};
@@ -8911,7 +9187,7 @@ public partial class MapEditorHUD : Control
 							["YOffset"] = autoYOffset,
 							["PathingType"] = defaultPathing,
 							["ModelPath"] = fileName,
-							["NormalMode"] = "Flat",
+							["DespillPlayerColor"] = true,
 							["NormalizeLuminance"] = true,
 							["IgnorePlayerColor"] = isPropOrRes
 						};
@@ -8947,14 +9223,6 @@ public partial class MapEditorHUD : Control
 							if (sObj.TryGetPropertyValue("swatchIndex", out var idxNode) && idxNode != null && int.TryParse(idxNode.ToString(), out int parsed))
 							{
 								sIdx = parsed;
-							}
-							else if (sObj.TryGetPropertyValue("swatch_index", out var idxNode2) && idxNode2 != null && int.TryParse(idxNode2.ToString(), out int parsed2))
-							{
-								sIdx = parsed2;
-							}
-							else if (sObj.TryGetPropertyValue("SwatchIndex", out var idxNode3) && idxNode3 != null && int.TryParse(idxNode3.ToString(), out int parsed3))
-							{
-								sIdx = parsed3;
 							}
 						}
 						parsedItems.Add((kvp.Key, sIdx, kvp.Value));
@@ -8992,8 +9260,6 @@ public partial class MapEditorHUD : Control
 						if (item.Node is JsonObject sObj)
 						{
 							sObj["swatchIndex"] = item.SwatchIndex;
-							if (sObj.ContainsKey("swatch_index")) sObj.Remove("swatch_index");
-							if (sObj.ContainsKey("SwatchIndex")) sObj.Remove("SwatchIndex");
 						}
 						else
 						{
@@ -9025,8 +9291,6 @@ public partial class MapEditorHUD : Control
 						texEntry = existingEntry;
 						texEntry["hash"] = blake3Hash;
 						texEntry["swatchIndex"] = swatchIdx;
-						if (texEntry.ContainsKey("swatch_index")) texEntry.Remove("swatch_index");
-						if (texEntry.ContainsKey("SwatchIndex")) texEntry.Remove("SwatchIndex");
 					}
 					else
 					{
@@ -9037,7 +9301,7 @@ public partial class MapEditorHUD : Control
 						};
 					}
 
-					if (!texEntry.ContainsKey("Scale_Factor") && !texEntry.ContainsKey("scale_factor") && !texEntry.ContainsKey("ScaleFactor"))
+					if (!texEntry.ContainsKey("Scale_Factor"))
 					{
 						string texPath = System.IO.Path.Combine(wsPath, "Assets", "textures", fileName);
 						float scaleFactor = Realm.Shared.Textures.TextureConverter.CalculateLuminanceScaleFactor(texPath);
@@ -9141,7 +9405,7 @@ public partial class MapEditorHUD : Control
 	public Realm.Godot.Services.ModelOptimization.ModelOptimizerService.OptimizationResult OptimizeAndImportGlbDirect(
 		byte[] glbBytes,
 		int maxTextureResolution = 1024,
-		float creaseAngleDegrees = 45.0f,
+		float creaseAngleDegrees = GlbMeshSmoother.DefaultCreaseAngleDegrees,
 		float allowedPixelError = 1.5f,
 		bool forceReDecimate = false)
 	{

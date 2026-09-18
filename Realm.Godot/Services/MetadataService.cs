@@ -14,6 +14,9 @@ namespace Realm.Godot.Services;
 
 public class MapMetadata
 {
+	[JsonPropertyName("GameBuildNumber")]
+	public string? GameBuildNumber { get; set; }
+
 	[JsonPropertyName("MapProperties")]
 	public MapInfoMetadata MapProperties { get; set; } = new();
 
@@ -74,8 +77,8 @@ public class MapMetadata
 	[JsonPropertyName("ModelColorTint")]
 	public Dictionary<string, string> ModelColorTint { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
-	[JsonPropertyName("ModelNormalModes")]
-	public Dictionary<string, string> ModelNormalModes { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+	[JsonPropertyName("ModelDespillPlayerColor")]
+	public Dictionary<string, bool> ModelDespillPlayerColor { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
 	[JsonPropertyName("ModelNormalizeLuminance")]
 	public Dictionary<string, bool> ModelNormalizeLuminance { get; set; } = new(StringComparer.OrdinalIgnoreCase);
@@ -449,10 +452,10 @@ public class MapMetadata
 		ModelColorTint[modelKey] = tint;
 	}
 
-	public void SetModelNormalMode(string modelKey, string normalMode)
+	public void SetModelDespillPlayerColor(string modelKey, bool despill)
 	{
 		if (string.IsNullOrWhiteSpace(modelKey)) return;
-		ModelNormalModes[modelKey] = normalMode;
+		ModelDespillPlayerColor[modelKey] = despill;
 	}
 
 	public void SetModelNormalizeLuminance(string modelKey, bool normalize)
@@ -470,12 +473,9 @@ public class MapMetadata
 
 public class MapInfoMetadata
 {
-	public string? Name { get; set; }
 	public string? MapName { get; set; }
-	public string? Title { get => Name ?? MapName; set { Name = value; MapName = value; } }
 	public string? MapDescription { get; set; }
 	public string? Author { get; set; }
-	public string? Description { get; set; }
 	public string? SuggestedPlayers { get; set; }
 	public string? MinimapImage { get; set; }
 	public string? ShroudType { get; set; }
@@ -625,7 +625,7 @@ public class MetadataService
 		return pathOrDirectory;
 	}
 
-	public MapMetadata LoadMetadata(string pathOrDirectory, bool fallbackToTemplate = false)
+	public MapMetadata LoadMetadata(string pathOrDirectory)
 	{
 		string targetPath = ResolveMetadataPath(pathOrDirectory);
 		string jsonText = string.Empty;
@@ -642,22 +642,6 @@ public class MetadataService
 			}
 		}
 
-		if (string.IsNullOrWhiteSpace(jsonText) && fallbackToTemplate)
-		{
-			string templatePath = PathUtils.FindPath("MapTemplate/metadata.json");
-			if (!string.IsNullOrEmpty(templatePath) && File.Exists(templatePath))
-			{
-				try
-				{
-					jsonText = File.ReadAllText(templatePath);
-				}
-				catch (Exception ex)
-				{
-					GD.PrintErr($"[MetadataService] Failed reading template at {templatePath}: {ex.Message}");
-				}
-			}
-		}
-
 		if (string.IsNullOrWhiteSpace(jsonText))
 		{
 			return new MapMetadata();
@@ -666,7 +650,6 @@ public class MetadataService
 		try
 		{
 			var metadata = JsonSerializer.Deserialize<MapMetadata>(jsonText, SerializerOptions) ?? new MapMetadata();
-			PopulateLegacyAndAlternativeFields(jsonText, metadata);
 			CleanMetadata(metadata);
 			return metadata;
 		}
@@ -677,16 +660,16 @@ public class MetadataService
 		}
 	}
 
-	public bool TryLoadMetadata(string pathOrDirectory, out MapMetadata metadata, bool fallbackToTemplate = false)
+	public bool TryLoadMetadata(string pathOrDirectory, out MapMetadata metadata)
 	{
 		string targetPath = ResolveMetadataPath(pathOrDirectory);
-		if (!File.Exists(targetPath) && !fallbackToTemplate)
+		if (!File.Exists(targetPath))
 		{
 			metadata = new MapMetadata();
 			return false;
 		}
 
-		metadata = LoadMetadata(pathOrDirectory, fallbackToTemplate);
+		metadata = LoadMetadata(pathOrDirectory);
 		return true;
 	}
 
@@ -719,7 +702,7 @@ public class MetadataService
 		if (updateAction == null) return;
 
 		string targetPath = ResolveMetadataPath(pathOrDirectory);
-		var metadata = LoadMetadata(targetPath, fallbackToTemplate: false);
+		var metadata = LoadMetadata(targetPath);
 		updateAction(metadata);
 		SaveMetadata(targetPath, metadata);
 	}
@@ -838,7 +821,7 @@ public class MetadataService
 		metadata.ModelObstacleRadii ??= new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
 		metadata.ModelBrightness ??= new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
 		metadata.ModelColorTint ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-		metadata.ModelNormalModes ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		metadata.ModelDespillPlayerColor ??= new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 		metadata.ModelNormalizeLuminance ??= new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 		metadata.ModelIgnorePlayerColor ??= new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 		metadata.ModelSpawnShaders ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -850,6 +833,11 @@ public class MetadataService
 		metadata.Icons ??= new Dictionary<string, JsonNode>(StringComparer.OrdinalIgnoreCase);
 		metadata.Skyboxes ??= new Dictionary<string, JsonNode>(StringComparer.OrdinalIgnoreCase);
 		metadata.Ribbons ??= new Dictionary<string, JsonNode>(StringComparer.OrdinalIgnoreCase);
+
+		if (string.IsNullOrEmpty(metadata.GameBuildNumber))
+		{
+			metadata.GameBuildNumber = Realm.Shared.RealmVersion.GameBuildNumber;
+		}
 
 		if (metadata.ExtensionData != null)
 		{
@@ -1160,10 +1148,10 @@ public class MetadataService
 		metadata.ModelColorTint[modelKey] = tint;
 	}
 
-	public void SetModelNormalMode(MapMetadata metadata, string modelKey, string normalMode)
+	public void SetModelDespillPlayerColor(MapMetadata metadata, string modelKey, bool despill)
 	{
 		if (metadata == null || string.IsNullOrWhiteSpace(modelKey)) return;
-		metadata.ModelNormalModes[modelKey] = normalMode;
+		metadata.ModelDespillPlayerColor[modelKey] = despill;
 	}
 
 	public void SetModelNormalizeLuminance(MapMetadata metadata, string modelKey, bool normalizeLuminance)
@@ -1213,7 +1201,7 @@ public class MetadataService
 		metadata.ModelObstacleRadii.Remove(modelKey);
 		metadata.ModelBrightness.Remove(modelKey);
 		metadata.ModelColorTint.Remove(modelKey);
-		metadata.ModelNormalModes.Remove(modelKey);
+		metadata.ModelDespillPlayerColor.Remove(modelKey);
 		metadata.ModelNormalizeLuminance.Remove(modelKey);
 		metadata.ModelIgnorePlayerColor.Remove(modelKey);
 		metadata.ModelSpawnShaders.Remove(modelKey);
@@ -1222,34 +1210,25 @@ public class MetadataService
 
 	public string GetMapName(MapMetadata metadata)
 	{
-		if (metadata?.MapProperties == null) return string.Empty;
-		if (!string.IsNullOrWhiteSpace(metadata.MapProperties.MapName)) return metadata.MapProperties.MapName;
-		if (!string.IsNullOrWhiteSpace(metadata.MapProperties.Name)) return metadata.MapProperties.Name;
-		if (!string.IsNullOrWhiteSpace(metadata.MapProperties.LoadingTitle)) return metadata.MapProperties.LoadingTitle;
-		return string.Empty;
+		return metadata?.MapProperties?.MapName ?? string.Empty;
 	}
 
 	public void SetMapName(MapMetadata metadata, string mapName)
 	{
 		if (metadata == null) return;
 		metadata.MapProperties ??= new MapInfoMetadata();
-		metadata.MapProperties.Name = mapName;
 		metadata.MapProperties.MapName = mapName;
 	}
 
 	public string GetMapDescription(MapMetadata metadata)
 	{
-		if (metadata?.MapProperties == null) return string.Empty;
-		if (!string.IsNullOrWhiteSpace(metadata.MapProperties.MapDescription)) return metadata.MapProperties.MapDescription;
-		if (!string.IsNullOrWhiteSpace(metadata.MapProperties.Description)) return metadata.MapProperties.Description;
-		return string.Empty;
+		return metadata?.MapProperties?.MapDescription ?? string.Empty;
 	}
 
 	public void SetMapDescription(MapMetadata metadata, string description)
 	{
 		if (metadata == null) return;
 		metadata.MapProperties ??= new MapInfoMetadata();
-		metadata.MapProperties.Description = description;
 		metadata.MapProperties.MapDescription = description;
 	}
 
@@ -1293,127 +1272,5 @@ public class MetadataService
 		metadata.Greenlight.VotesRequired = votesRequired;
 		if (approvedUtc != null) metadata.Greenlight.ApprovedUtc = approvedUtc;
 		if (bypassToken != null) metadata.Greenlight.BypassToken = bypassToken;
-	}
-
-	private static void PopulateLegacyAndAlternativeFields(string jsonText, MapMetadata metadata)
-	{
-		try
-		{
-			using var doc = JsonDocument.Parse(jsonText);
-			var root = doc.RootElement;
-			if (root.ValueKind != JsonValueKind.Object) return;
-
-			if (metadata.CustomUnits.Count == 0 && root.TryGetProperty("Units", out var unitsProp) && unitsProp.ValueKind == JsonValueKind.Array)
-			{
-				var list = JsonSerializer.Deserialize<List<GameHost.UnitMetadata>>(unitsProp.GetRawText(), SerializerOptions);
-				if (list != null) metadata.CustomUnits.AddRange(list);
-			}
-
-			if (metadata.CustomBuildings.Count == 0 && root.TryGetProperty("Buildings", out var bldProp) && bldProp.ValueKind == JsonValueKind.Array)
-			{
-				var list = JsonSerializer.Deserialize<List<GameHost.UnitMetadata>>(bldProp.GetRawText(), SerializerOptions);
-				if (list != null) metadata.CustomBuildings.AddRange(list);
-			}
-
-			if (metadata.CustomResources.Count == 0 && root.TryGetProperty("Resources", out var resProp) && resProp.ValueKind == JsonValueKind.Array)
-			{
-				var list = JsonSerializer.Deserialize<List<GameHost.ResourceMetadata>>(resProp.GetRawText(), SerializerOptions);
-				if (list != null) metadata.CustomResources.AddRange(list);
-			}
-
-			if (metadata.CustomProps.Count == 0 && root.TryGetProperty("Props", out var propProp) && propProp.ValueKind == JsonValueKind.Array)
-			{
-				var list = JsonSerializer.Deserialize<List<GameHost.PropMetadata>>(propProp.GetRawText(), SerializerOptions);
-				if (list != null) metadata.CustomProps.AddRange(list);
-			}
-
-			if (metadata.CustomAbilities.Count == 0 && root.TryGetProperty("Abilities", out var abProp) && abProp.ValueKind == JsonValueKind.Array)
-			{
-				var list = JsonSerializer.Deserialize<List<GameHost.AbilityMetadata>>(abProp.GetRawText(), SerializerOptions);
-				if (list != null) metadata.CustomAbilities.AddRange(list);
-			}
-
-			if (metadata.CustomWeapons.Count == 0 && root.TryGetProperty("Weapons", out var weapProp) && weapProp.ValueKind == JsonValueKind.Array)
-			{
-				var list = JsonSerializer.Deserialize<List<GameHost.WeaponMetadata>>(weapProp.GetRawText(), SerializerOptions);
-				if (list != null) metadata.CustomWeapons.AddRange(list);
-			}
-
-			if (metadata.CustomUpgrades.Count == 0 && root.TryGetProperty("Upgrades", out var upgProp) && upgProp.ValueKind == JsonValueKind.Array)
-			{
-				var list = JsonSerializer.Deserialize<List<GameHost.UpgradeMetadata>>(upgProp.GetRawText(), SerializerOptions);
-				if (list != null) metadata.CustomUpgrades.AddRange(list);
-			}
-
-			if (metadata.CustomItems.Count == 0 && root.TryGetProperty("Items", out var itemProp) && itemProp.ValueKind == JsonValueKind.Array)
-			{
-				var list = JsonSerializer.Deserialize<List<GameHost.ItemMetadata>>(itemProp.GetRawText(), SerializerOptions);
-				if (list != null) metadata.CustomItems.AddRange(list);
-			}
-
-			if (metadata.CustomAttachments.Count == 0 && root.TryGetProperty("Attachments", out var attProp) && attProp.ValueKind == JsonValueKind.Array)
-			{
-				var list = JsonSerializer.Deserialize<List<GameHost.AttachmentMetadata>>(attProp.GetRawText(), SerializerOptions);
-				if (list != null) metadata.CustomAttachments.AddRange(list);
-			}
-
-			if (metadata.CustomVfx.Count == 0 && root.TryGetProperty("Vfx", out var vfxProp) && vfxProp.ValueKind == JsonValueKind.Array)
-			{
-				var list = JsonSerializer.Deserialize<List<VfxAttachmentConfig>>(vfxProp.GetRawText(), SerializerOptions);
-				if (list != null) metadata.CustomVfx.AddRange(list);
-			}
-
-			if (metadata.ModelColorTint.Count == 0 && root.TryGetProperty("ModelTint", out var tintProp) && tintProp.ValueKind == JsonValueKind.Object)
-			{
-				foreach (var prop in tintProp.EnumerateObject())
-				{
-					if (prop.Value.ValueKind == JsonValueKind.String)
-					{
-						metadata.ModelColorTint[prop.Name] = prop.Value.GetString() ?? "";
-					}
-				}
-			}
-
-			bool hasStructuredArrays = metadata.CustomUnits.Count > 0 ||
-			                           metadata.CustomBuildings.Count > 0 ||
-			                           metadata.CustomResources.Count > 0 ||
-			                           metadata.CustomProps.Count > 0 ||
-			                           metadata.CustomAbilities.Count > 0 ||
-			                           metadata.CustomWeapons.Count > 0;
-
-			if (!hasStructuredArrays)
-			{
-				var skipKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-				{
-					"MapProperties", "CustomWeapons", "CustomAbilities", "CustomUpgrades",
-					"CustomItems", "CustomUnits", "CustomBuildings", "CustomResources",
-					"CustomProps", "CustomVfx", "CustomAttachments", "Dependencies",
-					"Ratings", "Greenlight", "Assets", "textures", "decals", "vfx_spritesheets",
-					"noise_textures", "icons", "skyboxes", "ribbons", "ModelOffsets",
-					"ModelScales", "ModelCollisionCircleRatios", "ModelObstacleRadii",
-					"ModelBrightness", "ModelColorTint", "ModelNormalModes",
-					"ModelNormalizeLuminance", "ModelIgnorePlayerColor",
-					"ModelSpawnShaders", "ModelDeathShaders"
-				};
-
-				foreach (var prop in root.EnumerateObject())
-				{
-					if (!skipKeys.Contains(prop.Name) && prop.Value.ValueKind == JsonValueKind.Object)
-					{
-						try
-						{
-							var unit = JsonSerializer.Deserialize<GameHost.UnitMetadata>(prop.Value.GetRawText(), SerializerOptions);
-							if (string.IsNullOrEmpty(unit.UnitId))
-							{
-								unit.UnitId = prop.Name;
-							}
-							metadata.CustomUnits.Add(unit);
-						}
-						catch { }
-					}
-				}
-			}
-		}
-		catch { }
 	}
 }
