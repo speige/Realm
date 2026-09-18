@@ -2732,23 +2732,49 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				byte[] rtexBytes = File.ReadAllBytes(destPath);
 				hash = Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(rtexBytes, ".rtex");
 
+				if (!Realm.Godot.Utils.TextureSwatchSlots.ValidateCategory(fileName))
+				{
+					GD.PrintErr($"[AssetManagerDialog] Asset '{fileName}' cannot be imported as terrain texture.");
+					return;
+				}
+
 				if (!assetsObj.ContainsKey("textures") || assetsObj["textures"] == null) assetsObj["textures"] = new JsonObject();
 				var texturesObj = assetsObj["textures"].AsObject();
 
-				int nextSwatchIndex = 0;
+				var occupied = new bool[Realm.Godot.Utils.TextureSwatchSlots.MaxSlots];
+				int existingSlot = -1;
+				if (texturesObj.TryGetPropertyValue(fileName, out var existingEntry) && existingEntry is JsonObject exObj &&
+					exObj.TryGetPropertyValue("swatchIndex", out var exIdx) && exIdx != null && int.TryParse(exIdx.ToString(), out int pEx))
+				{
+					existingSlot = pEx;
+				}
 				foreach (var kvp in texturesObj)
 				{
 					if (kvp.Value is JsonObject sObj && sObj.TryGetPropertyValue("swatchIndex", out var idxNode) && idxNode != null && int.TryParse(idxNode.ToString(), out int parsed))
 					{
-						if (parsed >= nextSwatchIndex) nextSwatchIndex = parsed + 1;
+						if (parsed >= 0 && parsed < Realm.Godot.Utils.TextureSwatchSlots.MaxSlots)
+						{
+							occupied[parsed] = true;
+						}
 					}
 				}
 
-				texturesObj[fileName] = new JsonObject
+				int assignedSlot = (existingSlot >= 0 && existingSlot < Realm.Godot.Utils.TextureSwatchSlots.MaxSlots)
+					? existingSlot
+					: Realm.Godot.Utils.TextureSwatchSlots.FirstFreeSlot(occupied);
+
+				if (assignedSlot >= 0)
 				{
-					["hash"] = hash,
-					["swatchIndex"] = nextSwatchIndex
-				};
+					texturesObj[fileName] = new JsonObject
+					{
+						["hash"] = hash,
+						["swatchIndex"] = assignedSlot
+					};
+				}
+				else
+				{
+					GD.PrintErr($"[AssetManagerDialog] All 32 texture slots are occupied. Cannot import '{fileName}'.");
+				}
 			}
 			else if (_currentCategory == "vfx_spritesheets")
 			{
@@ -3039,6 +3065,12 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 	private void SaveTextureSwatch(string key, JsonObject updatedData)
 	{
+		if (!Realm.Godot.Utils.TextureSwatchSlots.ValidateCategory(key))
+		{
+			GD.PrintErr($"[AssetManagerDialog] Cannot save swatch for non-terrain texture '{key}'.");
+			return;
+		}
+
 		string wsPath = GetWorkspacePath();
 
 		try
@@ -3079,19 +3111,17 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				swatchIdx = parsedIdx3;
 			}
 
-			if (swatchIdx < 0)
+			if (swatchIdx < 0 || swatchIdx >= Realm.Godot.Utils.TextureSwatchSlots.MaxSlots)
 			{
-				var usedIndices = new HashSet<int>();
+				var occupied = new bool[Realm.Godot.Utils.TextureSwatchSlots.MaxSlots];
 				foreach (var kvp in texturesDict)
 				{
-					if (kvp.Value is JsonObject itemObj && itemObj.TryGetPropertyValue("swatchIndex", out var sNode) && sNode != null && int.TryParse(sNode.ToString(), out int p) && p >= 0)
+					if (kvp.Value is JsonObject itemObj && itemObj.TryGetPropertyValue("swatchIndex", out var sNode) && sNode != null && int.TryParse(sNode.ToString(), out int p) && p >= 0 && p < Realm.Godot.Utils.TextureSwatchSlots.MaxSlots)
 					{
-						usedIndices.Add(p);
+						occupied[p] = true;
 					}
 				}
-				int nextFree = 0;
-				while (usedIndices.Contains(nextFree)) nextFree++;
-				swatchIdx = nextFree;
+				swatchIdx = Realm.Godot.Utils.TextureSwatchSlots.FirstFreeSlot(occupied);
 			}
 
 			var newObj = new JsonObject();

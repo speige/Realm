@@ -6668,160 +6668,124 @@ public partial class MapEditorHUD : Control
 			var unionedAssets = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath);
 			JsonObject? texturesObj = unionedAssets?["textures"] as JsonObject;
 
-			if (texturesObj != null)
-					{
-						var parsedItems = new List<(string BaseName, string Filename, int SwatchIndex, int OrderIndex)>();
-						int order = 0;
-						foreach (var kvp in texturesObj)
-						{
-							string filename = kvp.Key;
-							string baseName = System.IO.Path.GetFileNameWithoutExtension(filename);
-							int sIdx = -1;
-							if (kvp.Value is JsonObject sObj)
-							{
-								if (sObj.TryGetPropertyValue("swatchIndex", out var idxNode) && idxNode != null && int.TryParse(idxNode.ToString(), out int parsed))
-								{
-									sIdx = parsed;
-								}
-								else if (sObj.TryGetPropertyValue("swatch_index", out var idxNode2) && idxNode2 != null && int.TryParse(idxNode2.ToString(), out int parsed2))
-								{
-									sIdx = parsed2;
-								}
-								else if (sObj.TryGetPropertyValue("SwatchIndex", out var idxNode3) && idxNode3 != null && int.TryParse(idxNode3.ToString(), out int parsed3))
-								{
-									sIdx = parsed3;
-								}
-							}
-							parsedItems.Add((baseName, filename, sIdx, order++));
-						}
-
-						var usedIndices = new HashSet<int>();
-						foreach (var item in parsedItems)
-						{
-							if (item.SwatchIndex >= 0)
-							{
-								usedIndices.Add(item.SwatchIndex);
-							}
-						}
-
-						int nextFree = 0;
-						for (int i = 0; i < parsedItems.Count; i++)
-						{
-							var item = parsedItems[i];
-							if (item.SwatchIndex < 0)
-							{
-								while (usedIndices.Contains(nextFree))
-								{
-									nextFree++;
-								}
-								item.SwatchIndex = nextFree;
-								usedIndices.Add(nextFree);
-								parsedItems[i] = item;
-							}
-						}
-
-						parsedItems.Sort((a, b) =>
-						{
-							int cmp = a.SwatchIndex.CompareTo(b.SwatchIndex);
-							if (cmp != 0) return cmp;
-							return a.OrderIndex.CompareTo(b.OrderIndex);
-						});
-
-						foreach (var item in parsedItems)
-						{
-							if (!_swatchDisplayNames.Any(n => n.Equals(item.BaseName, StringComparison.OrdinalIgnoreCase)))
-							{
-								string cleanDisplayName = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(item.BaseName.Replace("_", " "));
-								_swatchDisplayNames.Add(cleanDisplayName);
-								string resolvedPath = System.IO.Path.Combine(wsPath, "Assets", "textures", item.Filename);
-								if (!System.IO.File.Exists(resolvedPath))
-								{
-									resolvedPath = System.IO.Path.Combine(wsPath, item.Filename);
-								}
-								_swatchPaths.Add(resolvedPath);
-								_swatchColors.Add(new Color(0.6f, 0.6f, 0.6f));
-							}
-						}
-					}
-		}
-		catch { }
-
-		if (_gridSwatches != null)
-		{
-			if (_gridSwatches is GridContainer gridSwatchesContainer)
+			var slots = Realm.Godot.Utils.TextureSwatchSlots.ResolveSlots(texturesObj, wsPath);
+			for (int i = 0; i < Realm.Godot.Utils.TextureSwatchSlots.MaxSlots; i++)
 			{
-				gridSwatchesContainer.Columns = 5;
-			}
-			foreach (Node child in _gridSwatches.GetChildren())
-			{
-				_gridSwatches.RemoveChild(child);
-				child.QueueFree();
-			}
-			_swatchButtons.Clear();
-
-			for (int i = 0; i < _swatchDisplayNames.Count; i++)
-			{
-				var btn = new Button();
-				btn.Name = $"Swatch{i + 1}";
-				btn.Flat = false;
-				btn.ExpandIcon = true;
-				btn.FocusMode = FocusModeEnum.None;
-				btn.CustomMinimumSize = new Vector2(40, 40);
-				btn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-				btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-				btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
-
-				Texture2D tex = GetSwatchTexture(i);
-				if (tex != null)
+				var slot = slots[i];
+				if (!slot.IsFiller && !string.IsNullOrEmpty(slot.BaseName))
 				{
-					var texRect = new TextureRect();
-					texRect.Texture = tex;
-					texRect.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
-					texRect.StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered;
-					texRect.MouseFilter = MouseFilterEnum.Ignore;
-					texRect.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-					texRect.GrowHorizontal = GrowDirection.Both;
-					texRect.GrowVertical = GrowDirection.Both;
-					btn.AddChild(texRect);
+					string cleanDisplayName = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(slot.BaseName.Replace("_", " "));
+					_swatchDisplayNames.Add(cleanDisplayName);
+					string resolvedPath = System.IO.Path.Combine(wsPath, "Assets", "textures", slot.FileName ?? (slot.BaseName + ".rtex"));
+					if (!System.IO.File.Exists(resolvedPath))
+					{
+						resolvedPath = System.IO.Path.Combine(wsPath, slot.FileName ?? (slot.BaseName + ".rtex"));
+					}
+					_swatchPaths.Add(resolvedPath);
+					_swatchColors.Add(new Color(0.6f, 0.6f, 0.6f));
 				}
 				else
 				{
-					var colorBox = new ColorRect();
-					colorBox.Color = _swatchColors[i];
-					colorBox.MouseFilter = MouseFilterEnum.Ignore;
-					colorBox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-					colorBox.GrowHorizontal = GrowDirection.Both;
-					colorBox.GrowVertical = GrowDirection.Both;
-					btn.AddChild(colorBox);
+					_swatchDisplayNames.Add($"Slot {i} (Empty)");
+					_swatchPaths.Add("");
+					_swatchColors.Add(new Color(0.2f, 0.2f, 0.2f, 0.5f));
 				}
+			}
 
-				int index = i;
-				btn.GuiInput += (@event) =>
+			if (_gridSwatches != null)
+			{
+				if (_gridSwatches is GridContainer gridSwatchesContainer)
 				{
-					if (@event is InputEventMouseButton mouseEvent && mouseEvent.Pressed)
-					{
-						if (mouseEvent.ButtonIndex == MouseButton.Left)
-						{
-							if (Input.IsKeyPressed(Godot.Key.Shift) || (_chkApplyCliffTexture != null && _chkApplyCliffTexture.ButtonPressed && (_chkApplyGroundTexture == null || !_chkApplyGroundTexture.ButtonPressed)))
-							{
-								SelectCliffTexture(index);
-							}
-							else
-							{
-								SelectTerrainTexture(index, btn);
-							}
-						}
-						else if (mouseEvent.ButtonIndex == MouseButton.Right)
-						{
-							SelectCliffTexture(index);
-						}
-					}
-				};
+					gridSwatchesContainer.Columns = 8;
+				}
+				foreach (Node child in _gridSwatches.GetChildren())
+				{
+					_gridSwatches.RemoveChild(child);
+					child.QueueFree();
+				}
+				_swatchButtons.Clear();
 
-				_gridSwatches.AddChild(btn);
-				_swatchButtons.Add(btn);
+				for (int i = 0; i < Realm.Godot.Utils.TextureSwatchSlots.MaxSlots; i++)
+				{
+					var slot = slots[i];
+					int slotIndex = slot.SlotIndex;
+					var btn = new Button();
+					btn.Name = $"Swatch{slotIndex + 1}";
+					btn.Flat = false;
+					btn.ExpandIcon = true;
+					btn.FocusMode = FocusModeEnum.None;
+					btn.CustomMinimumSize = new Vector2(40, 40);
+					btn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+					btn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+					btn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+
+					if (!slot.IsFiller && !string.IsNullOrEmpty(slot.BaseName))
+					{
+						Texture2D tex = GetSwatchTexture(slotIndex);
+						if (tex != null)
+						{
+							var texRect = new TextureRect();
+							texRect.Texture = tex;
+							texRect.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+							texRect.StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered;
+							texRect.MouseFilter = MouseFilterEnum.Ignore;
+							texRect.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+							texRect.GrowHorizontal = GrowDirection.Both;
+							texRect.GrowVertical = GrowDirection.Both;
+							btn.AddChild(texRect);
+						}
+						else
+						{
+							var colorBox = new ColorRect();
+							colorBox.Color = _swatchColors[slotIndex];
+							colorBox.MouseFilter = MouseFilterEnum.Ignore;
+							colorBox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+							colorBox.GrowHorizontal = GrowDirection.Both;
+							colorBox.GrowVertical = GrowDirection.Both;
+							btn.AddChild(colorBox);
+						}
+						btn.TooltipText = $"{slotIndex}: {_swatchDisplayNames[slotIndex]}";
+					}
+					else
+					{
+						var emptyBox = new ColorRect();
+						emptyBox.Color = new Color(0.15f, 0.15f, 0.15f, 0.8f);
+						emptyBox.MouseFilter = MouseFilterEnum.Ignore;
+						emptyBox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+						emptyBox.GrowHorizontal = GrowDirection.Both;
+						emptyBox.GrowVertical = GrowDirection.Both;
+						btn.AddChild(emptyBox);
+						btn.TooltipText = $"Slot {slotIndex} (Empty)";
+					}
+
+					btn.GuiInput += (@event) =>
+					{
+						if (@event is InputEventMouseButton mouseEvent && mouseEvent.Pressed)
+						{
+							if (mouseEvent.ButtonIndex == MouseButton.Left)
+							{
+								if (Input.IsKeyPressed(Godot.Key.Shift) || (_chkApplyCliffTexture != null && _chkApplyCliffTexture.ButtonPressed && (_chkApplyGroundTexture == null || !_chkApplyGroundTexture.ButtonPressed)))
+								{
+									SelectCliffTexture(slotIndex);
+								}
+								else
+								{
+									SelectTerrainTexture(slotIndex, btn);
+								}
+							}
+							else if (mouseEvent.ButtonIndex == MouseButton.Right)
+							{
+								SelectCliffTexture(slotIndex);
+							}
+						}
+					};
+
+					_gridSwatches.AddChild(btn);
+					_swatchButtons.Add(btn);
+				}
 			}
 		}
+		catch { }
 
 		UpdateTextureLabels();
 	}
@@ -8482,14 +8446,19 @@ public partial class MapEditorHUD : Control
 		string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
 			? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 			: _tempWorkspacePath;
+		if (i >= 0 && i < _swatchDisplayNames.Count && _swatchDisplayNames[i].EndsWith("(Empty)"))
+		{
+			return null;
+		}
 		string localRtex = "";
-		if (i >= 0 && i < _swatchPaths.Count && System.IO.File.Exists(_swatchPaths[i]))
+		if (i >= 0 && i < _swatchPaths.Count && !string.IsNullOrEmpty(_swatchPaths[i]) && System.IO.File.Exists(_swatchPaths[i]))
 		{
 			localRtex = _swatchPaths[i];
 		}
 		else
 		{
 			string texName = (i >= 0 && i < _swatchDisplayNames.Count) ? _swatchDisplayNames[i] : $"swatch_{i}";
+			if (string.IsNullOrEmpty(texName) || texName.EndsWith("(Empty)")) return null;
 			string cleanName = texName.ToLowerInvariant().Replace(" ", "_") + ".rtex";
 			localRtex = System.IO.Path.Combine(wsPath, "Assets", "textures", cleanName);
 			if (!System.IO.File.Exists(localRtex))
@@ -8931,14 +8900,26 @@ public partial class MapEditorHUD : Control
 				JsonObject catObj = assetsObj[category] as JsonObject ?? new JsonObject();
 				if (category == "textures")
 				{
+					if (!Realm.Godot.Utils.TextureSwatchSlots.ValidateCategory(fileName))
+					{
+						GD.PrintErr($"[MapEditorHUD] Asset '{fileName}' is not a valid terrain texture.");
+						return;
+					}
+
 					if (catObj.Count == 0 && root.ContainsKey("textures") && root["textures"] is JsonObject rootTexExisting)
 					{
 						foreach (var kvp in rootTexExisting)
 						{
-							catObj[kvp.Key] = kvp.Value?.DeepClone();
+							if (Realm.Godot.Utils.TextureSwatchSlots.ValidateCategory(kvp.Key, kvp.Value))
+							{
+								catObj[kvp.Key] = kvp.Value?.DeepClone();
+							}
 						}
 					}
-					var parsedItems = new List<(string Key, int SwatchIndex, JsonNode? Node)>();
+
+					var occupiedSlots = new bool[Realm.Godot.Utils.TextureSwatchSlots.MaxSlots];
+					int existingItemIndex = -1;
+
 					foreach (var kvp in catObj)
 					{
 						int sIdx = -1;
@@ -8957,67 +8938,26 @@ public partial class MapEditorHUD : Control
 								sIdx = parsed3;
 							}
 						}
-						parsedItems.Add((kvp.Key, sIdx, kvp.Value));
+
+						if (kvp.Key.Equals(fileName, StringComparison.OrdinalIgnoreCase))
+						{
+							existingItemIndex = sIdx;
+						}
+						else if (sIdx >= 0 && sIdx < Realm.Godot.Utils.TextureSwatchSlots.MaxSlots)
+						{
+							occupiedSlots[sIdx] = true;
+						}
 					}
 
-					var usedIndices = new HashSet<int>();
-					foreach (var item in parsedItems)
+					int swatchIdx = (existingItemIndex >= 0 && existingItemIndex < Realm.Godot.Utils.TextureSwatchSlots.MaxSlots)
+						? existingItemIndex
+						: Realm.Godot.Utils.TextureSwatchSlots.FirstFreeSlot(occupiedSlots);
+
+					if (swatchIdx < 0)
 					{
-						if (item.SwatchIndex >= 0)
-						{
-							usedIndices.Add(item.SwatchIndex);
-						}
+						GD.PrintErr($"[MapEditorHUD] All 32 texture slots are occupied. Cannot assign slot to '{fileName}'.");
+						swatchIdx = Realm.Godot.Utils.TextureSwatchSlots.MaxSlots - 1;
 					}
-
-					int nextFree = 0;
-					for (int i = 0; i < parsedItems.Count; i++)
-					{
-						var item = parsedItems[i];
-						if (item.SwatchIndex < 0)
-						{
-							while (usedIndices.Contains(nextFree))
-							{
-								nextFree++;
-							}
-							item.SwatchIndex = nextFree;
-							usedIndices.Add(nextFree);
-							parsedItems[i] = item;
-						}
-					}
-
-					foreach (var item in parsedItems)
-					{
-						if (item.Key.Equals(fileName, StringComparison.OrdinalIgnoreCase)) continue;
-
-						if (item.Node is JsonObject sObj)
-						{
-							sObj["swatchIndex"] = item.SwatchIndex;
-							if (sObj.ContainsKey("swatch_index")) sObj.Remove("swatch_index");
-							if (sObj.ContainsKey("SwatchIndex")) sObj.Remove("SwatchIndex");
-						}
-						else
-						{
-							string existingHash = item.Node?.ToString() ?? "";
-							catObj[item.Key] = new JsonObject
-							{
-								["hash"] = existingHash,
-								["swatchIndex"] = item.SwatchIndex
-							};
-						}
-					}
-
-					int maxSwatchIndex = usedIndices.Count > 0 ? usedIndices.Max() : -1;
-					int existingItemIndex = -1;
-					for (int i = 0; i < parsedItems.Count; i++)
-					{
-						if (parsedItems[i].Key.Equals(fileName, StringComparison.OrdinalIgnoreCase))
-						{
-							existingItemIndex = parsedItems[i].SwatchIndex;
-							break;
-						}
-					}
-
-					int swatchIdx = existingItemIndex >= 0 ? existingItemIndex : maxSwatchIndex + 1;
 
 					JsonObject texEntry;
 					if (catObj.ContainsKey(fileName) && catObj[fileName] is JsonObject existingEntry)
