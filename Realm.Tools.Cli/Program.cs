@@ -1071,7 +1071,7 @@ public static class Program
 			options.Recursive,
 			options.InPlace,
 			ModelConverter.IsModelFile,
-			file => Path.GetExtension(file).Equals(".rmesh", StringComparison.OrdinalIgnoreCase) ? ".glb" : ".rmesh",
+			file => options.InPlace ? Path.GetExtension(file) : (Path.GetExtension(file).Equals(".rmesh", StringComparison.OrdinalIgnoreCase) ? ".glb" : ".rmesh"),
 			(inputFile, targetFile) => ProcessSingleMeshConvert(inputFile, targetFile, options),
 			summaryActionName: "model conversion");
 	}
@@ -1105,12 +1105,19 @@ public static class Program
 			try
 			{
 				byte[] inputGlbBytes = File.ReadAllBytes(inputFile);
-				byte[] unoptimized = GlbManifestUtils.StripOptimizationMetadata(inputGlbBytes).UnoptimizedBytes;
-				byte[] smoothed = GlbMeshSmoother.SmoothMesh(unoptimized);
-				var opt = ModelConverter.GetAutomaticOptimizationOptions(options.AssetType, options.Force);
-				var optimizer = new GlbOptimizer();
-				var optResult = optimizer.Optimize(smoothed, opt);
-				byte[] outputGlbBytes = optResult.Success && optResult.OutputGlbBytes != null ? optResult.OutputGlbBytes : smoothed;
+				byte[] outputGlbBytes;
+				if (!options.Force && GlbManifestUtils.HasOptimizationFlag(inputGlbBytes))
+				{
+					outputGlbBytes = inputGlbBytes;
+				}
+				else
+				{
+					byte[] unoptimized = GlbManifestUtils.StripOptimizationMetadata(inputGlbBytes).UnoptimizedBytes;
+					var opt = ModelConverter.GetAutomaticOptimizationOptions(options.AssetType, options.Force);
+					var optimizer = new GlbOptimizer();
+					var optResult = optimizer.Optimize(unoptimized, opt);
+					outputGlbBytes = optResult.Success && optResult.OutputGlbBytes != null ? optResult.OutputGlbBytes : unoptimized;
+				}
 
 				string? outDir = Path.GetDirectoryName(targetFile);
 				if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir)) Directory.CreateDirectory(outDir);
