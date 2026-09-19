@@ -667,7 +667,6 @@ public static class Program
 			}
 
 			string metaToDisplay = FormatFileMetadata(options.Input);
-			Console.WriteLine($"Metadata for {options.Input}:");
 			Console.WriteLine(metaToDisplay);
 
 			if (!string.IsNullOrEmpty(options.Output))
@@ -675,7 +674,6 @@ public static class Program
 				string? dir = Path.GetDirectoryName(options.Output);
 				if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
 				File.WriteAllText(options.Output, metaToDisplay);
-				Console.WriteLine($"Saved metadata to: {options.Output}");
 			}
 			return 0;
 		}
@@ -1278,10 +1276,6 @@ public static class Program
 		string inputExt = Path.GetExtension(inputPath).ToLowerInvariant();
 		bool isRmeshInput = inputExt == ".rmesh";
 
-		var optimizer = new GlbOptimizer();
-		string? tempInputGlb = null;
-		string? tempColorResultGlb = null;
-		string? tempUnoptimizedPath = null;
 		string? existingMeta = null;
 
 		try
@@ -1300,42 +1294,20 @@ public static class Program
 				existingMeta = RealmMetadataHelper.ExtractMetadataFromGlbBytes(sourceGlbBytes);
 			}
 
-			bool wasOptimized = optimizer.IsOptimized(sourceGlbBytes);
-			tempInputGlb = Path.Combine(Path.GetTempPath(), $"realm_pc_in_{Guid.NewGuid():N}.glb");
-			File.WriteAllBytes(tempInputGlb, sourceGlbBytes);
+			var (success, processedGlbBytes, errorMessage, maskedFaces, totalFaces, detectedKey) =
+				Realm.Shared.GlbPlayerColorProcessor.ProcessBytes(sourceGlbBytes, processorOptions);
 
-			string colorSourcePath = tempInputGlb;
-			if (wasOptimized)
+			if (!success || processedGlbBytes == null)
 			{
-				Console.WriteLine($"  Detected pre-optimized GLB — unoptimizing first to restore mesh topology...");
-				var unoptResult = optimizer.Unoptimize(sourceGlbBytes);
-				if (!unoptResult.Success || unoptResult.OutputGlbBytes == null)
-				{
-					Console.Error.WriteLine($"  Failed to unoptimize {inputPath}: {unoptResult.ErrorMessage}");
-					return 1;
-				}
-
-				tempUnoptimizedPath = Path.Combine(Path.GetTempPath(), $"realm_pc_unopt_{Guid.NewGuid():N}.glb");
-				File.WriteAllBytes(tempUnoptimizedPath, unoptResult.OutputGlbBytes);
-				colorSourcePath = tempUnoptimizedPath;
-			}
-
-			tempColorResultGlb = Path.Combine(Path.GetTempPath(), $"realm_pc_out_{Guid.NewGuid():N}.glb");
-			var colorResult = Realm.Shared.GlbPlayerColorProcessor.ProcessFile(colorSourcePath, tempColorResultGlb, processorOptions);
-			if (!colorResult.Success || !File.Exists(tempColorResultGlb))
-			{
-				Console.Error.WriteLine($"  Failed player-color processing: {colorResult.ErrorMessage}");
+				Console.Error.WriteLine($"  Failed player-color processing: {errorMessage}");
 				return 1;
 			}
 
-			string resolvedChromaKey = colorResult.DetectedChromaKey ?? processorOptions.ChromaKey;
-			Console.WriteLine($"  Player-color mask applied (masked faces: {colorResult.MaskedFaceCount}/{colorResult.TotalFaceCount}, chroma key: {resolvedChromaKey})");
+			string resolvedChromaKey = detectedKey ?? processorOptions.ChromaKey;
+			Console.WriteLine($"  Player-color mask applied (masked faces: {maskedFaces}/{totalFaces}, chroma key: {resolvedChromaKey})");
 
-			byte[] processedGlbBytes = File.ReadAllBytes(tempColorResultGlb);
 			string? outDir = Path.GetDirectoryName(outputPath);
 			if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir)) Directory.CreateDirectory(outDir);
-
-			Console.WriteLine($"  Re-optimizing output (LODs regenerated from corrected textures)...");
 
 			string? targetAssetType = !string.IsNullOrWhiteSpace(assetType)
 				? assetType
@@ -1356,9 +1328,10 @@ public static class Program
 				processedGlbBytes,
 				inputPath,
 				targetAssetType,
-				force: true,
+				force: false,
 				author: targetAuthor,
-				chromaKey: resolvedChromaKey);
+				chromaKey: resolvedChromaKey,
+				existingMetadataJson: existingMeta);
 
 			if (!convResult.Success || convResult.OutputBytes == null)
 			{
@@ -1376,11 +1349,10 @@ public static class Program
 
 			return 0;
 		}
-		finally
+		catch (Exception ex)
 		{
-			if (tempInputGlb != null && File.Exists(tempInputGlb)) try { File.Delete(tempInputGlb); } catch { }
-			if (tempColorResultGlb != null && File.Exists(tempColorResultGlb)) try { File.Delete(tempColorResultGlb); } catch { }
-			if (tempUnoptimizedPath != null && File.Exists(tempUnoptimizedPath)) try { File.Delete(tempUnoptimizedPath); } catch { }
+			Console.Error.WriteLine($"  Failed to process {inputPath}: {ex.Message}");
+			return 1;
 		}
 	}
 
@@ -1502,7 +1474,8 @@ public static class Program
 					inputPath,
 					targetAssetType,
 					force: true,
-					author: targetAuthor);
+					author: targetAuthor,
+					existingMetadataJson: existingMeta);
 
 				if (!convRes.Success || convRes.OutputBytes == null)
 				{

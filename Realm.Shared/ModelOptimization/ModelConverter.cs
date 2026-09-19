@@ -57,7 +57,8 @@ public static class ModelConverter
 		bool force = false,
 		OptimizationOptions? options = null,
 		string? author = null,
-		string? chromaKey = null)
+		string? chromaKey = null,
+		string? existingMetadataJson = null)
 	{
 		string fullInput = Path.GetFullPath(inputPath);
 		var result = new ModelConversionResult { InputPath = fullInput };
@@ -101,7 +102,7 @@ public static class ModelConverter
 			result.OriginalSize = inputBytes.Length;
 
 			string fileName = Path.GetFileName(fullInput);
-			var convRes = ConvertToRmesh(inputBytes, fullInput, assetType, force, options, author, chromaKey);
+			var convRes = ConvertToRmesh(inputBytes, fullInput, assetType, force, options, author, chromaKey, existingMetadataJson);
 			if (!convRes.Success || convRes.OutputBytes == null)
 			{
 				result.Success = false;
@@ -141,7 +142,8 @@ public static class ModelConverter
 		bool force = false,
 		OptimizationOptions? options = null,
 		string? author = null,
-		string? chromaKey = null)
+		string? chromaKey = null,
+		string? existingMetadataJson = null)
 	{
 		var result = new ModelConversionResult
 		{
@@ -158,18 +160,18 @@ public static class ModelConverter
 		try
 		{
 			byte[] rawGlbBytes;
-			string? existingMetaJson = null;
+			string? existingMetaJson = existingMetadataJson;
 
 			if (RmeshFile.IsRmeshBytes(inputBytes))
 			{
 				var (parsedMeta, parsedGlb, _) = RmeshFile.Parse(inputBytes);
-				existingMetaJson = parsedMeta;
+				existingMetaJson ??= parsedMeta;
 				rawGlbBytes = parsedGlb;
 			}
 			else
 			{
 				rawGlbBytes = inputBytes.ToArray();
-				existingMetaJson = RealmMetadataHelper.ExtractMetadataFromGlbBytes(rawGlbBytes);
+				existingMetaJson ??= RealmMetadataHelper.ExtractMetadataFromGlbBytes(rawGlbBytes);
 			}
 
 			JsonObject metaObj;
