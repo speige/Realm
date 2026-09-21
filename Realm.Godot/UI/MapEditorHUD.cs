@@ -8900,7 +8900,8 @@ public partial class MapEditorHUD : Control
 				JsonObject catObj = assetsObj[category] as JsonObject ?? new JsonObject();
 				if (category == "textures")
 				{
-					if (!Realm.Godot.Utils.TextureSwatchSlots.ValidateCategory(fileName))
+					var knownRibbons = Realm.Godot.Utils.TextureSwatchSlots.BuildKnownRibbonsCache(assetsObj, wsPath);
+					if (!Realm.Godot.Utils.TextureSwatchSlots.ValidateCategory(fileName, knownRibbons: knownRibbons))
 					{
 						GD.PrintErr($"[MapEditorHUD] Asset '{fileName}' is not a valid terrain texture.");
 						return;
@@ -8910,7 +8911,7 @@ public partial class MapEditorHUD : Control
 					{
 						foreach (var kvp in rootTexExisting)
 						{
-							if (Realm.Godot.Utils.TextureSwatchSlots.ValidateCategory(kvp.Key, kvp.Value))
+							if (Realm.Godot.Utils.TextureSwatchSlots.ValidateCategory(kvp.Key, kvp.Value, knownRibbons))
 							{
 								catObj[kvp.Key] = kvp.Value?.DeepClone();
 							}
@@ -8922,6 +8923,11 @@ public partial class MapEditorHUD : Control
 
 					foreach (var kvp in catObj)
 					{
+						if (!Realm.Godot.Utils.TextureSwatchSlots.ValidateCategory(kvp.Key, kvp.Value, knownRibbons))
+						{
+							continue;
+						}
+
 						int sIdx = -1;
 						if (kvp.Value is JsonObject sObj)
 						{
@@ -8956,7 +8962,7 @@ public partial class MapEditorHUD : Control
 					if (swatchIdx < 0)
 					{
 						GD.PrintErr($"[MapEditorHUD] All 32 texture slots are occupied. Cannot assign slot to '{fileName}'.");
-						swatchIdx = Realm.Godot.Utils.TextureSwatchSlots.MaxSlots - 1;
+						return;
 					}
 
 					JsonObject texEntry;

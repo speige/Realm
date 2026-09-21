@@ -28,7 +28,41 @@ public static class TextureSwatchSlots
 {
 	public const int MaxSlots = 32;
 
-	public static bool ValidateCategory(string fileName, JsonNode? node = null)
+	public static HashSet<string> BuildKnownRibbonsCache(JsonObject? allAssets = null, string? mapDir = null)
+	{
+		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		if (allAssets != null && allAssets.TryGetPropertyValue("ribbons", out var ribNode) && ribNode is JsonObject ribObj)
+		{
+			foreach (var kvp in ribObj)
+			{
+				set.Add(kvp.Key);
+				set.Add(Path.GetFileNameWithoutExtension(kvp.Key));
+			}
+		}
+
+		if (!string.IsNullOrEmpty(mapDir))
+		{
+			string diskRibbonsDir = Path.Combine(mapDir, "Assets", "ribbons");
+			if (Directory.Exists(diskRibbonsDir))
+			{
+				try
+				{
+					foreach (var file in Directory.GetFiles(diskRibbonsDir, "*.rtex"))
+					{
+						string fname = Path.GetFileName(file);
+						set.Add(fname);
+						set.Add(Path.GetFileNameWithoutExtension(fname));
+					}
+				}
+				catch { }
+			}
+		}
+
+		return set;
+	}
+
+	public static bool ValidateCategory(string fileName, JsonNode? node = null, HashSet<string>? knownRibbons = null)
 	{
 		if (string.IsNullOrWhiteSpace(fileName))
 		{
@@ -51,7 +85,12 @@ public static class TextureSwatchSlots
 			baseName.EndsWith("_beam") || baseName.EndsWith("_pulse") ||
 			baseName.EndsWith("_streak") || baseName.EndsWith("_ether_trace"))
 		{
-			if (normalized.Contains("ribbon"))
+			return false;
+		}
+
+		if (knownRibbons != null)
+		{
+			if (knownRibbons.Contains(fileName) || knownRibbons.Contains(baseName) || knownRibbons.Contains(baseName + ".rtex"))
 			{
 				return false;
 			}
@@ -86,12 +125,20 @@ public static class TextureSwatchSlots
 			return result;
 		}
 
+		JsonObject? allAssets = null;
+		try
+		{
+			allAssets = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(mapDir);
+		}
+		catch { }
+		var knownRibbons = BuildKnownRibbonsCache(allAssets, mapDir);
+
 		var candidateItems = new List<(string BaseName, string FileName, int RequestedSlot, JsonNode? Node)>();
 
 		foreach (var kvp in texturesObj)
 		{
 			string fileName = kvp.Key;
-			if (!ValidateCategory(fileName, kvp.Value))
+			if (!ValidateCategory(fileName, kvp.Value, knownRibbons))
 			{
 				continue;
 			}

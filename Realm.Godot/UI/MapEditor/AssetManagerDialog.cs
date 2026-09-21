@@ -2707,34 +2707,16 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			}
 			else if (_currentCategory == "textures")
 			{
-				string destDir = Path.Combine(wsPath, "Assets", "textures");
-				Directory.CreateDirectory(destDir);
-				string destPath = Path.Combine(destDir, fileName);
+				string effectiveRtexName = sourceExtension.Equals(".rtex", StringComparison.OrdinalIgnoreCase)
+					? fileName
+					: $"{Path.GetFileNameWithoutExtension(fileName).ToLowerInvariant().Replace(' ', '_')}.rtex";
 
-				if (sourceExtension == ".rtex")
-				{
-					File.Copy(sourceFilePath, destPath, true);
-				}
-				else
-				{
-					string rtexFileName = $"{Path.GetFileNameWithoutExtension(fileName).ToLowerInvariant().Replace(' ', '_')}.rtex";
-					destPath = Path.Combine(destDir, rtexFileName);
-					var convRes = Realm.Shared.Textures.TextureConverter.ConvertTextureFile(sourceFilePath, destPath, "terrain_texture", 4, 4);
-					if (!convRes.Success)
-					{
-						Hud?.ShowFeedback($"Texture conversion failed: {convRes.ErrorMessage}");
-						return;
-					}
-					fileName = rtexFileName;
-				}
+				var knownRibbons = Realm.Godot.Utils.TextureSwatchSlots.BuildKnownRibbonsCache(assetsObj, wsPath);
 
-				Realm.Shared.Metadata.RealmMetadataHelper.EnsureMetadata(destPath);
-				byte[] rtexBytes = File.ReadAllBytes(destPath);
-				hash = Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(rtexBytes, ".rtex");
-
-				if (!Realm.Godot.Utils.TextureSwatchSlots.ValidateCategory(fileName))
+				if (!Realm.Godot.Utils.TextureSwatchSlots.ValidateCategory(effectiveRtexName, null, knownRibbons))
 				{
-					GD.PrintErr($"[AssetManagerDialog] Asset '{fileName}' cannot be imported as terrain texture.");
+					GD.PrintErr($"[AssetManagerDialog] Asset '{effectiveRtexName}' cannot be imported as terrain texture.");
+					Hud?.ShowFeedback(TranslationServer.Translate("Selected asset is not a valid terrain texture."));
 					return;
 				}
 
@@ -2743,18 +2725,21 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 				var occupied = new bool[Realm.Godot.Utils.TextureSwatchSlots.MaxSlots];
 				int existingSlot = -1;
-				if (texturesObj.TryGetPropertyValue(fileName, out var existingEntry) && existingEntry is JsonObject exObj &&
+				if (texturesObj.TryGetPropertyValue(effectiveRtexName, out var existingEntry) && existingEntry is JsonObject exObj &&
 					exObj.TryGetPropertyValue("swatchIndex", out var exIdx) && exIdx != null && int.TryParse(exIdx.ToString(), out int pEx))
 				{
 					existingSlot = pEx;
 				}
 				foreach (var kvp in texturesObj)
 				{
-					if (kvp.Value is JsonObject sObj && sObj.TryGetPropertyValue("swatchIndex", out var idxNode) && idxNode != null && int.TryParse(idxNode.ToString(), out int parsed))
+					if (Realm.Godot.Utils.TextureSwatchSlots.ValidateCategory(kvp.Key, kvp.Value, knownRibbons))
 					{
-						if (parsed >= 0 && parsed < Realm.Godot.Utils.TextureSwatchSlots.MaxSlots)
+						if (kvp.Value is JsonObject sObj && sObj.TryGetPropertyValue("swatchIndex", out var idxNode) && idxNode != null && int.TryParse(idxNode.ToString(), out int parsed))
 						{
-							occupied[parsed] = true;
+							if (parsed >= 0 && parsed < Realm.Godot.Utils.TextureSwatchSlots.MaxSlots)
+							{
+								occupied[parsed] = true;
+							}
 						}
 					}
 				}
@@ -2763,18 +2748,41 @@ public partial class AssetManagerDialog : FloatingDialogBase
 					? existingSlot
 					: Realm.Godot.Utils.TextureSwatchSlots.FirstFreeSlot(occupied);
 
-				if (assignedSlot >= 0)
+				if (assignedSlot < 0)
 				{
-					texturesObj[fileName] = new JsonObject
-					{
-						["hash"] = hash,
-						["swatchIndex"] = assignedSlot
-					};
+					GD.PrintErr($"[AssetManagerDialog] All 32 texture slots are occupied. Cannot import '{effectiveRtexName}'.");
+					Hud?.ShowFeedback(TranslationServer.Translate("Cannot import texture: All 32 terrain slots are full."));
+					return;
+				}
+
+				string destDir = Path.Combine(wsPath, "Assets", "textures");
+				Directory.CreateDirectory(destDir);
+				string destPath = Path.Combine(destDir, effectiveRtexName);
+
+				if (sourceExtension.Equals(".rtex", StringComparison.OrdinalIgnoreCase))
+				{
+					File.Copy(sourceFilePath, destPath, true);
 				}
 				else
 				{
-					GD.PrintErr($"[AssetManagerDialog] All 32 texture slots are occupied. Cannot import '{fileName}'.");
+					var convRes = Realm.Shared.Textures.TextureConverter.ConvertTextureFile(sourceFilePath, destPath, "terrain_texture", 4, 4);
+					if (!convRes.Success)
+					{
+						Hud?.ShowFeedback($"Texture conversion failed: {convRes.ErrorMessage}");
+						return;
+					}
 				}
+
+				fileName = effectiveRtexName;
+				Realm.Shared.Metadata.RealmMetadataHelper.EnsureMetadata(destPath);
+				byte[] rtexBytes = File.ReadAllBytes(destPath);
+				hash = Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(rtexBytes, ".rtex");
+
+				texturesObj[effectiveRtexName] = new JsonObject
+				{
+					["hash"] = hash,
+					["swatchIndex"] = assignedSlot
+				};
 			}
 			else if (_currentCategory == "vfx_spritesheets")
 			{
@@ -3065,17 +3073,24 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 	private void SaveTextureSwatch(string key, JsonObject updatedData)
 	{
-		if (!Realm.Godot.Utils.TextureSwatchSlots.ValidateCategory(key))
+		string wsPath = GetWorkspacePath();
+		JsonObject? assets = null;
+		try
+		{
+			assets = MapAssetHelper.LoadUnionedAssets(wsPath);
+		}
+		catch { }
+
+		var knownRibbons = Realm.Godot.Utils.TextureSwatchSlots.BuildKnownRibbonsCache(assets, wsPath);
+		if (!Realm.Godot.Utils.TextureSwatchSlots.ValidateCategory(key, null, knownRibbons))
 		{
 			GD.PrintErr($"[AssetManagerDialog] Cannot save swatch for non-terrain texture '{key}'.");
 			return;
 		}
 
-		string wsPath = GetWorkspacePath();
-
 		try
 		{
-			var assets = MapAssetHelper.LoadUnionedAssets(wsPath);
+			if (assets == null) assets = MapAssetHelper.LoadUnionedAssets(wsPath);
 			if (!assets.ContainsKey("textures") || assets["textures"] is not JsonObject)
 			{
 				assets["textures"] = new JsonObject();
@@ -3116,9 +3131,12 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				var occupied = new bool[Realm.Godot.Utils.TextureSwatchSlots.MaxSlots];
 				foreach (var kvp in texturesDict)
 				{
-					if (kvp.Value is JsonObject itemObj && itemObj.TryGetPropertyValue("swatchIndex", out var sNode) && sNode != null && int.TryParse(sNode.ToString(), out int p) && p >= 0 && p < Realm.Godot.Utils.TextureSwatchSlots.MaxSlots)
+					if (Realm.Godot.Utils.TextureSwatchSlots.ValidateCategory(kvp.Key, kvp.Value, knownRibbons))
 					{
-						occupied[p] = true;
+						if (kvp.Value is JsonObject itemObj && itemObj.TryGetPropertyValue("swatchIndex", out var sNode) && sNode != null && int.TryParse(sNode.ToString(), out int p) && p >= 0 && p < Realm.Godot.Utils.TextureSwatchSlots.MaxSlots)
+						{
+							occupied[p] = true;
+						}
 					}
 				}
 				swatchIdx = Realm.Godot.Utils.TextureSwatchSlots.FirstFreeSlot(occupied);
