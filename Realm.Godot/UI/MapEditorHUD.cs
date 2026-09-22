@@ -1299,8 +1299,14 @@ public partial class MapEditorHUD : Control
 
 		if (!_agreementShownThisSession)
 		{
-			_agreementShownThisSession = true;
-			ShowAgreementModal();
+			ShowAgreementModal(() =>
+			{
+				CheckPostLaunchPrompts();
+			});
+		}
+		else
+		{
+			CheckPostLaunchPrompts();
 		}
 
 		var targetFileBox = GetContentTarget(_contentFile);
@@ -2745,8 +2751,14 @@ public partial class MapEditorHUD : Control
 			}
 		}
 
-		CheckCreatorRegistrationAndPrompt();
-		CheckUnsavedSessionOnLaunch();
+	}
+
+	private void CheckPostLaunchPrompts()
+	{
+		CheckUnsavedSessionOnLaunch(() =>
+		{
+			CheckCreatorRegistrationAndPrompt();
+		});
 	}
 
 	public static string ComputeDirectoryBlake3(string directoryPath)
@@ -2841,14 +2853,19 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
-	private void CheckUnsavedSessionOnLaunch()
+	private void CheckUnsavedSessionOnLaunch(Action onCompleted = null)
 	{
-		if (ReturningFromTest) return;
+		if (ReturningFromTest)
+		{
+			onCompleted?.Invoke();
+			return;
+		}
 
 		string editorLastSaveFile = ProjectSettings.GlobalizePath("user://editor_last_save.txt");
 		if (!System.IO.File.Exists(editorLastSaveFile))
 		{
 			SaveCurrentDirectoryBlake3();
+			onCompleted?.Invoke();
 			return;
 		}
 
@@ -2858,24 +2875,52 @@ public partial class MapEditorHUD : Control
 
 		if (!string.IsNullOrEmpty(savedHash) && !currentHash.Equals(savedHash, StringComparison.OrdinalIgnoreCase))
 		{
-			CallDeferred(nameof(ShowUnsavedSessionModal));
+			ShowUnsavedSessionModal(onCompleted);
+		}
+		else
+		{
+			onCompleted?.Invoke();
 		}
 	}
 
-	private void ShowUnsavedSessionModal()
+	private void ShowUnsavedSessionModal(Action onCompleted = null)
 	{
 		ShowConfirmationDialog(
 			"There were unsaved changes in last editor session.",
 			onConfirm: () =>
 			{
 				LoadTempWorkspaceMap();
+				SaveCurrentDirectoryBlake3();
 			},
 			confirmText: "Restore",
 			cancelText: "Discard",
 			onCancel: () =>
 			{
-				GameHost.Instance?.ClearMapEntirely();
-				SaveCurrentDirectoryBlake3();
+				_isSyncing = true;
+				try
+				{
+					ClearTempWorkspaceExternal();
+					MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, "MapScript");
+					GameHost.Instance?.ClearMapEntirely();
+					string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+					string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
+					_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
+					_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+					SaveCurrentDirectoryBlake3();
+					ReadMetadataAndRefreshTextures();
+				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"[ShowUnsavedSessionModal] Error discarding session: {ex.Message}");
+				}
+				finally
+				{
+					_isSyncing = false;
+				}
+			},
+			onDismissed: () =>
+			{
+				onCompleted?.Invoke();
 			}
 		);
 	}
@@ -3562,14 +3607,18 @@ public partial class MapEditorHUD : Control
 	}
 
 
-	public void ShowConfirmationDialog(string message, Action onConfirm, string confirmText = "YES", string cancelText = "NO", Action onCancel = null)
+	public void ShowConfirmationDialog(string message, Action onConfirm, string confirmText = "YES", string cancelText = "NO", Action onCancel = null, Action onDismissed = null)
 	{
 		var overlay = new ColorRect();
 		overlay.Name = "ConfirmationOverlay";
 		overlay.Color = new Color(0, 0, 0, 0.65f);
 		overlay.SetAnchorsPreset(LayoutPreset.FullRect);
 		overlay.MouseFilter = Control.MouseFilterEnum.Stop;
-		overlay.ZIndex = 1000;
+		overlay.ZIndex = 1100;
+		if (onDismissed != null)
+		{
+			overlay.TreeExited += () => onDismissed();
+		}
 		AddChild(overlay);
 
 		var center = new CenterContainer();
@@ -3634,6 +3683,7 @@ public partial class MapEditorHUD : Control
 		var btnConfirm = new Button();
 		btnConfirm.Set("icon_max_width", 0);
 		btnConfirm.CustomMinimumSize = new Vector2(110, 34);
+		btnConfirm.MouseFilter = Control.MouseFilterEnum.Stop;
 		SetupButton(btnConfirm, TranslationServer.Translate(confirmText), () =>
 		{
 			overlay.QueueFree();
@@ -3645,6 +3695,7 @@ public partial class MapEditorHUD : Control
 		var btnCancel = new Button();
 		btnCancel.Set("icon_max_width", 0);
 		btnCancel.CustomMinimumSize = new Vector2(110, 34);
+		btnCancel.MouseFilter = Control.MouseFilterEnum.Stop;
 		Action cancelAction = () =>
 		{
 			overlay.QueueFree();
@@ -4276,6 +4327,8 @@ public partial class MapEditorHUD : Control
 		overlay.Name = "CreatorRegistrationOverlay";
 		overlay.Color = new Color(0, 0, 0, 0.8f);
 		overlay.SetAnchorsPreset(LayoutPreset.FullRect);
+		overlay.MouseFilter = Control.MouseFilterEnum.Stop;
+		overlay.ZIndex = 1000;
 		AddChild(overlay);
 
 		var panel = new PanelContainer();
@@ -7184,7 +7237,7 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
-	private void ShowAgreementModal()
+	private void ShowAgreementModal(Action onAccepted = null)
 	{
 		var overlay = new ColorRect();
 		overlay.Name = "AgreementOverlay";
@@ -7300,6 +7353,11 @@ public partial class MapEditorHUD : Control
 		btnAccept.Set("icon_max_width", 0);
 		SetupOptionButton(btnAccept, "Accept", () =>
 		{
+			_agreementShownThisSession = true;
+			if (onAccepted != null)
+			{
+				overlay.TreeExited += () => onAccepted();
+			}
 			overlay.QueueFree();
 		}, 13);
 		btnAccept.Position = new Vector2(300, 692);
@@ -7310,6 +7368,7 @@ public partial class MapEditorHUD : Control
 		btnQuit.Set("icon_max_width", 0);
 		SetupOptionButton(btnQuit, "Quit", () =>
 		{
+			_agreementShownThisSession = false;
 			overlay.QueueFree();
 			UIManager.Instance?.TransitionTo(GameScreen.MainMenu);
 		}, 13);
