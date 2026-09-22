@@ -2750,39 +2750,92 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 				if (assignedSlot < 0)
 				{
+					int selectedSlot = GameHost.Instance != null ? GameHost.Instance.EditorPaintTextureIndex : -1;
+					if (selectedSlot >= 0 && selectedSlot < Realm.Godot.Utils.TextureSwatchSlots.MaxSlots)
+					{
+						assignedSlot = selectedSlot;
+					}
+				}
+
+				if (assignedSlot < 0)
+				{
 					GD.PrintErr($"[AssetManagerDialog] All 32 texture slots are occupied. Cannot import '{effectiveRtexName}'.");
 					Hud?.ShowFeedback(TranslationServer.Translate("Cannot import texture: All 32 terrain slots are full."));
 					return;
 				}
 
-				string destDir = Path.Combine(wsPath, "Assets", "textures");
-				Directory.CreateDirectory(destDir);
-				string destPath = Path.Combine(destDir, effectiveRtexName);
-
-				if (sourceExtension.Equals(".rtex", StringComparison.OrdinalIgnoreCase))
+				string prevOccupant = null;
+				foreach (var kvp in texturesObj)
 				{
-					File.Copy(sourceFilePath, destPath, true);
-				}
-				else
-				{
-					var convRes = Realm.Shared.Textures.TextureConverter.ConvertTextureFile(sourceFilePath, destPath, "terrain_texture", 4, 4);
-					if (!convRes.Success)
+					if (!kvp.Key.Equals(effectiveRtexName, StringComparison.OrdinalIgnoreCase))
 					{
-						Hud?.ShowFeedback($"Texture conversion failed: {convRes.ErrorMessage}");
-						return;
+						if (kvp.Value is JsonObject sObj && sObj.TryGetPropertyValue("swatchIndex", out var idxNode) && int.TryParse(idxNode?.ToString(), out int parsed) && parsed == assignedSlot)
+						{
+							prevOccupant = kvp.Key;
+							break;
+						}
 					}
 				}
 
-				fileName = effectiveRtexName;
-				Realm.Shared.Metadata.RealmMetadataHelper.EnsureMetadata(destPath);
-				byte[] rtexBytes = File.ReadAllBytes(destPath);
-				hash = Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(rtexBytes, ".rtex");
-
-				texturesObj[effectiveRtexName] = new JsonObject
+				Action doCommit = () =>
 				{
-					["hash"] = hash,
-					["swatchIndex"] = assignedSlot
+					if (!string.IsNullOrEmpty(prevOccupant))
+					{
+						texturesObj.Remove(prevOccupant);
+					}
+
+					string destDir = Path.Combine(wsPath, "Assets", "textures");
+					Directory.CreateDirectory(destDir);
+					string destPath = Path.Combine(destDir, effectiveRtexName);
+
+					if (sourceExtension.Equals(".rtex", StringComparison.OrdinalIgnoreCase))
+					{
+						File.Copy(sourceFilePath, destPath, true);
+					}
+					else
+					{
+						var convRes = Realm.Shared.Textures.TextureConverter.ConvertTextureFile(sourceFilePath, destPath, "terrain_texture", 4, 4);
+						if (!convRes.Success)
+						{
+							Hud?.ShowFeedback($"Texture conversion failed: {convRes.ErrorMessage}");
+							return;
+						}
+					}
+
+					fileName = effectiveRtexName;
+					Realm.Shared.Metadata.RealmMetadataHelper.EnsureMetadata(destPath);
+					byte[] rtexBytes = File.ReadAllBytes(destPath);
+					hash = Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(rtexBytes, ".rtex");
+
+					texturesObj[effectiveRtexName] = new JsonObject
+					{
+						["hash"] = hash,
+						["swatchIndex"] = assignedSlot
+					};
+
+					MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj);
+					MetadataService.Instance.CleanMetadata(wsPath);
+					RefreshAssetList();
+					LoadPreviewForAsset(_currentCategory, effectiveRtexName);
+					Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Imported asset {0} successfully."), effectiveRtexName));
+
+					if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
+					{
+						GameHost.Instance.GroundTerrain.ReloadTerrainTextures(true);
+						Hud?.SetupTextureSwatches(false);
+					}
 				};
+
+				if (!string.IsNullOrEmpty(prevOccupant))
+				{
+					string cleanPrevName = Path.GetFileNameWithoutExtension(prevOccupant).Replace('_', ' ');
+					string msg = string.Format(TranslationServer.Translate("Replacing texture in Slot {0} ({1}) will update all areas of the terrain painted with this slot. Do you want to proceed?"), assignedSlot, cleanPrevName);
+					Hud?.ShowConfirmationDialog(msg, doCommit, confirmText: "REPLACE", cancelText: "CANCEL");
+					return;
+				}
+
+				doCommit();
+				return;
 			}
 			else if (_currentCategory == "vfx_spritesheets")
 			{

@@ -147,6 +147,7 @@ public partial class MapEditorHUD : Control
 	private List<string> _swatchDisplayNames = new List<string>();
 	private List<Color> _swatchColors = new List<Color>();
 	private Control _gridSwatches;
+	private Button _btnReplaceTexture;
 
 	private Panel _leftPillar;
 	private Panel _rightPillar;
@@ -1074,6 +1075,12 @@ public partial class MapEditorHUD : Control
 
 		_gridSwatches = GetNodeOrNull<Control>("RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerTexture/GridSwatches");
 		SetupTextureSwatches(true);
+
+		_btnReplaceTexture = new Button();
+		_btnReplaceTexture.Name = "BtnReplaceTexture";
+		_btnReplaceTexture.Set("icon_max_width", 0);
+		SetupOptionButton(_btnReplaceTexture, "\uf093 REPLACE TEXTURE", () => ImportTextureAction(), 11, "Import an image to replace the currently selected texture slot");
+		_containerTextureSettings?.AddChild(_btnReplaceTexture);
 
 		_containerPathingSettings = GetNode<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerPathing");
 		var pathingContent = GetNode<VBoxContainer>("RightSlidePanel/RightScroll/AccordionContainer/ToolSettingsAccordion/ContentToolSettings/ContainerPathing/PathingContent");
@@ -6863,6 +6870,12 @@ public partial class MapEditorHUD : Control
 
 		HighlightSwatch(terrainSwatch);
 		HighlightCliffSwatch(cliffSwatch);
+
+		if (_btnReplaceTexture != null)
+		{
+			_btnReplaceTexture.Text = $"\uf093 {TranslationServer.Translate("REPLACE TEXTURE")} ({terrainIdx})";
+			_btnReplaceTexture.TooltipText = $"{TranslationServer.Translate("Import an image to replace slot")} {terrainIdx} ({TranslationServer.Translate(terrainName)})";
+		}
 	}
 
 	private string GetSwatchName(Color color)
@@ -8506,36 +8519,56 @@ public partial class MapEditorHUD : Control
 
 		OpenAssetBrowser("Import Texture Image", new[] { ".rtex", ".png", ".webp" }, imagePath =>
 		{
-			ImportTextureFile(imagePath, selectedIdx);
+			if (selectedIdx >= 0 && selectedIdx < _swatchPaths.Count && !string.IsNullOrEmpty(_swatchPaths[selectedIdx]))
+			{
+				string cleanPrevName = _swatchDisplayNames[selectedIdx];
+				string msg = string.Format(TranslationServer.Translate("Replacing texture in Slot {0} ({1}) will update all areas of the terrain painted with this slot. Do you want to proceed?"), selectedIdx, cleanPrevName);
+				ShowConfirmationDialog(msg, () =>
+				{
+					ImportTextureFile(imagePath, selectedIdx);
+				}, confirmText: "REPLACE", cancelText: "CANCEL");
+			}
+			else
+			{
+				ImportTextureFile(imagePath, selectedIdx);
+			}
 		}, requireRealmMetadata: false);
 	}
 
 	private void ImportTextureFile(string imagePath, int index)
 	{
-		string rawName = (index >= 0 && index < _swatchDisplayNames.Count) ? _swatchDisplayNames[index] : $"swatch_{index}";
-		string name = rawName.ToLowerInvariant().Replace(" ", "_");
+		string cleanBaseName = System.IO.Path.GetFileNameWithoutExtension(imagePath).ToLowerInvariant().Replace(" ", "_") + ".rtex";
 		string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
 			? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 			: _tempWorkspacePath;
 		string texDir = System.IO.Path.Combine(wsPath, "Assets", "textures");
 		System.IO.Directory.CreateDirectory(texDir);
-		string outputRtex = System.IO.Path.Combine(texDir, name + ".rtex");
+		string outputRtex = System.IO.Path.Combine(texDir, cleanBaseName);
 		ShowFeedback(TranslationServer.Translate("Importing texture..."));
 		try
 		{
-			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
+			string ext = System.IO.Path.GetExtension(imagePath);
+			if (ext.Equals(".rtex", StringComparison.OrdinalIgnoreCase))
+			{
+				System.IO.File.Copy(imagePath, outputRtex, true);
+			}
+			else if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
 			{
 				GameHost.Instance.GroundTerrain.ProcessAndSaveRawTexture(imagePath, outputRtex);
-				if (System.IO.File.Exists(outputRtex))
-				{
-					byte[] rtexBytes = System.IO.File.ReadAllBytes(outputRtex);
-					string blake3 = RealmMetadataHelper.ComputeBlake3(rtexBytes, ".rtex");
-					UpdateMetadataJsonAsset("textures", name + ".rtex", blake3);
-				}
-				GameHost.Instance.GroundTerrain.ReloadTerrainTextures(true);
-				SetupTextureSwatches(false);
-				ShowFeedback(string.Format(TranslationServer.Translate("Successfully imported custom texture for {0}!"), _swatchDisplayNames[index]));
 			}
+
+			if (System.IO.File.Exists(outputRtex))
+			{
+				byte[] rtexBytes = System.IO.File.ReadAllBytes(outputRtex);
+				string blake3 = RealmMetadataHelper.ComputeBlake3(rtexBytes, ".rtex");
+				UpdateMetadataJsonAsset("textures", cleanBaseName, blake3, targetSlot: index);
+			}
+			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
+			{
+				GameHost.Instance.GroundTerrain.ReloadTerrainTextures(true);
+			}
+			SetupTextureSwatches(false);
+			ShowFeedback(string.Format(TranslationServer.Translate("Successfully imported custom texture for {0}!"), cleanBaseName));
 		}
 		catch (Exception ex)
 		{
@@ -8736,7 +8769,7 @@ public partial class MapEditorHUD : Control
 		_mapSettingsDialog?.RefreshSkyboxList();
 	}
 
-	private void UpdateMetadataJsonAsset(string category, string fileName, string blake3Hash, string subCategory = null, int columns = 0, int rows = 0)
+	private void UpdateMetadataJsonAsset(string category, string fileName, string blake3Hash, string subCategory = null, int columns = 0, int rows = 0, int targetSlot = -1)
 	{
 		try
 		{
@@ -8955,14 +8988,56 @@ public partial class MapEditorHUD : Control
 						}
 					}
 
-					int swatchIdx = (existingItemIndex >= 0 && existingItemIndex < Realm.Godot.Utils.TextureSwatchSlots.MaxSlots)
-						? existingItemIndex
-						: Realm.Godot.Utils.TextureSwatchSlots.FirstFreeSlot(occupiedSlots);
+					int swatchIdx = -1;
+					if (targetSlot >= 0 && targetSlot < Realm.Godot.Utils.TextureSwatchSlots.MaxSlots)
+					{
+						swatchIdx = targetSlot;
+					}
+					else if (existingItemIndex >= 0 && existingItemIndex < Realm.Godot.Utils.TextureSwatchSlots.MaxSlots)
+					{
+						swatchIdx = existingItemIndex;
+					}
+					else
+					{
+						swatchIdx = Realm.Godot.Utils.TextureSwatchSlots.FirstFreeSlot(occupiedSlots);
+					}
+
+					if (swatchIdx < 0 && GameHost.Instance != null && GameHost.Instance.EditorPaintTextureIndex >= 0 && GameHost.Instance.EditorPaintTextureIndex < Realm.Godot.Utils.TextureSwatchSlots.MaxSlots)
+					{
+						swatchIdx = GameHost.Instance.EditorPaintTextureIndex;
+					}
 
 					if (swatchIdx < 0)
 					{
 						GD.PrintErr($"[MapEditorHUD] All 32 texture slots are occupied. Cannot assign slot to '{fileName}'.");
 						return;
+					}
+
+					string prevOccupantKey = null;
+					foreach (var kvp in catObj)
+					{
+						if (kvp.Key.Equals(fileName, StringComparison.OrdinalIgnoreCase)) continue;
+						if (kvp.Value is JsonObject sObj)
+						{
+							int s = -1;
+							if (sObj.TryGetPropertyValue("swatchIndex", out var n1) && n1 != null && int.TryParse(n1.ToString(), out int p1)) s = p1;
+							else if (sObj.TryGetPropertyValue("swatch_index", out var n2) && n2 != null && int.TryParse(n2.ToString(), out int p2)) s = p2;
+							else if (sObj.TryGetPropertyValue("SwatchIndex", out var n3) && n3 != null && int.TryParse(n3.ToString(), out int p3)) s = p3;
+							if (s == swatchIdx)
+							{
+								prevOccupantKey = kvp.Key;
+								break;
+							}
+						}
+					}
+
+					if (!string.IsNullOrEmpty(prevOccupantKey))
+					{
+						catObj.Remove(prevOccupantKey);
+						if (root.ContainsKey("textures") && root["textures"] is JsonObject rootTex)
+						{
+							rootTex.Remove(prevOccupantKey);
+						}
 					}
 
 					JsonObject texEntry;
@@ -9024,16 +9099,20 @@ public partial class MapEditorHUD : Control
 	{
 		try
 		{
-			string rawName = (slotIndex >= 0 && slotIndex < _swatchDisplayNames.Count) ? _swatchDisplayNames[slotIndex] : $"swatch_{slotIndex}";
-			string name = rawName.ToLowerInvariant().Replace(" ", "_");
+			string cleanBaseName = System.IO.Path.GetFileNameWithoutExtension(sourceFilePath).ToLowerInvariant().Replace(" ", "_") + ".rtex";
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 
 				? ProjectSettings.GlobalizePath(TempWorkspaceGodotPath) 
 				: _tempWorkspacePath;
 			string texDir = System.IO.Path.Combine(wsPath, "Assets", "textures");
 			System.IO.Directory.CreateDirectory(texDir);
-			string outputRtex = System.IO.Path.Combine(texDir, name + ".rtex");
+			string outputRtex = System.IO.Path.Combine(texDir, cleanBaseName);
 
-			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
+			string ext = System.IO.Path.GetExtension(sourceFilePath);
+			if (ext.Equals(".rtex", StringComparison.OrdinalIgnoreCase))
+			{
+				System.IO.File.Copy(sourceFilePath, outputRtex, true);
+			}
+			else if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)
 			{
 				GameHost.Instance.GroundTerrain.ProcessAndSaveRawTexture(sourceFilePath, outputRtex);
 			}
@@ -9042,9 +9121,9 @@ public partial class MapEditorHUD : Control
 			{
 				byte[] rtexBytes = System.IO.File.ReadAllBytes(outputRtex);
 				string blake3 = RealmMetadataHelper.ComputeBlake3(rtexBytes, ".rtex");
-				UpdateMetadataJsonAsset("textures", name + ".rtex", blake3);
+				UpdateMetadataJsonAsset("textures", cleanBaseName, blake3, targetSlot: slotIndex);
 				ReadMetadataAndRefreshTextures();
-				ShowFeedback($"Successfully processed & imported RTEX texture for {rawName}!");
+				ShowFeedback($"Successfully processed & imported RTEX texture for {cleanBaseName}!");
 			}
 			else
 			{
