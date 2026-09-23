@@ -230,7 +230,9 @@ public partial class MapEditorHUD : Control
 	private EditorSettingsDialog _editorSettingsDialog;
 	private ShaderEditorDialog _shaderEditorDialog;
 	private VfxStudioDialog _vfxStudioDialog;
+	private AuthorSignatureDialog _authorSignatureDialog;
 	private Button _btnEditorSettings;
+	private Button _btnAuthorSignature;
 	private PanelContainer _mapNameHeaderPanel;
 	private Label _lblMapNameHeader;
 	private double _mapNameUpdateTimer = 0.0;
@@ -712,6 +714,12 @@ public partial class MapEditorHUD : Control
 		_btnEditorSettings.Set("icon_max_width", 0);
 		SetupOptionButton(_btnEditorSettings, "⚙️ " + TranslationServer.Translate("EDITOR SETTINGS"), () => _editorSettingsDialog?.OpenDialog(), 13, "Configure editor preferences, chrome border, and display overlays");
 		_contentFile.AddChild(_btnEditorSettings);
+
+		_btnAuthorSignature = new Button();
+		_btnAuthorSignature.Name = "BtnAuthorSignature";
+		_btnAuthorSignature.Set("icon_max_width", 0);
+		SetupOptionButton(_btnAuthorSignature, "✍️ " + TranslationServer.Translate("AUTHOR SIGNATURE"), () => _authorSignatureDialog?.OpenDialog(), 13, "View author identity key, signature details, and backup location");
+		_contentFile.AddChild(_btnAuthorSignature);
 
 		_accordionViewport = GetNode<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion");
 		_btnHeaderViewport = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/BtnHeaderViewport");
@@ -1562,6 +1570,7 @@ public partial class MapEditorHUD : Control
 		StyleRowButton(_btnGenerateMap);
 		StyleRowButton(_btnImportMinimap);
 		StyleRowButton(_btnEditorSettings);
+		StyleRowButton(_btnAuthorSignature);
 
 		StyleRowButton(_btnRaise);
 		StyleRowButton(_btnLower);
@@ -3667,27 +3676,13 @@ public partial class MapEditorHUD : Control
 	private NSec.Cryptography.Key GetOrGenerateAuthorshipKey()
 	{
 		string keyDir = ProjectSettings.GlobalizePath("user://appdata/keys/");
-		if (!System.IO.Directory.Exists(keyDir))
+		string defaultUsername = LobbyManager.Instance?.AuthenticatedUsername ?? string.Empty;
+		var (key, data, keyPath, createdNew) = AuthorshipKeyHelper.GetOrGenerateKeyInfo(keyDir, defaultUsername);
+		if (createdNew)
 		{
-			System.IO.Directory.CreateDirectory(keyDir);
+			ShowFeedback(TranslationServer.Translate("A new authorship key has been generated at ") + keyPath + TranslationServer.Translate(". Please backup this file to retain your authorship identity."));
 		}
-		
-		string keyPath = System.IO.Path.Combine(keyDir, "authorship_key.pem");
-		if (System.IO.File.Exists(keyPath))
-		{
-			byte[] keyBytes = System.IO.File.ReadAllBytes(keyPath);
-			return NSec.Cryptography.Key.Import(SignatureAlgorithm.Ed25519, keyBytes, KeyBlobFormat.RawPrivateKey);
-		}
-		else
-		{
-			var key = NSec.Cryptography.Key.Create(SignatureAlgorithm.Ed25519, new NSec.Cryptography.KeyCreationParameters { ExportPolicy = NSec.Cryptography.KeyExportPolicies.AllowPlaintextExport });
-			byte[] exported = key.Export(KeyBlobFormat.RawPrivateKey);
-			System.IO.File.WriteAllBytes(keyPath, exported);
-			
-			// Show warning to backup
-			ShowFeedback("A new authorship key has been generated at " + keyPath + ". Please backup this file to retain your authorship identity.");
-			return key;
-		}
+		return key;
 	}
 
 	private void ShowGreenlightStatusDialog(string mapTitle, string mapVersion, int verifiedGoodReviews, int totalReviews, double averageRating, bool isGreenlit)
@@ -4762,7 +4757,7 @@ public partial class MapEditorHUD : Control
 				
 				foreach (var file in allFiles)
 				{
-					if (file.EndsWith("map.json") || file.EndsWith("authorship_key.pem")) continue;
+					if (file.EndsWith("map.json") || file.EndsWith("authorship_key.pem") || file.EndsWith("authorship_key_DO-NOT-SHARE.rkey") || file.EndsWith(".rkey")) continue;
 					
 					byte[] fileBytes = System.IO.File.ReadAllBytes(file);
 					string ext = System.IO.Path.GetExtension(file).ToLowerInvariant();
@@ -5065,6 +5060,8 @@ public partial class MapEditorHUD : Control
 					var res = await httpClient.PostAsync(seedServerUrl + "/api/creators/register", content);
 					if (res.IsSuccessStatusCode)
 					{
+						string keyDir = ProjectSettings.GlobalizePath("user://appdata/keys/");
+						AuthorshipKeyHelper.UpdateUserName(keyDir, username);
 						overlay.QueueFree();
 						ShowFeedback(TranslationServer.Translate("Creator registered successfully!"));
 					}
@@ -8121,6 +8118,7 @@ public partial class MapEditorHUD : Control
 		_editorSettingsDialog = new EditorSettingsDialog(this);
 		_shaderEditorDialog = new ShaderEditorDialog(this);
 		_vfxStudioDialog = new VfxStudioDialog(this);
+		_authorSignatureDialog = new AuthorSignatureDialog(this);
 		ApplyEditorPreferences(EditorSettingsDialog.CurrentSettings);
 
 		_btnOpenAnimationPreview = new Button();

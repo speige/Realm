@@ -249,7 +249,7 @@ public class KeygenOptions
 	[Option('u', "username", Required = false, HelpText = "Display name / username to associate with this key pair.")]
 	public string? Username { get; set; }
 
-	[Option('o', "output", Required = false, HelpText = "Output path to write private key file.")]
+	[Option('o', "output", Required = false, HelpText = "Output path to write .rkey file. If omitted, saves to default %appdata%\\Godot\\app_userdata\\Realm\\appdata\\keys\\authorship_key_DO-NOT-SHARE.rkey")]
 	public string? Output { get; set; }
 
 	[Option('s', "server", Required = false, HelpText = "Registry server URL to register unique username.")]
@@ -1518,17 +1518,19 @@ public static class Program
 		Console.WriteLine($"Private Key (Base64): {privateKeyBase64}");
 		Console.WriteLine();
 
-		if (!string.IsNullOrEmpty(options.Output))
+		string outputPath = !string.IsNullOrWhiteSpace(options.Output)
+			? options.Output.Trim()
+			: AuthorshipKeyHelper.GetDefaultKeyPath();
+
+		string? outDir = Path.GetDirectoryName(outputPath);
+		if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir))
 		{
-			string? outDir = Path.GetDirectoryName(options.Output);
-			if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir))
-			{
-				Directory.CreateDirectory(outDir);
-			}
-			byte[] privateKeyBytes = Convert.FromBase64String(privateKeyBase64);
-			File.WriteAllBytes(options.Output, privateKeyBytes);
-			Console.WriteLine($"Saved private key to: {options.Output}");
+			Directory.CreateDirectory(outDir);
 		}
+		string keyUsername = !string.IsNullOrWhiteSpace(options.Username) ? options.Username.Trim() : string.Empty;
+		byte[] rkeyBytes = RkeyFile.Build(keyUsername, publicKeyBase64, privateKeyBase64);
+		File.WriteAllBytes(outputPath, rkeyBytes);
+		Console.WriteLine($"Saved key container to: {outputPath}");
 
 		if (options.Register || !string.IsNullOrWhiteSpace(options.Username))
 		{

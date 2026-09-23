@@ -44,7 +44,7 @@ public static class RealmMetadataHelper
 	{
 		string ext = Path.GetExtension(extensionOrPath).ToLowerInvariant();
 		if (string.IsNullOrEmpty(ext) && extensionOrPath.StartsWith('.')) ext = extensionOrPath.ToLowerInvariant();
-		return ext is ".glb" or ".rtex" or ".ranim" or ".ogg" or ".rmesh" or ".raud";
+		return ext is ".glb" or ".rtex" or ".ranim" or ".ogg" or ".rmesh" or ".raud" or ".rkey";
 	}
 
 	public static string? ExtractMetadata(string filePath)
@@ -59,6 +59,7 @@ public static class RealmMetadataHelper
 			".ranim" => ExtractMetadataFromRanim(filePath),
 			".ogg" => ExtractMetadataFromOgg(filePath),
 			".raud" => ExtractMetadataFromRaud(filePath),
+			".rkey" => ExtractMetadataFromRkey(filePath),
 			_ => null
 		};
 	}
@@ -560,8 +561,11 @@ public static class RealmMetadataHelper
 			case ".raud":
 				AddMetadataToRaud(filePath, realmMetadataJson);
 				return true;
+			case ".rkey":
+				AddMetadataToRkey(filePath, realmMetadataJson);
+				return true;
 			default:
-				throw new NotSupportedException($"Unsupported file format '{ext}' for metadata. Supported formats: .glb, .rmesh, .rtex, .ogg, .raud, .ranim");
+				throw new NotSupportedException($"Unsupported file format '{ext}' for metadata. Supported formats: .glb, .rmesh, .rtex, .ogg, .raud, .ranim, .rkey");
 		}
 	}
 
@@ -589,8 +593,11 @@ public static class RealmMetadataHelper
 			case ".raud":
 				RemoveMetadataFromRaud(filePath);
 				return true;
+			case ".rkey":
+				RemoveMetadataFromRkey(filePath);
+				return true;
 			default:
-				throw new NotSupportedException($"Unsupported file format '{ext}' for metadata. Supported formats: .glb, .rmesh, .rtex, .ogg, .raud, .ranim");
+				throw new NotSupportedException($"Unsupported file format '{ext}' for metadata. Supported formats: .glb, .rmesh, .rtex, .ogg, .raud, .ranim, .rkey");
 		}
 	}
 
@@ -844,6 +851,27 @@ public static class RealmMetadataHelper
 	{
 		byte[] bytes = File.ReadAllBytes(filePath);
 		byte[] updated = Realm.Shared.Textures.RtexFile.SetMetadata(bytes, null);
+		File.WriteAllBytes(filePath, updated);
+	}
+
+	public static string? ExtractMetadataFromRkey(string filePath)
+	{
+		if (!File.Exists(filePath)) return null;
+		byte[] bytes = File.ReadAllBytes(filePath);
+		return RkeyFile.ExtractMetadata(bytes);
+	}
+
+	public static void AddMetadataToRkey(string filePath, string realmMetadataJson)
+	{
+		byte[] bytes = File.ReadAllBytes(filePath);
+		byte[] updated = RkeyFile.SetMetadata(bytes, realmMetadataJson);
+		File.WriteAllBytes(filePath, updated);
+	}
+
+	public static void RemoveMetadataFromRkey(string filePath)
+	{
+		byte[] bytes = File.ReadAllBytes(filePath);
+		byte[] updated = RkeyFile.SetMetadata(bytes, null);
 		File.WriteAllBytes(filePath, updated);
 	}
 

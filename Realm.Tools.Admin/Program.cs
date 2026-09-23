@@ -9,6 +9,7 @@ using System.Text.Json.Nodes;
 using CommandLine;
 using NSec.Cryptography;
 using Realm.Shared.Distribution;
+using Realm.Shared.Metadata;
 
 namespace Realm.Tools.Admin;
 
@@ -18,8 +19,8 @@ public class AdminGreenlightOptions
 	[Option('m', "map", Required = true, HelpText = "Map title or package name")]
 	public string Map { get; set; } = string.Empty;
 
-	[Option('k', "key", Required = true, HelpText = "Path to admin private key file (PEM or raw 32-byte binary) or Base64 private key string.")]
-	public string Key { get; set; } = string.Empty;
+	[Option('k', "key", Required = false, HelpText = "Path to admin .rkey key file. If omitted, defaults to %appdata%\\Godot\\app_userdata\\Realm\\appdata\\keys\\authorship_key_DO-NOT-SHARE.rkey")]
+	public string? Key { get; set; }
 
 	[Option('s', "server", Required = false, HelpText = "Registry server URL.")]
 	public string? Server { get; set; }
@@ -44,10 +45,10 @@ public class AdminUnlockNameOptions
 	[Option('u', "username", Required = true, HelpText = "Creator's Username")]
 	public string Username { get; set; } = string.Empty;
 
-	[Option('k', "key", Required = true, HelpText = "Path to admin private key file (PEM or raw 32-byte binary) or Base64 private key string.")]
-	public string Key { get; set; } = string.Empty;
+	[Option('k', "key", Required = false, HelpText = "Path to admin .rkey key file. If omitted, defaults to %appdata%\\Godot\\app_userdata\\Realm\\appdata\\keys\\authorship_key_DO-NOT-SHARE.rkey")]
+	public string? Key { get; set; }
 
-	[Option("target-key", Required = true, HelpText = "New public key to assign the username to.")]
+	[Option("target-key", Required = true, HelpText = "Path to the target user's .rkey key file.")]
 	public string TargetKey { get; set; } = string.Empty;
 
 	[Option('s', "server", Required = false, HelpText = "Registry server URL.")]
@@ -80,8 +81,8 @@ public class AdminExportEventsOptions
 [Verb("prune-cas", HelpText = "Trigger server-side CAS integrity verification and orphan asset pruning.")]
 public class AdminPruneCasOptions
 {
-	[Option('k', "key", Required = true, HelpText = "Path to admin private key file (PEM or raw 32-byte binary) or Base64 private key string.")]
-	public string Key { get; set; } = string.Empty;
+	[Option('k', "key", Required = false, HelpText = "Path to admin .rkey key file. If omitted, defaults to %appdata%\\Godot\\app_userdata\\Realm\\appdata\\keys\\authorship_key_DO-NOT-SHARE.rkey")]
+	public string? Key { get; set; }
 
 	[Option('s', "server", Required = false, HelpText = "Registry server URL.")]
 	public string? Server { get; set; }
@@ -110,8 +111,8 @@ public class AdminRestoreSnapshotOptions
 	[Option('i', "in", Required = true, HelpText = "Input JSON snapshot file path.")]
 	public string InputFile { get; set; } = string.Empty;
 
-	[Option('k', "key", Required = true, HelpText = "Path to admin private key file (PEM or raw 32-byte binary) or Base64 private key string.")]
-	public string Key { get; set; } = string.Empty;
+	[Option('k', "key", Required = false, HelpText = "Path to admin .rkey key file. If omitted, defaults to %appdata%\\Godot\\app_userdata\\Realm\\appdata\\keys\\authorship_key_DO-NOT-SHARE.rkey")]
+	public string? Key { get; set; }
 
 	[Option('s', "server", Required = false, HelpText = "Registry server URL.")]
 	public string? Server { get; set; }
@@ -126,8 +127,8 @@ public class AdminRemoveManifestOptions
 	[Option('v', "version", Required = false, Default = null, HelpText = "Map version to remove. If omitted, all versions of the map are removed.")]
 	public string? Version { get; set; }
 
-	[Option('k', "key", Required = true, HelpText = "Path to admin private key file (PEM or raw 32-byte binary) or Base64 private key string.")]
-	public string Key { get; set; } = string.Empty;
+	[Option('k', "key", Required = false, HelpText = "Path to admin .rkey key file. If omitted, defaults to %appdata%\\Godot\\app_userdata\\Realm\\appdata\\keys\\authorship_key_DO-NOT-SHARE.rkey")]
+	public string? Key { get; set; }
 
 	[Option('s', "server", Required = false, HelpText = "Registry server URL.")]
 	public string? Server { get; set; }
@@ -166,37 +167,71 @@ public static class Program
 		return ServersConfigHelper.GetDefaultServerUrl();
 	}
 
-	private static (string privateKeyBase64, string publicKeyBase64)? ParseAdminKey(string keyInput)
+	private static (string privateKeyBase64, string publicKeyBase64)? ParseAdminKey(string? keyInput)
 	{
-		if (string.IsNullOrWhiteSpace(keyInput))
+		string keyPath = string.IsNullOrWhiteSpace(keyInput) ? AuthorshipKeyHelper.GetDefaultKeyPath() : keyInput.Trim();
+
+		if (!File.Exists(keyPath))
 		{
-			Console.Error.WriteLine("Error: Admin key input cannot be empty.");
+			if (string.IsNullOrWhiteSpace(keyInput))
+			{
+				Console.Error.WriteLine($"Error: Default key file '{keyPath}' does not exist. Please generate a key or supply a key file with --key <path>.");
+			}
+			else
+			{
+				Console.Error.WriteLine($"Error: Key file '{keyPath}' not found. Direct key strings are not allowed; please provide a path to a .rkey file.");
+			}
 			return null;
 		}
 
 		try
 		{
-			string rawInput = keyInput.Trim();
-			if (File.Exists(rawInput))
+			byte[] fileBytes = File.ReadAllBytes(keyPath);
+			if (RkeyFile.IsRkeyBytes(fileBytes))
 			{
-				byte[] fileBytes = File.ReadAllBytes(rawInput);
-				if (fileBytes.Length == 32)
+				var keyData = RkeyFile.ParseKeyData(fileBytes);
+				if (keyData == null || string.IsNullOrWhiteSpace(keyData.PrivateKey))
 				{
-					rawInput = Convert.ToBase64String(fileBytes);
+					Console.Error.WriteLine($"Error: No private key found in key file '{keyPath}'.");
+					return null;
 				}
-				else
+
+				string privBase64 = keyData.PrivateKey;
+				string pubBase64 = !string.IsNullOrWhiteSpace(keyData.PublicKey)
+					? keyData.PublicKey
+					: AuthorSignatureHelper.GetPublicKey(privBase64);
+
+				return (privBase64, pubBase64);
+			}
+
+			if (fileBytes.Length == 32)
+			{
+				string privBase64 = Convert.ToBase64String(fileBytes);
+				string pubBase64 = AuthorSignatureHelper.GetPublicKey(privBase64);
+				return (privBase64, pubBase64);
+			}
+
+			string textContent = File.ReadAllText(keyPath).Trim();
+			if (textContent.StartsWith("{"))
+			{
+				var keyData = JsonSerializer.Deserialize<AuthorshipKeyData>(textContent);
+				if (keyData != null && !string.IsNullOrWhiteSpace(keyData.PrivateKey))
 				{
-					string textContent = File.ReadAllText(rawInput).Trim();
-					textContent = textContent.Replace("-----BEGIN PRIVATE KEY-----", "")
-						.Replace("-----END PRIVATE KEY-----", "")
-						.Replace("\r", "")
-						.Replace("\n", "")
-						.Trim();
-					rawInput = textContent;
+					string privBase64 = keyData.PrivateKey;
+					string pubBase64 = !string.IsNullOrWhiteSpace(keyData.PublicKey)
+						? keyData.PublicKey
+						: AuthorSignatureHelper.GetPublicKey(privBase64);
+					return (privBase64, pubBase64);
 				}
 			}
 
-			byte[] privateBytes = Convert.FromBase64String(rawInput);
+			textContent = textContent.Replace("-----BEGIN PRIVATE KEY-----", "")
+				.Replace("-----END PRIVATE KEY-----", "")
+				.Replace("\r", "")
+				.Replace("\n", "")
+				.Trim();
+
+			byte[] privateBytes = Convert.FromBase64String(textContent);
 			using var key = Key.Import(SignatureAlgorithm.Ed25519, privateBytes, KeyBlobFormat.RawPrivateKey, new KeyCreationParameters { ExportPolicy = KeyExportPolicies.AllowPlaintextExport });
 			byte[] publicBytes = key.PublicKey.Export(KeyBlobFormat.RawPublicKey);
 
@@ -204,7 +239,81 @@ public static class Program
 		}
 		catch (Exception ex)
 		{
-			Console.Error.WriteLine($"Error decoding admin private key: {ex.Message}");
+			Console.Error.WriteLine($"Error reading key file '{keyPath}': {ex.Message}");
+			return null;
+		}
+	}
+
+	private static string? ParsePublicKeyFromFile(string targetKeyInput)
+	{
+		if (string.IsNullOrWhiteSpace(targetKeyInput))
+		{
+			Console.Error.WriteLine("Error: --target-key is required.");
+			return null;
+		}
+
+		string targetPath = targetKeyInput.Trim();
+		if (!File.Exists(targetPath))
+		{
+			Console.Error.WriteLine($"Error: Target key file '{targetPath}' not found. Direct key strings are not allowed; please provide a path to a .rkey file.");
+			return null;
+		}
+
+		try
+		{
+			byte[] fileBytes = File.ReadAllBytes(targetPath);
+			if (RkeyFile.IsRkeyBytes(fileBytes))
+			{
+				var keyData = RkeyFile.ParseKeyData(fileBytes);
+				if (keyData != null && !string.IsNullOrWhiteSpace(keyData.PublicKey))
+				{
+					return keyData.PublicKey;
+				}
+				if (keyData != null && !string.IsNullOrWhiteSpace(keyData.PrivateKey))
+				{
+					return AuthorSignatureHelper.GetPublicKey(keyData.PrivateKey);
+				}
+			}
+
+			if (fileBytes.Length == 32)
+			{
+				return AuthorSignatureHelper.GetPublicKey(Convert.ToBase64String(fileBytes));
+			}
+
+			string textContent = File.ReadAllText(targetPath).Trim();
+			if (textContent.StartsWith("{"))
+			{
+				var keyData = JsonSerializer.Deserialize<AuthorshipKeyData>(textContent);
+				if (keyData != null && !string.IsNullOrWhiteSpace(keyData.PublicKey))
+				{
+					return keyData.PublicKey;
+				}
+				if (keyData != null && !string.IsNullOrWhiteSpace(keyData.PrivateKey))
+				{
+					return AuthorSignatureHelper.GetPublicKey(keyData.PrivateKey);
+				}
+			}
+
+			textContent = textContent.Replace("-----BEGIN PUBLIC KEY-----", "")
+				.Replace("-----END PUBLIC KEY-----", "")
+				.Replace("-----BEGIN PRIVATE KEY-----", "")
+				.Replace("-----END PRIVATE KEY-----", "")
+				.Replace("\r", "")
+				.Replace("\n", "")
+				.Trim();
+
+			byte[] rawBytes = Convert.FromBase64String(textContent);
+			if (rawBytes.Length == 32)
+			{
+				return textContent;
+			}
+
+			Console.Error.WriteLine($"Error: Unable to extract public key from '{targetPath}'.");
+			return null;
+		}
+		catch (Exception ex)
+		{
+			Console.Error.WriteLine($"Error reading target key file '{targetPath}': {ex.Message}");
 			return null;
 		}
 	}
@@ -383,13 +492,9 @@ public static class Program
 		if (keyPair == null) return 1;
 
 		string username = options.Username.Trim();
-		if (string.IsNullOrWhiteSpace(options.TargetKey))
-		{
-			Console.Error.WriteLine("Error: --target-key is required.");
-			return 1;
-		}
+		string? targetKey = ParsePublicKeyFromFile(options.TargetKey);
+		if (string.IsNullOrWhiteSpace(targetKey)) return 1;
 
-		string targetKey = options.TargetKey.Trim();
 		string signature = AuthorSignatureHelper.SignMessage(keyPair.Value.privateKeyBase64, $"{username}:{targetKey}");
 
 		Console.WriteLine("=================================================");
