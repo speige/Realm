@@ -48,7 +48,10 @@ public partial class EnetMapTransferService : Node
     public override void _Ready()
     {
         Instance = this;
-        Name = "EnetMapTransferService";
+        if (string.IsNullOrEmpty(Name))
+        {
+            Name = "EnetMapTransferService";
+        }
     }
 
     public static EnetMapTransferService EnsureNode(Node treeNode)

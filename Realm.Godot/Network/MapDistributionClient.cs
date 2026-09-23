@@ -14,6 +14,7 @@ public partial class EnetEphemeralLobbyClientNode : Node
     private SceneMultiplayer _multiplayer = new();
     private ENetMultiplayerPeer _peer = new();
     private bool _connected;
+    private EnetMapTransferService? _transferService;
 
     public async Task<bool> DownloadFromTargetAsync(string targetIp, int targetPort, string mapIdOrHash, Action<float>? progressCallback, CancellationToken token)
     {
@@ -31,8 +32,11 @@ public partial class EnetEphemeralLobbyClientNode : Node
             LobbyManager.Instance.AddChild(this);
         }
 
-        var serviceNode = EnetMapTransferService.EnsureNode(LobbyManager.Instance);
-        GetTree().SetMultiplayer(_multiplayer, serviceNode.GetPath());
+        _transferService = new EnetMapTransferService();
+        _transferService.Name = $"ClientTransfer_{Guid.NewGuid():N}";
+        AddChild(_transferService);
+
+        GetTree().SetMultiplayer(_multiplayer, _transferService.GetPath());
 
         await Task.Delay(50, token);
 
@@ -40,7 +44,7 @@ public partial class EnetEphemeralLobbyClientNode : Node
         var err = _peer.CreateClient(targetIp, targetPort, localPort: isLocal ? 0 : clientPort);
         if (err != Error.Ok)
         {
-            Cleanup(serviceNode);
+            Cleanup();
             return false;
         }
 
@@ -59,23 +63,25 @@ public partial class EnetEphemeralLobbyClientNode : Node
 
         if (!_connected || token.IsCancellationRequested)
         {
-            Cleanup(serviceNode);
+            Cleanup();
             return false;
         }
 
-        bool success = await serviceNode.RequestAndDownloadMapAsync(_multiplayer, 1, mapIdOrHash, progressCallback, token);
+        bool success = await _transferService.RequestAndDownloadMapAsync(_multiplayer, 1, mapIdOrHash, progressCallback, token);
 
-        Cleanup(serviceNode);
+        Cleanup();
         return success;
     }
 
-    private void Cleanup(EnetMapTransferService serviceNode)
+    private void Cleanup()
     {
         try
         {
-            if (IsInstanceValid(this) && GetTree() != null)
+            if (_transferService != null && IsInstanceValid(_transferService) && GetTree() != null)
             {
-                GetTree().SetMultiplayer(null, serviceNode.GetPath());
+                GetTree().SetMultiplayer(null, _transferService.GetPath());
+                _transferService.QueueFree();
+                _transferService = null;
             }
         }
         catch { }

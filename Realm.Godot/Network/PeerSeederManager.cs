@@ -18,6 +18,7 @@ public partial class PeerSeederManager : Node
 
     private SceneMultiplayer _multiplayer = new();
     private ENetMultiplayerPeer? _enetPeer;
+    private EnetMapTransferService? _transferService;
     private CancellationTokenSource? _cts;
     private bool _isSeeding;
     private string _seederId = "";
@@ -64,8 +65,11 @@ public partial class PeerSeederManager : Node
             _multiplayer.ServerRelay = false;
             _multiplayer.MultiplayerPeer = _enetPeer;
 
-            var serviceNode = EnetMapTransferService.EnsureNode(LobbyManager.Instance);
-            GetTree().SetMultiplayer(_multiplayer, serviceNode.GetPath());
+            _transferService = new EnetMapTransferService();
+            _transferService.Name = "SeederTransferService";
+            AddChild(_transferService);
+
+            GetTree().SetMultiplayer(_multiplayer, _transferService.GetPath());
 
             GD.Print($"[PeerSeeder] Bound ENet listener on port {localPort}");
         }
@@ -84,6 +88,13 @@ public partial class PeerSeederManager : Node
         if (!_isSeeding) return;
         _isSeeding = false;
         _cts?.Cancel();
+
+        if (_transferService != null && IsInstanceValid(_transferService) && GetTree() != null)
+        {
+            try { GetTree().SetMultiplayer(null, _transferService.GetPath()); } catch { }
+            try { _transferService.QueueFree(); } catch { }
+            _transferService = null;
+        }
 
         try
         {
