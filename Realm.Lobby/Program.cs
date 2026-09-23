@@ -941,46 +941,44 @@ app.MapPost("/seeders/download", async (SeederDownloadRequest req, SeederRegistr
     var seeders = registry.GetSeedersForMap(req.MapId);
     if (seeders.Count == 0)
     {
-        return Results.NotFound(new { Message = "No seeders found for this map" });
+        return Results.NotFound(new { Message = "No seeders found for this map", seeders = Array.Empty<object>() });
     }
 
-    var random = new Random();
-    var attempts = seeders.OrderBy(_ => random.Next()).ToList();
-
-    foreach (var seeder in attempts)
+    if (!string.IsNullOrEmpty(req.ClientPublicIP) && req.ClientPublicPort > 0)
     {
-        var ws = registry.GetConnection(seeder.SeederId);
-        if (ws != null && ws.State == WebSocketState.Open)
+        foreach (var seeder in seeders)
         {
-            try
+            var ws = registry.GetConnection(seeder.SeederId);
+            if (ws != null && ws.State == WebSocketState.Open)
             {
-                var msg = JsonSerializer.Serialize(new
+                try
                 {
-                    Action = "Punch",
-                    ClientIP = req.ClientPublicIP,
-                    ClientPort = req.ClientPublicPort
-                });
-                var bytes = Encoding.UTF8.GetBytes(msg);
-                await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
-                
-                Console.WriteLine($"[Registry] Relayed punch request to seeder {seeder.SeederId} ({seeder.IP}:{seeder.Port}) for client {req.ClientPublicIP}:{req.ClientPublicPort}");
-                
-                return Results.Ok(new { SeederIP = seeder.IP, SeederPort = seeder.Port });
+                    var msg = JsonSerializer.Serialize(new
+                    {
+                        Action = "Punch",
+                        ClientIP = req.ClientPublicIP,
+                        ClientPort = req.ClientPublicPort
+                    });
+                    var bytes = Encoding.UTF8.GetBytes(msg);
+                    await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                }
+                catch
+                {
+                    registry.Unregister(seeder.SeederId);
+                }
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Registry] Failed to send punch to seeder {seeder.SeederId}, removing: {ex.Message}");
-                registry.Unregister(seeder.SeederId);
-            }
-        }
-        else
-        {
-            Console.WriteLine($"[Registry] Seeder {seeder.SeederId} has disconnected or closed connection, removing.");
-            registry.Unregister(seeder.SeederId);
         }
     }
 
-    return Results.BadRequest(new { Message = "Failed to coordinate UDP punch with seeders" });
+    var resultList = seeders.Select(s => new { ip = s.IP, port = s.Port, seederId = s.SeederId }).ToList();
+    return Results.Ok(new { seeders = resultList });
+});
+
+app.MapGet("/seeders/by_manifest/{manifestHash}", (string manifestHash, SeederRegistry registry) =>
+{
+    var seeders = registry.GetSeedersForMap(manifestHash);
+    var resultList = seeders.Select(s => new { ip = s.IP, port = s.Port, seederId = s.SeederId }).ToList();
+    return Results.Ok(new { seeders = resultList });
 });
 
 

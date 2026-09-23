@@ -154,6 +154,11 @@ public class BloomFilter
         return Convert.ToHexString(hashSpan).ToLowerInvariant();
     }
 
+    public static string CreateManifestKey(string manifestBlake3)
+    {
+        return ContentAddressableStorage.NormalizeBlake3Hash(manifestBlake3);
+    }
+
     public static string CreateHeaderKey(string blake3Hash, string? metadataJson)
     {
         string normalizedHash = ContentAddressableStorage.NormalizeBlake3Hash(blake3Hash);

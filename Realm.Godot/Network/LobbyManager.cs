@@ -112,7 +112,6 @@ public partial class LobbyManager : Node
     private int _hostPublicPort;
     public string PublicIP => _hostPublicIp ?? "127.0.0.1";
     public int PublicPort => _hostPublicPort > 0 ? _hostPublicPort : ENetPort;
-    private MapDistributionServer? _mapServer;
     private string? _hostToken;
     private string? _countdownMapName;
     private int _countdownRemaining;
@@ -477,16 +476,7 @@ public partial class LobbyManager : Node
         StartHostDiagnosticsTimer();
 
 
-        try
-        {
-            _mapServer?.Stop();
-            _mapServer = new MapDistributionServer();
-            _mapServer.Start(ENetPort + 10, mapPathName, ActiveMapVersion);
-        }
-        catch (Exception ex)
-        {
-            GD.PrintErr($"[LobbyManager] Failed to start map distribution server: {ex.Message}");
-        }
+
 
 
         try
@@ -817,8 +807,6 @@ public partial class LobbyManager : Node
         ActiveLobbyId = null;
 
 
-        _mapServer?.Stop();
-        _mapServer = null;
 
         foreach (var kvp in _hostTransfers)
         {

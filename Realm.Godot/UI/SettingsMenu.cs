@@ -459,6 +459,25 @@ public partial class SettingsMenu : Control
 		_recordReplaysChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
 		_seedMapFilesChk.Pressed += () => UIManager.Instance.PlayClickSound();
 		_seedMapFilesChk.MouseEntered += () => UIManager.Instance.PlayHoverSound();
+
+		if (LobbyManager.Instance != null)
+		{
+			LobbyManager.Instance.NatTestCompleted += () =>
+			{
+				bool canHost = LobbyManager.Instance.LocalNatType != NatType.Symmetric;
+				if (!canHost)
+				{
+					_seedMapFilesChk.Disabled = true;
+					_seedMapFilesChk.ButtonPressed = false;
+					_seedMapFilesChk.TooltipText = TranslationServer.Translate("Seeding disabled: Machine cannot host due to STUN test failure or Symmetric NAT.");
+				}
+				else
+				{
+					_seedMapFilesChk.Disabled = false;
+					_seedMapFilesChk.ButtonPressed = GameSettings.SeedMapFiles;
+				}
+			};
+		}
 	}
 
 	private void SetupSliders()
@@ -637,7 +656,20 @@ public partial class SettingsMenu : Control
 		_floatingCombatTextChk.ButtonPressed = GameSettings.FloatingCombatText;
 		_displayFpsChk.ButtonPressed = GameSettings.DisplayFps;
 		_recordReplaysChk.ButtonPressed = GameSettings.RecordReplays;
-		_seedMapFilesChk.ButtonPressed = GameSettings.SeedMapFiles;
+
+		bool canHost = LobbyManager.Instance != null && LobbyManager.Instance.LocalNatType != NatType.Symmetric;
+		if (!canHost)
+		{
+			_seedMapFilesChk.Disabled = true;
+			_seedMapFilesChk.ButtonPressed = false;
+			_seedMapFilesChk.TooltipText = TranslationServer.Translate("Seeding disabled: Machine cannot host due to STUN test failure or Symmetric NAT.");
+		}
+		else
+		{
+			_seedMapFilesChk.Disabled = false;
+			_seedMapFilesChk.ButtonPressed = GameSettings.SeedMapFiles;
+		}
+
 		_healthBarsOpt.Select((int)GameSettings.ShowHealthBars);
 		_languageOpt.Select((int)GameSettings.Language);
 	}
