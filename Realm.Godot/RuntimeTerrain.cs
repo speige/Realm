@@ -1902,218 +1902,146 @@ void fragment() {
 		{
 			var unionedAssets = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(mapDir);
 			texturesObj = unionedAssets?["textures"] as System.Text.Json.Nodes.JsonObject;
-
-					if (texturesObj != null)
-					{
-						var parsedItems = new List<(string BaseName, string Key, int SwatchIndex, System.Text.Json.Nodes.JsonNode? Node, int OrderIndex)>();
-						int order = 0;
-						foreach (var kvp in texturesObj)
-						{
-							string baseName = System.IO.Path.GetFileNameWithoutExtension(kvp.Key);
-							int sIdx = -1;
-							if (kvp.Value is System.Text.Json.Nodes.JsonObject sObj)
-							{
-								if (sObj.TryGetPropertyValue("swatchIndex", out var idxNode) && idxNode != null && int.TryParse(idxNode.ToString(), out int parsed))
-								{
-									sIdx = parsed;
-								}
-								else if (sObj.TryGetPropertyValue("swatch_index", out var idxNode2) && idxNode2 != null && int.TryParse(idxNode2.ToString(), out int parsed2))
-								{
-									sIdx = parsed2;
-								}
-								else if (sObj.TryGetPropertyValue("SwatchIndex", out var idxNode3) && idxNode3 != null && int.TryParse(idxNode3.ToString(), out int parsed3))
-								{
-									sIdx = parsed3;
-								}
-							}
-							parsedItems.Add((baseName, kvp.Key, sIdx, kvp.Value, order++));
-						}
-
-						var usedIndices = new HashSet<int>();
-						foreach (var item in parsedItems)
-						{
-							if (item.SwatchIndex >= 0)
-							{
-								usedIndices.Add(item.SwatchIndex);
-							}
-						}
-
-						int nextFree = 0;
-						for (int i = 0; i < parsedItems.Count; i++)
-						{
-							var item = parsedItems[i];
-							if (item.SwatchIndex < 0)
-							{
-								while (usedIndices.Contains(nextFree))
-								{
-									nextFree++;
-								}
-								item.SwatchIndex = nextFree;
-								usedIndices.Add(nextFree);
-								parsedItems[i] = item;
-							}
-						}
-
-						parsedItems.Sort((a, b) =>
-						{
-							int cmp = a.SwatchIndex.CompareTo(b.SwatchIndex);
-							if (cmp != 0) return cmp;
-							return a.OrderIndex.CompareTo(b.OrderIndex);
-						});
-
-						var baseSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-						foreach (var item in parsedItems)
-						{
-							if (!baseSet.Contains(item.BaseName))
-							{
-								baseSet.Add(item.BaseName);
-								textureList.Add(item.BaseName);
-							}
-						}
-					}
 		}
 		catch { }
+
+		var swatchSlots = Realm.Godot.Utils.TextureSwatchSlots.ResolveSlots(texturesObj, mapDir);
+		for (int i = 0; i < Realm.Godot.Utils.TextureSwatchSlots.MaxSlots; i++)
+		{
+			textureList.Add(swatchSlots[i].BaseName ?? "");
+		}
 
 		var swatchParams = new Godot.Vector4[32];
 		var swatchHeightParams = new Godot.Vector4[32];
 		var swatchAlbedoParams = new Godot.Vector4[32];
+
 		for (int i = 0; i < 32; i++)
 		{
-			swatchParams[i] = new Godot.Vector4(1.0f, 1.0f, 1.0f, 0.05f);
-			swatchHeightParams[i] = new Godot.Vector4(1.0f, 0.0f, 1.0f, 1.0f);
-			swatchAlbedoParams[i] = new Godot.Vector4(1.0f, 1.0f, 1.0f, 1.0f);
-		}
-
-		if (texturesObj != null)
-		{
-			for (int i = 0; i < textureList.Count && i < 32; i++)
+			var slot = swatchSlots[i];
+			if (slot.IsFiller || string.IsNullOrEmpty(slot.BaseName))
 			{
-				string name = textureList[i];
-				System.Text.Json.Nodes.JsonNode? swatchNode = null;
-				foreach (var kvp in texturesObj)
-				{
-					string baseName = System.IO.Path.GetFileNameWithoutExtension(kvp.Key);
-					if (string.Equals(baseName, name, StringComparison.OrdinalIgnoreCase))
-					{
-						swatchNode = kvp.Value;
-						break;
-					}
-				}
-
-				float tileMode = 1.0f;
-				float uvScale = 1.0f;
-				float stochasticTileSize = 1.0f;
-				float crossFade = 0.0f;
-				float heightScale = 1.0f;
-				float heightOffset = 0.0f;
-				float crevicePower = 1.0f;
-				float normalScale = 1.0f;
-				float roughnessScale = 1.0f;
-				float texScaleFactor = 1.0f;
-				float texBrightness = 1.0f;
-				Color texTint = new Color(1.0f, 1.0f, 1.0f);
-
-				if (swatchNode is System.Text.Json.Nodes.JsonObject sObj)
-				{
-					string tm = sObj["Tile_Mode"]?.ToString() ?? sObj["tile_mode"]?.ToString() ?? "Stochastic";
-					if (string.Equals(tm, "Grid", StringComparison.OrdinalIgnoreCase))
-					{
-						tileMode = 0.0f;
-					}
-
-					string uvStr = sObj["UV_Scale"]?.ToString() ?? sObj["uv_scale"]?.ToString();
-					if (!string.IsNullOrEmpty(uvStr) && float.TryParse(uvStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedUv))
-					{
-						uvScale = Math.Clamp(parsedUv, 0.1f, 4.0f);
-					}
-
-					string stochStr = sObj["Stochastic_Tile_Size"]?.ToString() ?? sObj["stochastic_tile_size"]?.ToString();
-					if (!string.IsNullOrEmpty(stochStr) && float.TryParse(stochStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedStoch))
-					{
-						stochasticTileSize = Math.Clamp(parsedStoch, 0.5f, 3.0f);
-					}
-
-					string cfStr = sObj["Cross_Fade"]?.ToString() ?? sObj["cross_fade"]?.ToString() ?? sObj["Grid_Cross_Fade"]?.ToString() ?? sObj["grid_cross_fade"]?.ToString();
-					if (!string.IsNullOrEmpty(cfStr) && float.TryParse(cfStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCf))
-					{
-						crossFade = parsedCf > 0.10f ? Math.Clamp(parsedCf, 0.0f, 10.0f) * 0.01f : Math.Clamp(parsedCf, 0.0f, 0.10f);
-					}
-
-					string hsStr = sObj["Height_Scale"]?.ToString() ?? sObj["height_scale"]?.ToString() ?? sObj["heightScale"]?.ToString();
-					if (!string.IsNullOrEmpty(hsStr) && float.TryParse(hsStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedHs))
-					{
-						heightScale = Math.Clamp(parsedHs, 0.1f, 3.0f);
-					}
-
-					string hoStr = sObj["Height_Offset"]?.ToString() ?? sObj["height_offset"]?.ToString() ?? sObj["heightOffset"]?.ToString();
-					if (!string.IsNullOrEmpty(hoStr) && float.TryParse(hoStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedHo))
-					{
-						heightOffset = Math.Clamp(parsedHo, -1.0f, 1.0f);
-					}
-
-					string cpStr = sObj["Crevice_Power"]?.ToString() ?? sObj["crevice_power"]?.ToString() ?? sObj["crevicePower"]?.ToString();
-					if (!string.IsNullOrEmpty(cpStr) && float.TryParse(cpStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCp))
-					{
-						crevicePower = Math.Clamp(parsedCp, 0.5f, 4.0f);
-					}
-
-					string normScaleStr = sObj["Normal_Scale"]?.ToString() ?? sObj["normal_scale"]?.ToString() ?? sObj["normalScale"]?.ToString();
-					if (!string.IsNullOrEmpty(normScaleStr) && float.TryParse(normScaleStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedNormScale))
-					{
-						normalScale = Math.Clamp(parsedNormScale, 0.0f, 3.0f);
-					}
-
-					string roughScaleStr = sObj["Roughness_Scale"]?.ToString() ?? sObj["roughness_scale"]?.ToString() ?? sObj["roughnessScale"]?.ToString();
-					if (!string.IsNullOrEmpty(roughScaleStr) && float.TryParse(roughScaleStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedRoughScale))
-					{
-						roughnessScale = Math.Clamp(parsedRoughScale, 0.10f, 3.0f);
-					}
-
-					string scaleStr = sObj["Scale_Factor"]?.ToString() ?? sObj["scale_factor"]?.ToString() ?? sObj["ScaleFactor"]?.ToString();
-					if (!string.IsNullOrEmpty(scaleStr) && float.TryParse(scaleStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedScale))
-					{
-						texScaleFactor = Math.Clamp(parsedScale, 0.10f, 4.0f);
-					}
-					else
-					{
-						string rtexPath = System.IO.Path.Combine(mapDir, "Assets", "textures", name + ".rtex");
-						if (!System.IO.File.Exists(rtexPath)) rtexPath = System.IO.Path.Combine(mapDir, name + ".rtex");
-						texScaleFactor = ExtractRtexScaleFactor(rtexPath);
-					}
-
-					string brightStr = sObj["Brightness"]?.ToString() ?? sObj["brightness"]?.ToString();
-					if (!string.IsNullOrEmpty(brightStr) && float.TryParse(brightStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedBright))
-					{
-						texBrightness = Math.Clamp(parsedBright, 0.10f, 2.5f);
-					}
-
-					string tintStr = sObj["Tint"]?.ToString() ?? sObj["tint"]?.ToString();
-					if (!string.IsNullOrEmpty(tintStr) && Color.HtmlIsValid(tintStr))
-					{
-						texTint = Color.FromHtml(tintStr);
-					}
-				}
-
-				if (_liveSwatchOverrides.TryGetValue(name, out var liveOver))
-				{
-					if (liveOver.TileMode.HasValue) tileMode = liveOver.TileMode.Value;
-					if (liveOver.UvScale.HasValue) uvScale = liveOver.UvScale.Value;
-					if (liveOver.StochasticTileSize.HasValue) stochasticTileSize = liveOver.StochasticTileSize.Value;
-					if (liveOver.CrossFade.HasValue) crossFade = liveOver.CrossFade.Value;
-					if (liveOver.HeightScale.HasValue) heightScale = liveOver.HeightScale.Value;
-					if (liveOver.HeightOffset.HasValue) heightOffset = liveOver.HeightOffset.Value;
-					if (liveOver.CrevicePower.HasValue) crevicePower = liveOver.CrevicePower.Value;
-					if (liveOver.NormalScale.HasValue) normalScale = liveOver.NormalScale.Value;
-					if (liveOver.RoughnessScale.HasValue) roughnessScale = liveOver.RoughnessScale.Value;
-					if (liveOver.Brightness.HasValue) texBrightness = liveOver.Brightness.Value;
-					if (liveOver.Tint.HasValue) texTint = liveOver.Tint.Value;
-				}
-
-				float effectiveMultiplier = texScaleFactor * texBrightness;
-				swatchParams[i] = new Godot.Vector4(tileMode, uvScale, stochasticTileSize, crossFade);
-				swatchHeightParams[i] = new Godot.Vector4(heightScale, heightOffset, crevicePower, normalScale);
-				swatchAlbedoParams[i] = new Godot.Vector4(texTint.R * effectiveMultiplier, texTint.G * effectiveMultiplier, texTint.B * effectiveMultiplier, roughnessScale);
+				swatchParams[i] = new Godot.Vector4(1.0f, 1.0f, 1.0f, 0.05f);
+				swatchHeightParams[i] = new Godot.Vector4(1.0f, 0.0f, 1.0f, 0.0f);
+				swatchAlbedoParams[i] = new Godot.Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+				continue;
 			}
+
+			string name = slot.BaseName;
+			System.Text.Json.Nodes.JsonNode? swatchNode = slot.MetadataNode;
+
+			float tileMode = 1.0f;
+			float uvScale = 1.0f;
+			float stochasticTileSize = 1.0f;
+			float crossFade = 0.0f;
+			float heightScale = 1.0f;
+			float heightOffset = 0.0f;
+			float crevicePower = 1.0f;
+			float normalScale = 1.0f;
+			float roughnessScale = 1.0f;
+			float texScaleFactor = 1.0f;
+			float texBrightness = 1.0f;
+			Color texTint = new Color(1.0f, 1.0f, 1.0f);
+
+			if (swatchNode is System.Text.Json.Nodes.JsonObject sObj)
+			{
+				string tm = sObj["Tile_Mode"]?.ToString() ?? sObj["tile_mode"]?.ToString() ?? "Stochastic";
+				if (string.Equals(tm, "Grid", StringComparison.OrdinalIgnoreCase))
+				{
+					tileMode = 0.0f;
+				}
+
+				string uvStr = sObj["UV_Scale"]?.ToString() ?? sObj["uv_scale"]?.ToString();
+				if (!string.IsNullOrEmpty(uvStr) && float.TryParse(uvStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedUv))
+				{
+					uvScale = Math.Clamp(parsedUv, 0.1f, 4.0f);
+				}
+
+				string stochStr = sObj["Stochastic_Tile_Size"]?.ToString() ?? sObj["stochastic_tile_size"]?.ToString();
+				if (!string.IsNullOrEmpty(stochStr) && float.TryParse(stochStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedStoch))
+				{
+					stochasticTileSize = Math.Clamp(parsedStoch, 0.5f, 3.0f);
+				}
+
+				string cfStr = sObj["Cross_Fade"]?.ToString() ?? sObj["cross_fade"]?.ToString() ?? sObj["Grid_Cross_Fade"]?.ToString() ?? sObj["grid_cross_fade"]?.ToString();
+				if (!string.IsNullOrEmpty(cfStr) && float.TryParse(cfStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCf))
+				{
+					crossFade = parsedCf > 0.10f ? Math.Clamp(parsedCf, 0.0f, 10.0f) * 0.01f : Math.Clamp(parsedCf, 0.0f, 0.10f);
+				}
+
+				string hsStr = sObj["Height_Scale"]?.ToString() ?? sObj["height_scale"]?.ToString() ?? sObj["heightScale"]?.ToString();
+				if (!string.IsNullOrEmpty(hsStr) && float.TryParse(hsStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedHs))
+				{
+					heightScale = Math.Clamp(parsedHs, 0.1f, 3.0f);
+				}
+
+				string hoStr = sObj["Height_Offset"]?.ToString() ?? sObj["height_offset"]?.ToString() ?? sObj["heightOffset"]?.ToString();
+				if (!string.IsNullOrEmpty(hoStr) && float.TryParse(hoStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedHo))
+				{
+					heightOffset = Math.Clamp(parsedHo, -1.0f, 1.0f);
+				}
+
+				string cpStr = sObj["Crevice_Power"]?.ToString() ?? sObj["crevice_power"]?.ToString() ?? sObj["crevicePower"]?.ToString();
+				if (!string.IsNullOrEmpty(cpStr) && float.TryParse(cpStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCp))
+				{
+					crevicePower = Math.Clamp(parsedCp, 0.5f, 4.0f);
+				}
+
+				string normScaleStr = sObj["Normal_Scale"]?.ToString() ?? sObj["normal_scale"]?.ToString() ?? sObj["normalScale"]?.ToString();
+				if (!string.IsNullOrEmpty(normScaleStr) && float.TryParse(normScaleStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedNormScale))
+				{
+					normalScale = Math.Clamp(parsedNormScale, 0.0f, 3.0f);
+				}
+
+				string roughScaleStr = sObj["Roughness_Scale"]?.ToString() ?? sObj["roughness_scale"]?.ToString() ?? sObj["roughnessScale"]?.ToString();
+				if (!string.IsNullOrEmpty(roughScaleStr) && float.TryParse(roughScaleStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedRoughScale))
+				{
+					roughnessScale = Math.Clamp(parsedRoughScale, 0.10f, 3.0f);
+				}
+
+				string scaleStr = sObj["Scale_Factor"]?.ToString() ?? sObj["scale_factor"]?.ToString() ?? sObj["ScaleFactor"]?.ToString();
+				if (!string.IsNullOrEmpty(scaleStr) && float.TryParse(scaleStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedScale))
+				{
+					texScaleFactor = Math.Clamp(parsedScale, 0.10f, 4.0f);
+				}
+				else
+				{
+					string rtexPath = System.IO.Path.Combine(mapDir, "Assets", "textures", name + ".rtex");
+					if (!System.IO.File.Exists(rtexPath)) rtexPath = System.IO.Path.Combine(mapDir, name + ".rtex");
+					texScaleFactor = ExtractRtexScaleFactor(rtexPath);
+				}
+
+				string brightStr = sObj["Brightness"]?.ToString() ?? sObj["brightness"]?.ToString();
+				if (!string.IsNullOrEmpty(brightStr) && float.TryParse(brightStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedBright))
+				{
+					texBrightness = Math.Clamp(parsedBright, 0.10f, 2.5f);
+				}
+
+				string tintStr = sObj["Tint"]?.ToString() ?? sObj["tint"]?.ToString();
+				if (!string.IsNullOrEmpty(tintStr) && Color.HtmlIsValid(tintStr))
+				{
+					texTint = Color.FromHtml(tintStr);
+				}
+			}
+
+			if (_liveSwatchOverrides.TryGetValue(name, out var liveOver))
+			{
+				if (liveOver.TileMode.HasValue) tileMode = liveOver.TileMode.Value;
+				if (liveOver.UvScale.HasValue) uvScale = liveOver.UvScale.Value;
+				if (liveOver.StochasticTileSize.HasValue) stochasticTileSize = liveOver.StochasticTileSize.Value;
+				if (liveOver.CrossFade.HasValue) crossFade = liveOver.CrossFade.Value;
+				if (liveOver.HeightScale.HasValue) heightScale = liveOver.HeightScale.Value;
+				if (liveOver.HeightOffset.HasValue) heightOffset = liveOver.HeightOffset.Value;
+				if (liveOver.CrevicePower.HasValue) crevicePower = liveOver.CrevicePower.Value;
+				if (liveOver.NormalScale.HasValue) normalScale = liveOver.NormalScale.Value;
+				if (liveOver.RoughnessScale.HasValue) roughnessScale = liveOver.RoughnessScale.Value;
+				if (liveOver.Brightness.HasValue) texBrightness = liveOver.Brightness.Value;
+				if (liveOver.Tint.HasValue) texTint = liveOver.Tint.Value;
+			}
+
+			float effectiveMultiplier = texScaleFactor * texBrightness;
+			swatchParams[i] = new Godot.Vector4(tileMode, uvScale, stochasticTileSize, crossFade);
+			swatchHeightParams[i] = new Godot.Vector4(heightScale, heightOffset, crevicePower, normalScale);
+			swatchAlbedoParams[i] = new Godot.Vector4(texTint.R * effectiveMultiplier, texTint.G * effectiveMultiplier, texTint.B * effectiveMultiplier, roughnessScale);
 		}
 
 		_loadedTextureList = textureList;
@@ -2153,44 +2081,52 @@ void fragment() {
 
 		var albedoHeightImages = new Godot.Collections.Array<Image>();
 		var normalRoughnessImages = new Godot.Collections.Array<Image>();
-		foreach (var name in textureList)
+		for (int i = 0; i < 32; i++)
 		{
-			string rtexPath = System.IO.Path.Combine(mapDir, "Assets", "textures", name + ".rtex");
-			if (!System.IO.File.Exists(rtexPath))
-			{
-				rtexPath = System.IO.Path.Combine(mapDir, name + ".rtex");
-			}
-			if (!System.IO.File.Exists(rtexPath))
-			{
-				rtexPath = ProjectSettings.GlobalizePath($"res://Assets/2d/TileSheets/{name}.rtex");
-			}
-			if (!System.IO.File.Exists(rtexPath))
-			{
-				string pngPath = ProjectSettings.GlobalizePath($"res://Assets/2d/TileSheets/{name}.png");
-				if (System.IO.File.Exists(pngPath))
-				{
-					ProcessAndSaveRawTexture(pngPath, rtexPath);
-				}
-			}
+			var slot = swatchSlots[i];
 			Image? imgLayer0 = null;
 			Image? imgLayer1 = null;
-			if (System.IO.File.Exists(rtexPath))
+
+			if (!slot.IsFiller && !string.IsNullOrEmpty(slot.BaseName))
 			{
-				try
+				string name = slot.BaseName;
+				string rtexPath = System.IO.Path.Combine(mapDir, "Assets", "textures", name + ".rtex");
+				if (!System.IO.File.Exists(rtexPath))
 				{
-					var layers = LoadRtexLayers(rtexPath);
-					imgLayer0 = layers.AlbedoHeight;
-					imgLayer1 = layers.NormalRoughness;
+					rtexPath = System.IO.Path.Combine(mapDir, name + ".rtex");
 				}
-				catch (Exception ex)
+				if (!System.IO.File.Exists(rtexPath))
 				{
-					GD.PrintErr($"Failed to load dynamic RTEX layers for {name}: {ex.Message}");
+					rtexPath = ProjectSettings.GlobalizePath($"res://Assets/2d/TileSheets/{name}.rtex");
+				}
+				if (!System.IO.File.Exists(rtexPath))
+				{
+					string pngPath = ProjectSettings.GlobalizePath($"res://Assets/2d/TileSheets/{name}.png");
+					if (System.IO.File.Exists(pngPath))
+					{
+						ProcessAndSaveRawTexture(pngPath, rtexPath);
+					}
+				}
+
+				if (System.IO.File.Exists(rtexPath))
+				{
+					try
+					{
+						var layers = LoadRtexLayers(rtexPath);
+						imgLayer0 = layers.AlbedoHeight;
+						imgLayer1 = layers.NormalRoughness;
+					}
+					catch (Exception ex)
+					{
+						GD.PrintErr($"Failed to load dynamic RTEX layers for {name}: {ex.Message}");
+					}
 				}
 			}
+
 			if (imgLayer0 == null || imgLayer1 == null)
 			{
 				imgLayer0 = Godot.Image.CreateEmpty(TargetTextureResolution, TargetTextureResolution, false, Godot.Image.Format.Rgba8);
-				imgLayer0.Fill(new Color(1f, 0f, 1f, 0.99f));
+				imgLayer0.Fill(new Color(0.5f, 0.5f, 0.5f, 1.0f));
 				imgLayer1 = Godot.Image.CreateEmpty(TargetTextureResolution, TargetTextureResolution, false, Godot.Image.Format.Rgba8);
 				imgLayer1.Fill(new Color(0.5f, 0.5f, 1.0f, 0.8f));
 			}
@@ -2217,18 +2153,6 @@ void fragment() {
 			imgLayer1.GenerateMipmaps();
 			albedoHeightImages.Add(imgLayer0);
 			normalRoughnessImages.Add(imgLayer1);
-		}
-
-		if (albedoHeightImages.Count == 0)
-		{
-			var fb0 = Godot.Image.CreateEmpty(TargetTextureResolution, TargetTextureResolution, false, Godot.Image.Format.Rgba8);
-			fb0.Fill(new Color(0.25f, 0.45f, 0.2f, 1.0f));
-			fb0.GenerateMipmaps();
-			var fb1 = Godot.Image.CreateEmpty(TargetTextureResolution, TargetTextureResolution, false, Godot.Image.Format.Rgba8);
-			fb1.Fill(new Color(0.5f, 0.5f, 1.0f, 0.85f));
-			fb1.GenerateMipmaps();
-			albedoHeightImages.Add(fb0);
-			normalRoughnessImages.Add(fb1);
 		}
 
 		var albedoTextureArray = new Texture2DArray();
