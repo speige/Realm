@@ -54,6 +54,7 @@ public partial class GameHost : Node3D, IGameAPI
 	private TerrainNavMeshService _terrainNavMeshService;
 	private Realm.Godot.Services.MetadataService _metadataService;
 	private Realm.Godot.Services.MapUpgradeService _mapUpgradeService;
+	private Realm.Godot.Services.MapStorageService _mapStorageService;
 
 	public CheatService CheatService => _cheatService;
 	public EnvironmentService EnvironmentService => _environmentService;
@@ -62,6 +63,7 @@ public partial class GameHost : Node3D, IGameAPI
 	public Realm.Godot.Services.ModelOptimization.ModelOptimizerService ModelOptimizerService => _modelOptimizerService;
 	public Realm.Godot.Services.MetadataService MetadataService => _metadataService;
 	public Realm.Godot.Services.MapUpgradeService MapUpgradeService => _mapUpgradeService;
+	public Realm.Godot.Services.MapStorageService MapStorageService => _mapStorageService;
 
 	public bool UnlimitedPowerEnabled { get; set; } = false;
 	public bool GigachadEnabled { get; set; } = false;
@@ -3368,6 +3370,88 @@ public class {mapName} : IMapScript
 		}
 	}
 
+	private static string SafeGlobalizePath(string path)
+	{
+		if (string.IsNullOrEmpty(path)) return path;
+		if (MapAssetManager.IsGodotEngineRunning)
+		{
+			try
+			{
+				return Godot.ProjectSettings.GlobalizePath(path);
+			}
+			catch { }
+		}
+
+		if (path.StartsWith("user://"))
+		{
+			return System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "user", path.Substring("user://".Length));
+		}
+		if (path.StartsWith("res://"))
+		{
+			return System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, path.Substring("res://".Length));
+		}
+		return path;
+	}
+
+	public static string? ResolveMapDirectory(string mapNameOrPath, string? version = null)
+	{
+		if (string.IsNullOrWhiteSpace(mapNameOrPath))
+		{
+			return null;
+		}
+
+		string norm = mapNameOrPath.Replace('\\', '/').Trim();
+		if (norm.StartsWith("user://") || norm.StartsWith("res://") || System.IO.Path.IsPathRooted(norm))
+		{
+			string global = norm.StartsWith("user://") || norm.StartsWith("res://")
+				? SafeGlobalizePath(norm)
+				: norm;
+			if (System.IO.Directory.Exists(global))
+			{
+				return global;
+			}
+			if (System.IO.File.Exists(global))
+			{
+				return System.IO.Path.GetDirectoryName(global);
+			}
+		}
+
+		string? targetVersion = !string.IsNullOrWhiteSpace(version) ? version : LobbyManager.Instance?.ActiveMapVersion;
+		string? manifestPath = MapAssetManager.FindManifestPath(norm, targetVersion)
+			?? MapAssetManager.FindManifestPath(norm, null);
+
+		if (!string.IsNullOrEmpty(manifestPath) && System.IO.File.Exists(manifestPath))
+		{
+			return System.IO.Path.GetDirectoryName(manifestPath);
+		}
+
+		string resDir = SafeGlobalizePath($"res://Maps/{norm}");
+		if (System.IO.Directory.Exists(resDir))
+		{
+			return resDir;
+		}
+
+		string resLower = SafeGlobalizePath($"res://Maps/{norm.ToLowerInvariant()}");
+		if (System.IO.Directory.Exists(resLower))
+		{
+			return resLower;
+		}
+
+		string userDir = SafeGlobalizePath($"user://maps/{norm}");
+		if (System.IO.Directory.Exists(userDir))
+		{
+			return userDir;
+		}
+
+		string userLower = SafeGlobalizePath($"user://maps/{norm.ToLowerInvariant()}");
+		if (System.IO.Directory.Exists(userLower))
+		{
+			return userLower;
+		}
+
+		return null;
+	}
+
 	public void LoadUnitMetadata(string mapName = null)
 	{
 		ResetAbilityCatalog();
@@ -3379,9 +3463,21 @@ public class {mapName} : IMapScript
 		LocalizationManager.CurrentMapName = mapName;
 		LocalizationManager.SetupTranslations();
 
-		string path = (mapName.StartsWith("user://") || mapName.StartsWith("res://") || System.IO.Path.IsPathRooted(mapName))
-			? System.IO.Path.Combine(mapName, "metadata.json")
-			: $"res://Maps/{mapName}/metadata.json";
+		string? resolvedDir = ResolveMapDirectory(mapName);
+		string path;
+		if (!string.IsNullOrEmpty(resolvedDir))
+		{
+			CurrentMapDirectory = resolvedDir;
+			path = System.IO.Path.Combine(resolvedDir, "metadata.json");
+		}
+		else if (mapName.StartsWith("user://") || mapName.StartsWith("res://") || System.IO.Path.IsPathRooted(mapName))
+		{
+			path = System.IO.Path.Combine(mapName, "metadata.json");
+		}
+		else
+		{
+			path = $"res://Maps/{mapName}/metadata.json";
+		}
 
 		var metaService = _metadataService ?? Realm.Godot.Services.MetadataService.Instance;
 		var metadata = metaService.LoadMetadata(path);
@@ -3580,14 +3676,19 @@ public class {mapName} : IMapScript
 		string normalizedRaw = mapName.Replace('\\', '/');
 		bool isCustomPath = normalizedRaw.StartsWith("user://") || normalizedRaw.StartsWith("res://") || System.IO.Path.IsPathRooted(normalizedRaw);
 
-		if (isCustomPath && string.IsNullOrEmpty(PendingMapScriptPath))
+		if (string.IsNullOrEmpty(PendingMapScriptPath))
 		{
-			string checkDir = normalizedRaw;
-			if (normalizedRaw.StartsWith("user://") || normalizedRaw.StartsWith("res://"))
+			string? checkDir = ResolveMapDirectory(mapName);
+			if (string.IsNullOrEmpty(checkDir) && isCustomPath)
 			{
-				checkDir = ProjectSettings.GlobalizePath(normalizedRaw);
+				checkDir = normalizedRaw;
+				if (normalizedRaw.StartsWith("user://") || normalizedRaw.StartsWith("res://"))
+				{
+					checkDir = ProjectSettings.GlobalizePath(normalizedRaw);
+				}
 			}
-			if (System.IO.Directory.Exists(checkDir))
+
+			if (!string.IsNullOrEmpty(checkDir) && System.IO.Directory.Exists(checkDir))
 			{
 				string binDir = System.IO.Path.Combine(checkDir, "bin");
 				if (System.IO.Directory.Exists(binDir))
@@ -4022,13 +4123,7 @@ public class {mapName} : IMapScript
 		string mapParamName = rawMapName;
 		if (!string.IsNullOrEmpty(rawMapName))
 		{
-			if (!rawMapName.StartsWith("user://") && !rawMapName.StartsWith("res://") && !System.IO.Path.IsPathRooted(rawMapName))
-			{
-				string normalizedMapName = rawMapName.ToLower().Trim();
-				mapParamName = normalizedMapName;
-			}
-
-			LoadUnitMetadata(mapParamName);
+			LoadUnitMetadata(rawMapName);
 		}
 
 		bool isGameStarted = LobbyManager.Instance != null && LobbyManager.Instance.IsGameStarted;
@@ -4037,27 +4132,40 @@ public class {mapName} : IMapScript
 			if (!IsMapEditorMode && !IsLoadingMap)
 			{
 				string customTerrainPath = "";
-				string normalizedRawMapName = rawMapName.Replace('\\', '/');
-				if (normalizedRawMapName.StartsWith("user://") || normalizedRawMapName.StartsWith("res://") || System.IO.Path.IsPathRooted(normalizedRawMapName))
+				string? resolvedDir = ResolveMapDirectory(rawMapName);
+				if (!string.IsNullOrEmpty(resolvedDir))
 				{
-					string checkDir = normalizedRawMapName;
-					if (normalizedRawMapName.StartsWith("user://") || normalizedRawMapName.StartsWith("res://"))
+					CurrentMapDirectory = resolvedDir;
+					string checkTerrain = System.IO.Path.Combine(resolvedDir, "terrain.json");
+					if (System.IO.File.Exists(checkTerrain))
 					{
-						checkDir = ProjectSettings.GlobalizePath(normalizedRawMapName);
-					}
-					if (System.IO.Directory.Exists(checkDir))
-					{
-						customTerrainPath = System.IO.Path.Combine(checkDir, "terrain.json");
+						customTerrainPath = checkTerrain;
 					}
 				}
-
-				if (string.IsNullOrEmpty(customTerrainPath))
+				else
 				{
-					string normalizedMapName = rawMapName.ToLower().Trim();
-					string mapDir = $"res://Maps/{normalizedMapName}";
-					if (System.IO.Directory.Exists(ProjectSettings.GlobalizePath(mapDir)))
+					string normalizedRawMapName = rawMapName.Replace('\\', '/');
+					if (normalizedRawMapName.StartsWith("user://") || normalizedRawMapName.StartsWith("res://") || System.IO.Path.IsPathRooted(normalizedRawMapName))
 					{
-						customTerrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
+						string checkDir = normalizedRawMapName;
+						if (normalizedRawMapName.StartsWith("user://") || normalizedRawMapName.StartsWith("res://"))
+						{
+							checkDir = ProjectSettings.GlobalizePath(normalizedRawMapName);
+						}
+						if (System.IO.Directory.Exists(checkDir))
+						{
+							customTerrainPath = System.IO.Path.Combine(checkDir, "terrain.json");
+						}
+					}
+
+					if (string.IsNullOrEmpty(customTerrainPath))
+					{
+						string normalizedMapName = rawMapName.ToLower().Trim();
+						string mapDir = $"res://Maps/{normalizedMapName}";
+						if (System.IO.Directory.Exists(ProjectSettings.GlobalizePath(mapDir)))
+						{
+							customTerrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
+						}
 					}
 				}
 
@@ -4274,39 +4382,47 @@ public class {mapName} : IMapScript
 		}
 
 		string terrainPath = "";
-		string normalizedRawMapName = rawMapName.Replace('\\', '/');
-		if (normalizedRawMapName.StartsWith("user://") || normalizedRawMapName.StartsWith("res://") || System.IO.Path.IsPathRooted(normalizedRawMapName))
+		string? resolvedDir = ResolveMapDirectory(rawMapName);
+		if (!string.IsNullOrEmpty(resolvedDir))
 		{
-			string checkDir = normalizedRawMapName;
-			if (normalizedRawMapName.StartsWith("user://") || normalizedRawMapName.StartsWith("res://"))
-			{
-				checkDir = ProjectSettings.GlobalizePath(normalizedRawMapName);
-			}
-			if (System.IO.Directory.Exists(checkDir))
-			{
-				terrainPath = System.IO.Path.Combine(checkDir, "terrain.json");
-			}
+			terrainPath = System.IO.Path.Combine(resolvedDir, "terrain.json");
 		}
-
-		if (string.IsNullOrEmpty(terrainPath))
+		else
 		{
-			string normalizedMapName = rawMapName.ToLower().Trim();
-			string mapDir = $"res://Maps/{normalizedMapName}";
-			string checkDir = ProjectSettings.GlobalizePath(mapDir);
-			if (System.IO.Directory.Exists(checkDir))
+			string normalizedRawMapName = rawMapName.Replace('\\', '/');
+			if (normalizedRawMapName.StartsWith("user://") || normalizedRawMapName.StartsWith("res://") || System.IO.Path.IsPathRooted(normalizedRawMapName))
 			{
-				terrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
-			}
-			else
-			{
-				string userDir = ProjectSettings.GlobalizePath($"user://maps/{normalizedMapName}");
-				if (System.IO.Directory.Exists(userDir))
+				string checkDir = normalizedRawMapName;
+				if (normalizedRawMapName.StartsWith("user://") || normalizedRawMapName.StartsWith("res://"))
 				{
-					terrainPath = $"user://maps/{normalizedMapName}/terrain.json";
+					checkDir = ProjectSettings.GlobalizePath(normalizedRawMapName);
+				}
+				if (System.IO.Directory.Exists(checkDir))
+				{
+					terrainPath = System.IO.Path.Combine(checkDir, "terrain.json");
+				}
+			}
+
+			if (string.IsNullOrEmpty(terrainPath))
+			{
+				string normalizedMapName = rawMapName.ToLower().Trim();
+				string mapDir = $"res://Maps/{normalizedMapName}";
+				string checkDir = ProjectSettings.GlobalizePath(mapDir);
+				if (System.IO.Directory.Exists(checkDir))
+				{
+					terrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
 				}
 				else
 				{
-					terrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
+					string userDir = ProjectSettings.GlobalizePath($"user://maps/{normalizedMapName}");
+					if (System.IO.Directory.Exists(userDir))
+					{
+						terrainPath = $"user://maps/{normalizedMapName}/terrain.json";
+					}
+					else
+					{
+						terrainPath = $"res://Maps/{normalizedMapName}/terrain.json";
+					}
 				}
 			}
 		}

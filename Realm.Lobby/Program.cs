@@ -31,6 +31,15 @@ foreach (var k in serversConfig.AdminPublicKeys)
 var singleAdminKey = builder.Configuration.GetValue<string>("AdminPublicKey");
 if (!string.IsNullOrWhiteSpace(singleAdminKey)) adminPublicKeys.Add(singleAdminKey.Trim());
 
+var adminPublicKeyArray = builder.Configuration.GetSection("AdminPublicKey").Get<List<string>>();
+if (adminPublicKeyArray != null)
+{
+    foreach (var k in adminPublicKeyArray)
+    {
+        if (!string.IsNullOrWhiteSpace(k)) adminPublicKeys.Add(k.Trim());
+    }
+}
+
 var adminKeysList = builder.Configuration.GetSection("AdminPublicKeys").Get<List<string>>();
 if (adminKeysList != null)
 {
@@ -51,13 +60,13 @@ var peerUrls = peersStr.Split(',', StringSplitOptions.RemoveEmptyEntries | Strin
 
 foreach (var server in serversConfig.Servers)
 {
-    if (!string.IsNullOrWhiteSpace(server.Url))
+    if (!string.IsNullOrWhiteSpace(server))
     {
-        if (!string.Equals(server.Url.TrimEnd('/'), selfUrl?.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(server.TrimEnd('/'), selfUrl?.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
         {
-            if (!peerUrls.Contains(server.Url, StringComparer.OrdinalIgnoreCase))
+            if (!peerUrls.Contains(server, StringComparer.OrdinalIgnoreCase))
             {
-                peerUrls.Add(server.Url);
+                peerUrls.Add(server);
             }
         }
     }
@@ -154,7 +163,8 @@ app.MapGet("/lobbies", (LobbyRegistry registry, GeoIpService geoIp, HttpContext 
             lobby.OriginServerUri,
             lobby.HostPingBaseline,
             lobby.GameVersion,
-            lobby.LocalIP
+            lobby.LocalIP,
+            lobby.MapVersion
         );
     });
 
@@ -184,7 +194,7 @@ app.MapPost("/lobbies/register", async (RegisterRequest req, LobbyRegistry regis
 
     var db = context.RequestServices.GetRequiredService<DataStoreService>();
 
-    bool isCustom = !string.IsNullOrEmpty(req.Signature) || !string.IsNullOrEmpty(req.PublicKey) || !string.IsNullOrEmpty(req.MapHash);
+    bool isCustom = !string.IsNullOrEmpty(req.Signature) || !string.IsNullOrEmpty(req.PublicKey);
 
     if (isCustom)
     {
@@ -209,14 +219,28 @@ app.MapPost("/lobbies/register", async (RegisterRequest req, LobbyRegistry regis
         }
         
         string slug = req.Map.ToLowerInvariant().Replace(" ", "-");
-        var existingLock = db.Get<JsonDocument>("name_locks", slug);
-        if (existingLock != null)
+        string? officialOwner = db.Get<string>("map_ownership", req.Map) ?? db.Get<string>("map_ownership", slug);
+        if (officialOwner == null)
         {
-            var root = existingLock.RootElement;
-            string owner = root.GetProperty("owner_public_key").GetString() ?? "";
-            if (owner != req.PublicKey)
+            var publishedMap = db.Get<JsonDocument>("published_maps", req.Map) ?? db.Get<JsonDocument>("published_maps", slug);
+            if (publishedMap != null)
             {
-                return Results.BadRequest(new { Message = "This map name is officially reserved to another creator." });
+                if (publishedMap.RootElement.TryGetProperty("owner_public_key", out var opk))
+                {
+                    officialOwner = opk.GetString();
+                }
+                else if (publishedMap.RootElement.TryGetProperty("OwnerPublicKey", out var opk2))
+                {
+                    officialOwner = opk2.GetString();
+                }
+            }
+        }
+
+        if (!string.IsNullOrEmpty(officialOwner))
+        {
+            if (!string.Equals(officialOwner, req.PublicKey, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.BadRequest(new { Message = $"The map name '{req.Map}' conflicts with an officially published map. Please rename your map to host a lobby." });
             }
         }
     }
@@ -224,8 +248,13 @@ app.MapPost("/lobbies/register", async (RegisterRequest req, LobbyRegistry regis
     string finalMapName = req.Map;
     string mapVersion = req.MapVersion ?? "1.0";
     string compositeKey = $"{req.Map}_{mapVersion}";
-    var stats = db.Get<MapStats>("map_stats", compositeKey) ?? db.Get<MapStats>("map_stats", req.Map);
-    bool isGreenlit = !isCustom || (stats != null && stats.IsGreenlit);
+    string authorStatsKey = !string.IsNullOrEmpty(req.PublicKey) ? $"{req.Map}_{mapVersion}_{req.PublicKey}" : compositeKey;
+    var mapLevelStats = db.Get<MapStats>("map_stats", req.Map);
+    var stats = db.Get<MapStats>("map_stats", authorStatsKey)
+        ?? (!string.IsNullOrEmpty(req.PublicKey) ? db.Get<MapStats>("map_stats", $"{req.Map}_{req.PublicKey}") : null)
+        ?? db.Get<MapStats>("map_stats", compositeKey)
+        ?? mapLevelStats;
+    bool isGreenlit = !isCustom || (stats != null && stats.IsGreenlit) || (mapLevelStats != null && mapLevelStats.IsGreenlit);
 
     if (!isGreenlit) {
         string author = "Unknown";
@@ -253,6 +282,7 @@ app.MapPost("/lobbies/register", async (RegisterRequest req, LobbyRegistry regis
     {
         LobbyId = lobbyId,
         Map = finalMapName,
+        MapVersion = mapVersion,
         HostIP = hostIp,
         HostPort = req.HostPort,
         NatType = req.NatType,
@@ -816,13 +846,44 @@ app.MapPost("/api/assets/{hash}", async (string hash, HttpRequest request, Conte
 app.MapGet("/api/manifests/{mapId}", (string mapId, ContentAddressableStorage cas) =>
 {
     string manifestDir = Path.Combine(cas.RootDirectory, "manifests");
-    string manifestPath = Path.Combine(manifestDir, $"{mapId}_manifest.json");
-    if (!File.Exists(manifestPath))
+    if (!Directory.Exists(manifestDir)) return Results.NotFound();
+
+    var candidates = new List<string>
     {
-        manifestPath = Path.Combine(manifestDir, $"{mapId}.json");
+        Path.Combine(manifestDir, $"{mapId}_manifest.json"),
+        Path.Combine(manifestDir, $"{mapId}.json"),
+        Path.Combine(manifestDir, $"{mapId.Replace(' ', '_')}_manifest.json"),
+        Path.Combine(manifestDir, $"{mapId.Replace(' ', '_')}.json"),
+        Path.Combine(manifestDir, $"{mapId.Replace('_', ' ')}_manifest.json"),
+        Path.Combine(manifestDir, $"{mapId.Replace('_', ' ')}.json")
+    };
+
+    foreach (var path in candidates)
+    {
+        if (File.Exists(path))
+        {
+            return Results.File(File.ReadAllBytes(path), "application/json");
+        }
     }
-    if (!File.Exists(manifestPath)) return Results.NotFound();
-    return Results.File(File.ReadAllBytes(manifestPath), "application/json");
+
+    foreach (var file in Directory.EnumerateFiles(manifestDir, "*.json"))
+    {
+        try
+        {
+            var manifest = MapManifest.LoadFromFile(file);
+            if (manifest != null)
+            {
+                if (string.Equals(manifest.MapName, mapId, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(manifest.MapName?.Replace(' ', '_'), mapId.Replace(' ', '_'), StringComparison.OrdinalIgnoreCase))
+                {
+                    return Results.File(File.ReadAllBytes(file), "application/json");
+                }
+            }
+        }
+        catch { }
+    }
+
+    return Results.NotFound();
 });
 
 app.MapPost("/api/manifests", async (HttpRequest request, ContentAddressableStorage cas, DataStoreService db) =>
@@ -836,8 +897,9 @@ app.MapPost("/api/manifests", async (HttpRequest request, ContentAddressableStor
     }
 
     string compositeKey = $"{manifest.MapName}_{manifest.Version}";
-    var stats = db.Get<MapStats>("map_stats", compositeKey) ?? db.Get<MapStats>("map_stats", manifest.MapName);
-    bool isGreenlit = stats != null && stats.IsGreenlit;
+    var mapLevelStats = db.Get<MapStats>("map_stats", manifest.MapName);
+    var stats = db.Get<MapStats>("map_stats", compositeKey) ?? mapLevelStats;
+    bool isGreenlit = (stats != null && stats.IsGreenlit) || (mapLevelStats != null && mapLevelStats.IsGreenlit);
     string? bypassToken = request.Headers["X-Admin-Bypass"];
 
     if (!isGreenlit)
@@ -999,8 +1061,25 @@ app.MapPost("/api/publish_map/initiate", (PublishMapInitiateRequest req, DataSto
         }
 
         string compositeKey = $"{mapTitle}_{mapVersion}";
-        var stats = db.Get<MapStats>("map_stats", compositeKey) ?? db.Get<MapStats>("map_stats", mapTitle);
-        if (stats == null || !stats.IsGreenlit)
+        var existingMap = db.Get<JsonDocument>("published_maps", compositeKey);
+        if (existingMap != null)
+        {
+            return Results.BadRequest(new PublishMapInitiateResponse
+            {
+                Success = false,
+                Status = "AlreadyPublished",
+                Message = $"Map '{mapTitle}' version '{mapVersion}' has already been published. Please increment the map version in Map Settings to publish an update."
+            });
+        }
+
+        string authorStatsKey = !string.IsNullOrEmpty(req.PublicKey) ? $"{mapTitle}_{mapVersion}_{req.PublicKey}" : compositeKey;
+        var mapLevelStats = db.Get<MapStats>("map_stats", mapTitle);
+        var stats = db.Get<MapStats>("map_stats", authorStatsKey)
+            ?? (!string.IsNullOrEmpty(req.PublicKey) ? db.Get<MapStats>("map_stats", $"{mapTitle}_{req.PublicKey}") : null)
+            ?? db.Get<MapStats>("map_stats", compositeKey)
+            ?? mapLevelStats;
+        bool isGreenlit = (stats != null && stats.IsGreenlit) || (mapLevelStats != null && mapLevelStats.IsGreenlit);
+        if (!isGreenlit)
         {
             return Results.Json(new PublishMapInitiateResponse
             {
@@ -1153,6 +1232,17 @@ app.MapPost("/api/publish_map/finalize", (PublishMapFinalizeRequest req, DataSto
         }
 
         string compositeKey = $"{mapTitle}_{mapVersion}";
+        var existingMap = db.Get<JsonDocument>("published_maps", compositeKey);
+        if (existingMap != null)
+        {
+            return Results.BadRequest(new PublishMapFinalizeResponse
+            {
+                Success = false,
+                Status = "AlreadyPublished",
+                Message = $"Map '{mapTitle}' version '{mapVersion}' has already been published. Please increment the map version in Map Settings to publish an update."
+            });
+        }
+
         var existingOwner = db.Get<string>("map_ownership", mapTitle);
         if (existingOwner == null)
         {
@@ -1272,12 +1362,14 @@ app.MapPost("/api/publish_map", (PublishMapRequest req, DataStoreService db, Con
         }
 
         string compositeKey = $"{mapTitle}_{mapVersion}";
-        var stats = db.Get<MapStats>("map_stats", compositeKey) ?? db.Get<MapStats>("map_stats", mapTitle);
-        if (stats == null || !stats.IsGreenlit) {
+        var mapLevelStats = db.Get<MapStats>("map_stats", mapTitle);
+        var stats = db.Get<MapStats>("map_stats", compositeKey) ?? mapLevelStats;
+        bool isGreenlit = (stats != null && stats.IsGreenlit) || (mapLevelStats != null && mapLevelStats.IsGreenlit);
+        if (!isGreenlit) {
             return Results.Json(new {
                 Message = $"Map '{mapTitle}' is not greenlit for publication to the public registry. Accumulate more community playtime and ratings or request an admin override.",
                 IsGreenlit = false,
-                Stats = stats ?? new MapStats()
+                Stats = stats ?? mapLevelStats ?? new MapStats()
             }, statusCode: StatusCodes.Status403Forbidden);
         }
 
@@ -1437,6 +1529,243 @@ app.MapPost("/api/admin/prune_cas", (HttpRequest request, ClusterEventService cl
 
     var pruneResult = clusterEvents.PruneCas(cas, db);
     return Results.Ok(pruneResult);
+});
+
+app.MapPost("/api/admin/remove_manifest", async (HttpRequest request, ClusterEventService clusterEvents, DataStoreService db, ContentAddressableStorage cas, PeerRegistry registeredPeers, IHttpClientFactory httpClientFactory) =>
+{
+    string body = string.Empty;
+    using (var reader = new StreamReader(request.Body, Encoding.UTF8))
+    {
+        body = await reader.ReadToEndAsync();
+    }
+
+    AdminRemoveManifestRequest? req = null;
+    if (!string.IsNullOrWhiteSpace(body))
+    {
+        try
+        {
+            req = JsonSerializer.Deserialize<AdminRemoveManifestRequest>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch { }
+    }
+
+    string mapTitle = req?.MapTitle ?? (request.Query.TryGetValue("map", out var qm) ? qm.ToString() : "");
+    string? mapVersion = !string.IsNullOrWhiteSpace(req?.MapVersion) ? req.MapVersion : (request.Query.TryGetValue("version", out var qv) ? qv.ToString() : null);
+    if (string.IsNullOrWhiteSpace(mapVersion)) mapVersion = null;
+
+    if (string.IsNullOrWhiteSpace(mapTitle))
+    {
+        return Results.BadRequest(new RemoveManifestResponseDto { Success = false, Message = "MapTitle is required." });
+    }
+
+    if (adminPublicKeys.Count == 0)
+    {
+        return Results.Json(new RemoveManifestResponseDto { Success = false, Message = "Server has no AdminPublicKeys configured." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    string? bypassHeader = request.Headers["X-Admin-Bypass"];
+    string? sigHeader = request.Headers["X-Cluster-Signature"];
+    string? pubKeyHeader = request.Headers["X-Admin-PublicKey"];
+
+    string callerPubKey = req?.AdminPublicKey ?? pubKeyHeader?.ToString() ?? "";
+    string callerSig = req?.Signature ?? sigHeader?.ToString() ?? "";
+
+    string targetVerStr = mapVersion ?? "all";
+    string sigPayload1 = $"remove_manifest:{mapTitle.Trim().ToLowerInvariant()}:{targetVerStr.ToLowerInvariant()}";
+    string sigPayload2 = $"remove_manifest:{mapTitle.Trim().ToLowerInvariant()}";
+
+    bool isAuth = false;
+
+    if (!string.IsNullOrEmpty(bypassHeader))
+    {
+        isAuth = AdminBypassAuth.VerifyBypassToken(adminPublicKeys, mapTitle, targetVerStr, bypassHeader)
+            || AdminBypassAuth.VerifyBypassToken(adminPublicKeys, "admin", "remove_manifest", bypassHeader)
+            || AdminBypassAuth.VerifyBypassToken(adminPublicKeys, mapTitle, "*", bypassHeader);
+    }
+
+    if (!isAuth && !string.IsNullOrEmpty(callerSig))
+    {
+        if (!string.IsNullOrEmpty(callerPubKey) && adminPublicKeys.Contains(callerPubKey.Trim()))
+        {
+            isAuth = AuthorSignatureHelper.VerifySignature(callerPubKey.Trim(), sigPayload1, callerSig)
+                || AuthorSignatureHelper.VerifySignature(callerPubKey.Trim(), sigPayload2, callerSig)
+                || AdminBypassAuth.VerifyBypassToken(callerPubKey.Trim(), mapTitle, targetVerStr, callerSig);
+        }
+        else
+        {
+            isAuth = AuthorSignatureHelper.VerifySignatureAny(adminPublicKeys, sigPayload1, callerSig)
+                || AuthorSignatureHelper.VerifySignatureAny(adminPublicKeys, sigPayload2, callerSig)
+                || AdminBypassAuth.VerifyBypassToken(adminPublicKeys, mapTitle, targetVerStr, callerSig);
+        }
+    }
+
+    if (!isAuth)
+    {
+        return Results.Json(new RemoveManifestResponseDto { Success = false, Message = "Unauthorized admin request." }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    var result = clusterEvents.RemoveManifest(cas, db, mapTitle, mapVersion);
+
+    var removeEvent = new ClusterEventDto
+    {
+        EventType = "admin_remove_manifest",
+        PublicKey = !string.IsNullOrEmpty(callerPubKey) ? callerPubKey.Trim() : (adminPublicKeys.FirstOrDefault() ?? ""),
+        Signature = callerSig,
+        PayloadJson = JsonSerializer.Serialize(new AdminRemoveManifestEventPayload
+        {
+            MapTitle = mapTitle,
+            MapVersion = mapVersion,
+            AdminPublicKey = callerPubKey,
+            Signature = callerSig
+        })
+    };
+    clusterEvents.MarkEventProcessed(removeEvent.EventId, db);
+    clusterEvents.BroadcastEvent(removeEvent, registeredPeers, httpClientFactory);
+
+    return Results.Ok(result);
+});
+
+app.MapDelete("/api/admin/manifests/{mapTitle}", (string mapTitle, HttpRequest request, ClusterEventService clusterEvents, DataStoreService db, ContentAddressableStorage cas, PeerRegistry registeredPeers, IHttpClientFactory httpClientFactory) =>
+{
+    if (string.IsNullOrWhiteSpace(mapTitle))
+    {
+        return Results.BadRequest(new RemoveManifestResponseDto { Success = false, Message = "MapTitle is required." });
+    }
+
+    if (adminPublicKeys.Count == 0)
+    {
+        return Results.Json(new RemoveManifestResponseDto { Success = false, Message = "Server has no AdminPublicKeys configured." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    string? bypassHeader = request.Headers["X-Admin-Bypass"];
+    string? sigHeader = request.Headers["X-Cluster-Signature"];
+    string? pubKeyHeader = request.Headers["X-Admin-PublicKey"];
+
+    string callerPubKey = pubKeyHeader?.ToString() ?? "";
+    string callerSig = sigHeader?.ToString() ?? "";
+
+    string sigPayload1 = $"remove_manifest:{mapTitle.Trim().ToLowerInvariant()}:all";
+    string sigPayload2 = $"remove_manifest:{mapTitle.Trim().ToLowerInvariant()}";
+
+    bool isAuth = false;
+
+    if (!string.IsNullOrEmpty(bypassHeader))
+    {
+        isAuth = AdminBypassAuth.VerifyBypassToken(adminPublicKeys, mapTitle, "all", bypassHeader)
+            || AdminBypassAuth.VerifyBypassToken(adminPublicKeys, "admin", "remove_manifest", bypassHeader)
+            || AdminBypassAuth.VerifyBypassToken(adminPublicKeys, mapTitle, "*", bypassHeader);
+    }
+
+    if (!isAuth && !string.IsNullOrEmpty(callerSig))
+    {
+        if (!string.IsNullOrEmpty(callerPubKey) && adminPublicKeys.Contains(callerPubKey.Trim()))
+        {
+            isAuth = AuthorSignatureHelper.VerifySignature(callerPubKey.Trim(), sigPayload1, callerSig)
+                || AuthorSignatureHelper.VerifySignature(callerPubKey.Trim(), sigPayload2, callerSig)
+                || AdminBypassAuth.VerifyBypassToken(callerPubKey.Trim(), mapTitle, "all", callerSig);
+        }
+        else
+        {
+            isAuth = AuthorSignatureHelper.VerifySignatureAny(adminPublicKeys, sigPayload1, callerSig)
+                || AuthorSignatureHelper.VerifySignatureAny(adminPublicKeys, sigPayload2, callerSig)
+                || AdminBypassAuth.VerifyBypassToken(adminPublicKeys, mapTitle, "all", callerSig);
+        }
+    }
+
+    if (!isAuth)
+    {
+        return Results.Json(new RemoveManifestResponseDto { Success = false, Message = "Unauthorized admin request." }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    var result = clusterEvents.RemoveManifest(cas, db, mapTitle, null);
+
+    var removeEvent = new ClusterEventDto
+    {
+        EventType = "admin_remove_manifest",
+        PublicKey = !string.IsNullOrEmpty(callerPubKey) ? callerPubKey.Trim() : (adminPublicKeys.FirstOrDefault() ?? ""),
+        Signature = callerSig,
+        PayloadJson = JsonSerializer.Serialize(new AdminRemoveManifestEventPayload
+        {
+            MapTitle = mapTitle,
+            MapVersion = null,
+            AdminPublicKey = callerPubKey,
+            Signature = callerSig
+        })
+    };
+    clusterEvents.MarkEventProcessed(removeEvent.EventId, db);
+    clusterEvents.BroadcastEvent(removeEvent, registeredPeers, httpClientFactory);
+
+    return Results.Ok(result);
+});
+
+app.MapDelete("/api/admin/manifests/{mapTitle}/{mapVersion}", (string mapTitle, string mapVersion, HttpRequest request, ClusterEventService clusterEvents, DataStoreService db, ContentAddressableStorage cas, PeerRegistry registeredPeers, IHttpClientFactory httpClientFactory) =>
+{
+    if (string.IsNullOrWhiteSpace(mapTitle) || string.IsNullOrWhiteSpace(mapVersion))
+    {
+        return Results.BadRequest(new RemoveManifestResponseDto { Success = false, Message = "MapTitle and MapVersion are required." });
+    }
+
+    if (adminPublicKeys.Count == 0)
+    {
+        return Results.Json(new RemoveManifestResponseDto { Success = false, Message = "Server has no AdminPublicKeys configured." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    string? bypassHeader = request.Headers["X-Admin-Bypass"];
+    string? sigHeader = request.Headers["X-Cluster-Signature"];
+    string? pubKeyHeader = request.Headers["X-Admin-PublicKey"];
+
+    string callerPubKey = pubKeyHeader?.ToString() ?? "";
+    string callerSig = sigHeader?.ToString() ?? "";
+
+    string sigPayload = $"remove_manifest:{mapTitle.Trim().ToLowerInvariant()}:{mapVersion.Trim().ToLowerInvariant()}";
+
+    bool isAuth = false;
+
+    if (!string.IsNullOrEmpty(bypassHeader))
+    {
+        isAuth = AdminBypassAuth.VerifyBypassToken(adminPublicKeys, mapTitle, mapVersion.Trim(), bypassHeader)
+            || AdminBypassAuth.VerifyBypassToken(adminPublicKeys, "admin", "remove_manifest", bypassHeader)
+            || AdminBypassAuth.VerifyBypassToken(adminPublicKeys, mapTitle, "*", bypassHeader);
+    }
+
+    if (!isAuth && !string.IsNullOrEmpty(callerSig))
+    {
+        if (!string.IsNullOrEmpty(callerPubKey) && adminPublicKeys.Contains(callerPubKey.Trim()))
+        {
+            isAuth = AuthorSignatureHelper.VerifySignature(callerPubKey.Trim(), sigPayload, callerSig)
+                || AdminBypassAuth.VerifyBypassToken(callerPubKey.Trim(), mapTitle, mapVersion.Trim(), callerSig);
+        }
+        else
+        {
+            isAuth = AuthorSignatureHelper.VerifySignatureAny(adminPublicKeys, sigPayload, callerSig)
+                || AdminBypassAuth.VerifyBypassToken(adminPublicKeys, mapTitle, mapVersion.Trim(), callerSig);
+        }
+    }
+
+    if (!isAuth)
+    {
+        return Results.Json(new RemoveManifestResponseDto { Success = false, Message = "Unauthorized admin request." }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    var result = clusterEvents.RemoveManifest(cas, db, mapTitle, mapVersion);
+
+    var removeEvent = new ClusterEventDto
+    {
+        EventType = "admin_remove_manifest",
+        PublicKey = !string.IsNullOrEmpty(callerPubKey) ? callerPubKey.Trim() : (adminPublicKeys.FirstOrDefault() ?? ""),
+        Signature = callerSig,
+        PayloadJson = JsonSerializer.Serialize(new AdminRemoveManifestEventPayload
+        {
+            MapTitle = mapTitle,
+            MapVersion = mapVersion,
+            AdminPublicKey = callerPubKey,
+            Signature = callerSig
+        })
+    };
+    clusterEvents.MarkEventProcessed(removeEvent.EventId, db);
+    clusterEvents.BroadcastEvent(removeEvent, registeredPeers, httpClientFactory);
+
+    return Results.Ok(result);
 });
 
 app.MapPost("/api/cluster/sync_metrics", async (HttpRequest request, ClusterEventService clusterEvents, DataStoreService db, ContentAddressableStorage cas) =>
@@ -1898,6 +2227,7 @@ app.MapGet("/api/discovery/maps", (DataStoreService db, ContentAddressableStorag
             long totalBytes = 0;
             string thumbnailHash = "";
             var screenshotHashes = new List<string>();
+            string? metadataFileHash = null;
 
             if (root.TryGetProperty("Files", out var filesProp) && filesProp.ValueKind == JsonValueKind.Object)
             {
@@ -1907,10 +2237,18 @@ app.MapGet("/api/discovery/maps", (DataStoreService db, ContentAddressableStorag
                     string rawHash = fileProp.Value.GetString() ?? "";
                     string norm = ContentAddressableStorage.NormalizeBlake3Hash(rawHash);
 
+                    if (path.Equals("metadata.json", StringComparison.OrdinalIgnoreCase) ||
+                        path.Equals("map.json", StringComparison.OrdinalIgnoreCase) ||
+                        path.EndsWith("/metadata.json", StringComparison.OrdinalIgnoreCase) ||
+                        path.EndsWith("/map.json", StringComparison.OrdinalIgnoreCase))
+                    {
+                        metadataFileHash = norm;
+                    }
+
                     string ext = Path.GetExtension(path).ToLowerInvariant();
                     if (ext is ".png" or ".jpg" or ".jpeg" or ".webp")
                     {
-                        if (string.IsNullOrEmpty(thumbnailHash) && (path.Contains("thumb", StringComparison.OrdinalIgnoreCase) || path.Contains("icon", StringComparison.OrdinalIgnoreCase) || path.Contains("cover", StringComparison.OrdinalIgnoreCase)))
+                        if (string.IsNullOrEmpty(thumbnailHash) && (path.Contains("thumb", StringComparison.OrdinalIgnoreCase) || path.Contains("icon", StringComparison.OrdinalIgnoreCase) || path.Contains("cover", StringComparison.OrdinalIgnoreCase) || path.Contains("minimap", StringComparison.OrdinalIgnoreCase)))
                         {
                             thumbnailHash = norm;
                         }
@@ -1928,6 +2266,102 @@ app.MapGet("/api/discovery/maps", (DataStoreService db, ContentAddressableStorag
                 }
             }
 
+            string engineVersion = "Godot Realm Engine v1.0";
+            string maxPlayers = "8 Players";
+            string genre = tags.Count > 0 ? tags[0] : "Custom Map";
+
+            if (!string.IsNullOrEmpty(metadataFileHash))
+            {
+                string? metaFilePath = cas.FindAssetFilePath(metadataFileHash);
+                if (metaFilePath != null && File.Exists(metaFilePath))
+                {
+                    try
+                    {
+                        var metaDoc = JsonDocument.Parse(File.ReadAllText(metaFilePath));
+                        var metaRoot = metaDoc.RootElement;
+                        if (metaRoot.TryGetProperty("MapProperties", out var mp) && mp.ValueKind == JsonValueKind.Object)
+                        {
+                            if (string.IsNullOrEmpty(description) && mp.TryGetProperty("MapDescription", out var md))
+                            {
+                                string? mdStr = md.GetString();
+                                if (!string.IsNullOrEmpty(mdStr)) description = mdStr;
+                            }
+                            if (string.IsNullOrEmpty(description) && mp.TryGetProperty("HowToPlayObjective", out var htp))
+                            {
+                                string? htpStr = htp.GetString();
+                                if (!string.IsNullOrEmpty(htpStr)) description = htpStr;
+                            }
+                            if (mp.TryGetProperty("Tags", out var metaTags) && metaTags.ValueKind == JsonValueKind.Array)
+                            {
+                                foreach (var t in metaTags.EnumerateArray())
+                                {
+                                    string? s = t.GetString();
+                                    if (!string.IsNullOrEmpty(s) && !tags.Contains(s)) tags.Add(s);
+                                }
+                            }
+                            if (mp.TryGetProperty("PlayerSlots", out var slotsProp) && slotsProp.ValueKind == JsonValueKind.Array && slotsProp.GetArrayLength() > 0)
+                            {
+                                maxPlayers = $"{slotsProp.GetArrayLength()} Players";
+                            }
+                            else if (mp.TryGetProperty("SuggestedPlayers", out var sp) && !string.IsNullOrEmpty(sp.GetString()))
+                            {
+                                maxPlayers = sp.GetString()!;
+                            }
+                            if (mp.TryGetProperty("MapType", out var mt) && !string.IsNullOrEmpty(mt.GetString()))
+                            {
+                                genre = mt.GetString()!;
+                            }
+                        }
+
+                        if (metaRoot.TryGetProperty("CustomUnits", out var cu) && cu.ValueKind == JsonValueKind.Array && cu.GetArrayLength() > 0)
+                        {
+                            if (!tags.Contains("Custom Units")) tags.Add("Custom Units");
+                        }
+                        if (metaRoot.TryGetProperty("CustomBuildings", out var cb) && cb.ValueKind == JsonValueKind.Array && cb.GetArrayLength() > 0)
+                        {
+                            if (!tags.Contains("Custom Buildings")) tags.Add("Custom Buildings");
+                        }
+                        if (metaRoot.TryGetProperty("CustomAbilities", out var ca) && ca.ValueKind == JsonValueKind.Array && ca.GetArrayLength() > 0)
+                        {
+                            if (!tags.Contains("Custom Abilities")) tags.Add("Custom Abilities");
+                        }
+                        if (metaRoot.TryGetProperty("CustomWeapons", out var cw) && cw.ValueKind == JsonValueKind.Array && cw.GetArrayLength() > 0)
+                        {
+                            if (!tags.Contains("Custom Weapons")) tags.Add("Custom Weapons");
+                        }
+                        if (metaRoot.TryGetProperty("CustomUpgrades", out var cup) && cup.ValueKind == JsonValueKind.Array && cup.GetArrayLength() > 0)
+                        {
+                            if (!tags.Contains("Custom Upgrades")) tags.Add("Custom Upgrades");
+                        }
+                        if (metaRoot.TryGetProperty("CustomProps", out var cpr) && cpr.ValueKind == JsonValueKind.Array && cpr.GetArrayLength() > 0)
+                        {
+                            if (!tags.Contains("Custom Props")) tags.Add("Custom Props");
+                        }
+                        if (metaRoot.TryGetProperty("CustomItems", out var ci) && ci.ValueKind == JsonValueKind.Array && ci.GetArrayLength() > 0)
+                        {
+                            if (!tags.Contains("Custom Items")) tags.Add("Custom Items");
+                        }
+                        if (metaRoot.TryGetProperty("CustomAttachments", out var cat) && cat.ValueKind == JsonValueKind.Array && cat.GetArrayLength() > 0)
+                        {
+                            if (!tags.Contains("Custom Attachments")) tags.Add("Custom Attachments");
+                        }
+                        if (metaRoot.TryGetProperty("CustomVfx", out var cvfx) && cvfx.ValueKind == JsonValueKind.Array && cvfx.GetArrayLength() > 0)
+                        {
+                            if (!tags.Contains("Custom VFX")) tags.Add("Custom VFX");
+                        }
+                        if (metaRoot.TryGetProperty("EngineVersion", out var ev) && !string.IsNullOrEmpty(ev.GetString()))
+                        {
+                            engineVersion = ev.GetString()!;
+                        }
+                        else if (metaRoot.TryGetProperty("GameBuildNumber", out var gb) && !string.IsNullOrEmpty(gb.GetString()))
+                        {
+                            engineVersion = $"Build {gb.GetString()}";
+                        }
+                    }
+                    catch { }
+                }
+            }
+
             if (string.IsNullOrEmpty(thumbnailHash) && screenshotHashes.Count > 0)
             {
                 thumbnailHash = screenshotHashes[0];
@@ -1939,6 +2373,13 @@ app.MapGet("/api/discovery/maps", (DataStoreService db, ContentAddressableStorag
             int playtimeMinutes = stats != null ? (int)stats.TotalPlaytimeMinutes : 0;
             int gamesPlayed = stats != null ? stats.TotalGamesPlayed : 0;
 
+            var awards = new List<string>();
+            if (isGreenlit) awards.Add("res://Assets/UI/victory_flag.png");
+            if (ratingStars >= 4.5f) awards.Add("res://Assets/UI/gold_coin.png");
+            if (verifiedReviews >= 5 || totalReviews >= 20) awards.Add("res://Assets/UI/battle_shield.png");
+            if (gamesPlayed >= 10 || playtimeMinutes >= 30) awards.Add("res://Assets/UI/battle_axe.png");
+            if (awards.Count == 0) awards.Add("res://Assets/UI/gold_coin.png");
+
             discoveryList.Add(new DiscoveryMapDto
             {
                 MapId = compositeKey,
@@ -1946,7 +2387,7 @@ app.MapGet("/api/discovery/maps", (DataStoreService db, ContentAddressableStorag
                 Version = mapVersion,
                 Creator = creator,
                 Description = description,
-                Genre = tags.Count > 0 ? tags[0] : "Custom Map",
+                Genre = genre,
                 ThumbnailHash = thumbnailHash,
                 Screenshots = screenshotHashes,
                 Features = tags,
@@ -1959,9 +2400,10 @@ app.MapGet("/api/discovery/maps", (DataStoreService db, ContentAddressableStorag
                 GamesPlayed = gamesPlayed,
                 TotalSizeBytes = totalBytes,
                 FileSizeFormatted = FormatByteSize(totalBytes),
-                EngineVersion = "Godot Realm Engine v1.0",
-                MaxPlayers = "8 Players",
-                IsGreenlit = isGreenlit
+                EngineVersion = engineVersion,
+                MaxPlayers = maxPlayers,
+                IsGreenlit = isGreenlit,
+                Awards = awards
             });
         }
         catch { }
@@ -1988,15 +2430,25 @@ app.MapGet("/api/discovery/maps", (DataStoreService db, ContentAddressableStorag
                 long totalBytes = 0;
                 string thumbnailHash = "";
                 var screenshotHashes = new List<string>();
+                string? metadataFileHash = null;
 
                 foreach (var pair in manifest.Files)
                 {
                     string path = pair.Key;
                     string norm = ContentAddressableStorage.NormalizeBlake3Hash(pair.Value);
+
+                    if (path.Equals("metadata.json", StringComparison.OrdinalIgnoreCase) ||
+                        path.Equals("map.json", StringComparison.OrdinalIgnoreCase) ||
+                        path.EndsWith("/metadata.json", StringComparison.OrdinalIgnoreCase) ||
+                        path.EndsWith("/map.json", StringComparison.OrdinalIgnoreCase))
+                    {
+                        metadataFileHash = norm;
+                    }
+
                     string ext = Path.GetExtension(path).ToLowerInvariant();
                     if (ext is ".png" or ".jpg" or ".jpeg" or ".webp")
                     {
-                        if (string.IsNullOrEmpty(thumbnailHash) && (path.Contains("thumb", StringComparison.OrdinalIgnoreCase) || path.Contains("icon", StringComparison.OrdinalIgnoreCase)))
+                        if (string.IsNullOrEmpty(thumbnailHash) && (path.Contains("thumb", StringComparison.OrdinalIgnoreCase) || path.Contains("icon", StringComparison.OrdinalIgnoreCase) || path.Contains("cover", StringComparison.OrdinalIgnoreCase) || path.Contains("minimap", StringComparison.OrdinalIgnoreCase)))
                         {
                             thumbnailHash = norm;
                         }
@@ -2018,7 +2470,116 @@ app.MapGet("/api/discovery/maps", (DataStoreService db, ContentAddressableStorag
                     thumbnailHash = screenshotHashes[0];
                 }
 
+                var tags = manifest.Tags != null ? new List<string>(manifest.Tags) : new List<string>();
+                string description = manifest.Description;
+                string engineVersion = "Godot Realm Engine v1.0";
+                string maxPlayers = "8 Players";
+                string genre = tags.Count > 0 ? tags[0] : "Custom Map";
+
+                if (!string.IsNullOrEmpty(metadataFileHash))
+                {
+                    string? metaFilePath = cas.FindAssetFilePath(metadataFileHash);
+                    if (metaFilePath != null && File.Exists(metaFilePath))
+                    {
+                        try
+                        {
+                            var metaDoc = JsonDocument.Parse(File.ReadAllText(metaFilePath));
+                            var metaRoot = metaDoc.RootElement;
+                            if (metaRoot.TryGetProperty("MapProperties", out var mp) && mp.ValueKind == JsonValueKind.Object)
+                            {
+                                if (string.IsNullOrEmpty(description) && mp.TryGetProperty("MapDescription", out var md))
+                                {
+                                    string? mdStr = md.GetString();
+                                    if (!string.IsNullOrEmpty(mdStr)) description = mdStr;
+                                }
+                                if (string.IsNullOrEmpty(description) && mp.TryGetProperty("HowToPlayObjective", out var htp))
+                                {
+                                    string? htpStr = htp.GetString();
+                                    if (!string.IsNullOrEmpty(htpStr)) description = htpStr;
+                                }
+                                if (mp.TryGetProperty("Tags", out var metaTags) && metaTags.ValueKind == JsonValueKind.Array)
+                                {
+                                    foreach (var t in metaTags.EnumerateArray())
+                                    {
+                                        string? s = t.GetString();
+                                        if (!string.IsNullOrEmpty(s) && !tags.Contains(s)) tags.Add(s);
+                                    }
+                                }
+                                if (mp.TryGetProperty("PlayerSlots", out var slotsProp) && slotsProp.ValueKind == JsonValueKind.Array && slotsProp.GetArrayLength() > 0)
+                                {
+                                    maxPlayers = $"{slotsProp.GetArrayLength()} Players";
+                                }
+                                else if (mp.TryGetProperty("SuggestedPlayers", out var sp) && !string.IsNullOrEmpty(sp.GetString()))
+                                {
+                                    maxPlayers = sp.GetString()!;
+                                }
+                                if (mp.TryGetProperty("MapType", out var mt) && !string.IsNullOrEmpty(mt.GetString()))
+                                {
+                                    genre = mt.GetString()!;
+                                }
+                            }
+
+                            if (metaRoot.TryGetProperty("CustomUnits", out var cu) && cu.ValueKind == JsonValueKind.Array && cu.GetArrayLength() > 0)
+                            {
+                                if (!tags.Contains("Custom Units")) tags.Add("Custom Units");
+                            }
+                            if (metaRoot.TryGetProperty("CustomBuildings", out var cb) && cb.ValueKind == JsonValueKind.Array && cb.GetArrayLength() > 0)
+                            {
+                                if (!tags.Contains("Custom Buildings")) tags.Add("Custom Buildings");
+                            }
+                            if (metaRoot.TryGetProperty("CustomAbilities", out var ca) && ca.ValueKind == JsonValueKind.Array && ca.GetArrayLength() > 0)
+                            {
+                                if (!tags.Contains("Custom Abilities")) tags.Add("Custom Abilities");
+                            }
+                            if (metaRoot.TryGetProperty("CustomWeapons", out var cw) && cw.ValueKind == JsonValueKind.Array && cw.GetArrayLength() > 0)
+                            {
+                                if (!tags.Contains("Custom Weapons")) tags.Add("Custom Weapons");
+                            }
+                            if (metaRoot.TryGetProperty("CustomUpgrades", out var cup) && cup.ValueKind == JsonValueKind.Array && cup.GetArrayLength() > 0)
+                            {
+                                if (!tags.Contains("Custom Upgrades")) tags.Add("Custom Upgrades");
+                            }
+                            if (metaRoot.TryGetProperty("CustomProps", out var cpr) && cpr.ValueKind == JsonValueKind.Array && cpr.GetArrayLength() > 0)
+                            {
+                                if (!tags.Contains("Custom Props")) tags.Add("Custom Props");
+                            }
+                            if (metaRoot.TryGetProperty("CustomItems", out var ci) && ci.ValueKind == JsonValueKind.Array && ci.GetArrayLength() > 0)
+                            {
+                                if (!tags.Contains("Custom Items")) tags.Add("Custom Items");
+                            }
+                            if (metaRoot.TryGetProperty("CustomAttachments", out var cat) && cat.ValueKind == JsonValueKind.Array && cat.GetArrayLength() > 0)
+                            {
+                                if (!tags.Contains("Custom Attachments")) tags.Add("Custom Attachments");
+                            }
+                            if (metaRoot.TryGetProperty("CustomVfx", out var cvfx) && cvfx.ValueKind == JsonValueKind.Array && cvfx.GetArrayLength() > 0)
+                            {
+                                if (!tags.Contains("Custom VFX")) tags.Add("Custom VFX");
+                            }
+                            if (metaRoot.TryGetProperty("EngineVersion", out var ev) && !string.IsNullOrEmpty(ev.GetString()))
+                            {
+                                engineVersion = ev.GetString()!;
+                            }
+                            else if (metaRoot.TryGetProperty("GameBuildNumber", out var gb) && !string.IsNullOrEmpty(gb.GetString()))
+                            {
+                                engineVersion = $"Build {gb.GetString()}";
+                            }
+                        }
+                        catch { }
+                    }
+                }
+
                 float ratingStars = stats != null && stats.AverageRating > 0 ? (float)stats.AverageRating : 4.5f;
+                int totalReviews = stats != null ? stats.ReviewsCount : 0;
+                int verifiedReviews = stats != null ? stats.VerifiedGoodReviewsCount : 0;
+                int playtimeMinutes = stats != null ? (int)stats.TotalPlaytimeMinutes : 0;
+                int gamesPlayed = stats != null ? stats.TotalGamesPlayed : 0;
+
+                var awards = new List<string>();
+                if (isGreenlit) awards.Add("res://Assets/UI/victory_flag.png");
+                if (ratingStars >= 4.5f) awards.Add("res://Assets/UI/gold_coin.png");
+                if (verifiedReviews >= 5 || totalReviews >= 20) awards.Add("res://Assets/UI/battle_shield.png");
+                if (gamesPlayed >= 10 || playtimeMinutes >= 30) awards.Add("res://Assets/UI/battle_axe.png");
+                if (awards.Count == 0) awards.Add("res://Assets/UI/gold_coin.png");
 
                 discoveryList.Add(new DiscoveryMapDto
                 {
@@ -2026,23 +2587,24 @@ app.MapGet("/api/discovery/maps", (DataStoreService db, ContentAddressableStorag
                     Title = manifest.MapName,
                     Version = manifest.Version,
                     Creator = !string.IsNullOrEmpty(manifest.Author) ? manifest.Author : "Realm Builder",
-                    Description = manifest.Description,
-                    Genre = manifest.Tags != null && manifest.Tags.Count > 0 ? manifest.Tags[0] : "Custom Map",
+                    Description = description,
+                    Genre = genre,
                     ThumbnailHash = thumbnailHash,
                     Screenshots = screenshotHashes,
-                    Features = manifest.Tags ?? new List<string>(),
-                    Tags = manifest.Tags ?? new List<string>(),
+                    Features = tags,
+                    Tags = tags,
                     RatingStars = ratingStars,
-                    TotalReviews = stats?.ReviewsCount ?? 0,
-                    VerifiedGoodReviews = stats?.VerifiedGoodReviewsCount ?? 0,
+                    TotalReviews = totalReviews,
+                    VerifiedGoodReviews = verifiedReviews,
                     AverageRating = ratingStars,
-                    PlaytimeMinutes = stats != null ? (int)stats.TotalPlaytimeMinutes : 0,
-                    GamesPlayed = stats?.TotalGamesPlayed ?? 0,
+                    PlaytimeMinutes = playtimeMinutes,
+                    GamesPlayed = gamesPlayed,
                     TotalSizeBytes = totalBytes,
                     FileSizeFormatted = FormatByteSize(totalBytes),
-                    EngineVersion = "Godot Realm Engine v1.0",
-                    MaxPlayers = "8 Players",
-                    IsGreenlit = isGreenlit
+                    EngineVersion = engineVersion,
+                    MaxPlayers = maxPlayers,
+                    IsGreenlit = isGreenlit,
+                    Awards = awards
                 });
             }
             catch { }
@@ -2093,26 +2655,28 @@ app.MapPost("/api/admin/greenlight", (AdminGreenlightRequest req, DataStoreServi
     }
 
     string mapTitle = req.MapTitle.Trim();
-    string mapVersion = string.IsNullOrWhiteSpace(req.MapVersion) ? "1.0" : req.MapVersion.Trim();
-    string payload = $"greenlight:{mapTitle.ToLowerInvariant()}:{mapVersion.ToLowerInvariant()}";
+    string payload = $"greenlight:{mapTitle.ToLowerInvariant()}";
 
     bool isSigValid = AuthorSignatureHelper.VerifySignature(req.AdminPublicKey, payload, req.Signature)
-        || AuthorSignatureHelper.VerifySignature(req.AdminPublicKey, $"{mapTitle}:{mapVersion}", req.Signature)
-        || AdminBypassAuth.VerifyBypassToken(req.AdminPublicKey, mapTitle, mapVersion, req.Signature);
+        || (!string.IsNullOrEmpty(req.MapVersion) && AuthorSignatureHelper.VerifySignature(req.AdminPublicKey, $"greenlight:{mapTitle.ToLowerInvariant()}:{req.MapVersion.ToLowerInvariant()}", req.Signature))
+        || (!string.IsNullOrEmpty(req.MapVersion) && AuthorSignatureHelper.VerifySignature(req.AdminPublicKey, $"{mapTitle}:{req.MapVersion}", req.Signature))
+        || AuthorSignatureHelper.VerifySignature(req.AdminPublicKey, mapTitle, req.Signature)
+        || AdminBypassAuth.VerifyBypassToken(req.AdminPublicKey, mapTitle, req.MapVersion ?? "1.0", req.Signature);
 
     if (!isSigValid)
     {
         return Results.BadRequest(new { Message = "Invalid admin signature." });
     }
 
-    string compositeKey = $"{mapTitle}_{mapVersion}";
-    var stats = db.Get<MapStats>("map_stats", compositeKey)
-        ?? db.Get<MapStats>("map_stats", mapTitle)
-        ?? new MapStats();
-
+    var stats = db.Get<MapStats>("map_stats", mapTitle) ?? new MapStats();
     stats.AdminOverrideGreenlit = true;
-    db.Upsert("map_stats", compositeKey, stats);
     db.Upsert("map_stats", mapTitle, stats);
+
+    if (!string.IsNullOrWhiteSpace(req.MapVersion))
+    {
+        string compositeKey = $"{mapTitle}_{req.MapVersion.Trim()}";
+        db.Upsert("map_stats", compositeKey, stats);
+    }
 
     var greenlightEvent = new ClusterEventDto
     {
@@ -2122,7 +2686,7 @@ app.MapPost("/api/admin/greenlight", (AdminGreenlightRequest req, DataStoreServi
         PayloadJson = JsonSerializer.Serialize(new AdminGreenlightEventPayload
         {
             MapTitle = mapTitle,
-            MapVersion = mapVersion,
+            MapVersion = req.MapVersion,
             AdminPublicKey = req.AdminPublicKey.Trim(),
             Signature = req.Signature.Trim()
         })
@@ -2134,7 +2698,6 @@ app.MapPost("/api/admin/greenlight", (AdminGreenlightRequest req, DataStoreServi
     {
         Status = "Greenlit",
         MapTitle = mapTitle,
-        MapVersion = mapVersion,
         IsGreenlit = true,
         AdminOverride = true
     });
@@ -2143,13 +2706,32 @@ app.MapPost("/api/admin/greenlight", (AdminGreenlightRequest req, DataStoreServi
 app.MapGet("/api/maps/greenlight_status/{mapId}", (string mapId, DataStoreService db) =>
 {
     var stats = db.Get<MapStats>("map_stats", mapId);
-    if (stats == null && mapId.Contains('_'))
+    MapStats? rootStats = null;
+    if (mapId.Contains('_'))
     {
         int lastUnderscore = mapId.LastIndexOf('_');
         string baseTitle = mapId[..lastUnderscore];
-        stats = db.Get<MapStats>("map_stats", baseTitle);
+        rootStats = db.Get<MapStats>("map_stats", baseTitle);
+        if (rootStats == null && baseTitle.Contains('_'))
+        {
+            int prevUnderscore = baseTitle.LastIndexOf('_');
+            string rootTitle = baseTitle[..prevUnderscore];
+            rootStats = db.Get<MapStats>("map_stats", rootTitle);
+        }
     }
-    stats ??= new MapStats();
+
+    if (stats == null)
+    {
+        stats = rootStats ?? new MapStats();
+    }
+    else if (rootStats != null && rootStats.IsGreenlit && !stats.IsGreenlit)
+    {
+        stats.AdminOverrideGreenlit = stats.AdminOverrideGreenlit || rootStats.AdminOverrideGreenlit;
+        if (rootStats.VerifiedGoodReviewsCount > stats.VerifiedGoodReviewsCount)
+        {
+            stats.VerifiedGoodReviewsCount = rootStats.VerifiedGoodReviewsCount;
+        }
+    }
 
     return Results.Ok(new
     {
@@ -2350,7 +2932,9 @@ app.MapPost("/api/maps/report_metrics", (MapMetricsReport req, DataStoreService 
 
     string mapTitle = req.MapTitle.Trim();
     string mapVersion = string.IsNullOrWhiteSpace(req.MapVersion) ? "1.0" : req.MapVersion.Trim();
+    string authorPublicKey = req.AuthorPublicKey?.Trim() ?? "";
     string compositeKey = $"{mapTitle}_{mapVersion}";
+    string authorCompositeKey = !string.IsNullOrEmpty(authorPublicKey) ? $"{mapTitle}_{mapVersion}_{authorPublicKey}" : compositeKey;
 
     string playerIdentifier = !string.IsNullOrWhiteSpace(req.PlayerId) ? req.PlayerId.Trim() : "Anonymous";
     bool isVerifiedAccount = false;
@@ -2378,7 +2962,9 @@ app.MapPost("/api/maps/report_metrics", (MapMetricsReport req, DataStoreService 
         isVerifiedAccount = true;
     }
 
-    string engagementKey = $"{playerIdentifier}_{compositeKey}".ToLowerInvariant();
+    string engagementKey = !string.IsNullOrEmpty(authorPublicKey)
+        ? $"{playerIdentifier}_{authorCompositeKey}".ToLowerInvariant()
+        : $"{playerIdentifier}_{compositeKey}".ToLowerInvariant();
     var engagement = db.Get<PlayerMapEngagement>("player_engagement", engagementKey)
         ?? new PlayerMapEngagement { PlayerId = playerIdentifier };
 
@@ -2396,7 +2982,9 @@ app.MapPost("/api/maps/report_metrics", (MapMetricsReport req, DataStoreService 
         engagement.IsVerifiedAccount = true;
     }
 
-    var stats = db.Get<MapStats>("map_stats", compositeKey)
+    var stats = db.Get<MapStats>("map_stats", authorCompositeKey)
+        ?? (!string.IsNullOrEmpty(authorPublicKey) ? db.Get<MapStats>("map_stats", $"{mapTitle}_{authorPublicKey}") : null)
+        ?? db.Get<MapStats>("map_stats", compositeKey)
         ?? db.Get<MapStats>("map_stats", mapTitle)
         ?? new MapStats();
 
@@ -2431,8 +3019,16 @@ app.MapPost("/api/maps/report_metrics", (MapMetricsReport req, DataStoreService 
     }
 
     db.Upsert("player_engagement", engagementKey, engagement);
-    db.Upsert("map_stats", compositeKey, stats);
-    db.Upsert("map_stats", mapTitle, stats);
+    db.Upsert("map_stats", authorCompositeKey, stats);
+    if (!string.IsNullOrEmpty(authorPublicKey))
+    {
+        db.Upsert("map_stats", $"{mapTitle}_{authorPublicKey}", stats);
+    }
+    if (stats.IsGreenlit)
+    {
+        db.Upsert("map_stats", compositeKey, stats);
+        db.Upsert("map_stats", mapTitle, stats);
+    }
 
     var metricEvent = new ClusterEventDto
     {
@@ -2445,7 +3041,8 @@ app.MapPost("/api/maps/report_metrics", (MapMetricsReport req, DataStoreService 
             PlaytimeMinutes = Math.Max(0.0, req.PlaytimeMinutes),
             Stars = req.Stars,
             IsCompleteGame = req.IsCompleteGame,
-            AuthProvider = req.AuthProvider
+            AuthProvider = req.AuthProvider,
+            AuthorPublicKey = authorPublicKey
         })
     };
     clusterEvents.MarkEventProcessed(metricEvent.EventId, db);
@@ -2503,6 +3100,7 @@ public class MapMetricsReport
     public string? PlayerId { get; set; }
     public string? AuthToken { get; set; }
     public string? AuthProvider { get; set; }
+    public string? AuthorPublicKey { get; set; }
 }
 
 public class PlayerMapEngagement
@@ -2533,7 +3131,7 @@ public class MapStats
 public class AdminGreenlightRequest
 {
     public string MapTitle { get; set; } = "";
-    public string MapVersion { get; set; } = "1.0";
+    public string? MapVersion { get; set; }
     public string AdminPublicKey { get; set; } = "";
     public string Signature { get; set; } = "";
 }

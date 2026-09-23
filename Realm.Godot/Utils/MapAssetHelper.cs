@@ -587,6 +587,26 @@ public static class MapAssetHelper
 			MergeCategoryAttributes(unionedAssets, "ribbons", ribbonsObject);
 		}
 
+		if (metadataRoot["animations"] is JsonObject animationsObject)
+		{
+			MergeCategoryAttributes(unionedAssets, "animations", animationsObject);
+		}
+
+		if (metadataRoot["sfx"] is JsonObject sfxObject)
+		{
+			MergeCategoryAttributes(unionedAssets, "sfx", sfxObject);
+		}
+
+		if (metadataRoot["music"] is JsonObject musicObject)
+		{
+			MergeCategoryAttributes(unionedAssets, "music", musicObject);
+		}
+
+		if (metadataRoot["other"] is JsonObject otherObject)
+		{
+			MergeCategoryAttributes(unionedAssets, "other", otherObject);
+		}
+
 		AttachCustomEntitiesToGlb(unionedAssets, metadataRoot, targetDirectory);
 		AttachModelMetadataAttributes(unionedAssets, metadataRoot);
 	}
@@ -921,9 +941,10 @@ public static class MapAssetHelper
 							"ribbons" => "ribbons",
 							"noise_textures" => "noise",
 							"skyboxes" => "skyboxes",
+							"other" => "other",
 							_ => "textures"
 						};
-						string diskPath = Path.Combine(assetsDir, subFolder, fileName);
+						string diskPath = subFolder == "other" ? Path.Combine(targetDirectory, fileName) : Path.Combine(assetsDir, subFolder, fileName);
 						if (!File.Exists(diskPath) && subFolder is "audio/sfx" or "audio/music")
 						{
 							diskPath = Path.Combine(assetsDir, subFolder.Substring(6), fileName);
@@ -931,6 +952,10 @@ public static class MapAssetHelper
 						if (!File.Exists(diskPath))
 						{
 							diskPath = Path.Combine(assetsDir, fileName);
+						}
+						if (!File.Exists(diskPath))
+						{
+							diskPath = Path.Combine(targetDirectory, fileName);
 						}
 
 						if (File.Exists(diskPath))

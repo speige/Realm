@@ -647,11 +647,8 @@ public partial class Unit3D : Prop3D
 
 			if (model is not ProceduralVfxInstance3D)
 			{
-				bool ignorePlayerColor = GameHost.Instance != null && (GameHost.Instance.GetModelIgnorePlayerColor(attachmentId) || GameHost.Instance.GetModelIgnorePlayerColor(UnitId));
-				if (!ignorePlayerColor)
-				{
-					Realm.Godot.Utils.ModelShaderManager.ApplyPlayerColorShader(model, PlayerColor, false, true);
-				}
+				Realm.Godot.Utils.ModelShaderManager.ApplyPlayerColorShader(model, PlayerColor, true, true, false);
+				Realm.Godot.Utils.ModelShaderManager.SetIgnorePlayerColor(model, true);
 			}
 		}
 	}
@@ -1004,11 +1001,8 @@ public partial class Unit3D : Prop3D
 
 			if (model is not ProceduralVfxInstance3D)
 			{
-				bool ignorePlayerColor = GameHost.Instance != null && (GameHost.Instance.GetModelIgnorePlayerColor(attachmentId) || GameHost.Instance.GetModelIgnorePlayerColor(UnitId));
-				if (!ignorePlayerColor)
-				{
-					Realm.Godot.Utils.ModelShaderManager.ApplyPlayerColorShader(model, PlayerColor, false, true);
-				}
+				Realm.Godot.Utils.ModelShaderManager.ApplyPlayerColorShader(model, PlayerColor, true, true, false);
+				Realm.Godot.Utils.ModelShaderManager.SetIgnorePlayerColor(model, true);
 			}
 		}
 	}

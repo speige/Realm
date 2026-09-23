@@ -2,6 +2,7 @@ using Godot;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Realm.Shared.Distribution;
 
 public partial class MapDiscovery : Control
 {
@@ -89,7 +90,7 @@ public partial class MapDiscovery : Control
 	{
 		string seedServerUrl = GodotObject.IsInstanceValid(LobbyManager.Instance)
 			? LobbyManager.Instance.RegistryServerUrl
-			: "http://localhost:5000";
+			: ServersConfigHelper.GetDefaultServerUrl();
 
 		try
 		{
@@ -99,9 +100,24 @@ public partial class MapDiscovery : Control
 			{
 				var liveMaps = discoveryDtos
 					.Select(dto => MapData.FromDto(dto, seedServerUrl))
+					.ToList();
+
+				var groupedMaps = liveMaps
+					.GroupBy(m => string.IsNullOrWhiteSpace(m.Title) ? m.MapId : m.Title.Trim(), StringComparer.OrdinalIgnoreCase)
+					.Select(group =>
+					{
+						var versions = group.OrderByDescending(v => ParseVersion(v.Version)).ToList();
+						var primary = versions[0];
+						primary.AvailableVersions = versions;
+						foreach (var v in versions)
+						{
+							v.AvailableVersions = versions;
+						}
+						return primary;
+					})
 					.ToArray();
 
-				_allMaps = liveMaps;
+				_allMaps = groupedMaps;
 				RenderMapGrid();
 				return;
 			}
@@ -583,5 +599,25 @@ public partial class MapDiscovery : Control
 		catch { }
 
 		return null;
+	}
+
+	private static Version ParseVersion(string versionStr)
+	{
+		if (string.IsNullOrWhiteSpace(versionStr)) return new Version(1, 0, 0);
+		string cleaned = versionStr.TrimStart('v', 'V').Trim();
+		if (Version.TryParse(cleaned, out var v))
+		{
+			return v;
+		}
+		var parts = cleaned.Split('.');
+		if (parts.Length == 1 && int.TryParse(parts[0], out int major))
+		{
+			return new Version(major, 0, 0);
+		}
+		if (parts.Length == 2 && int.TryParse(parts[0], out int maj) && int.TryParse(parts[1], out int min))
+		{
+			return new Version(maj, min, 0);
+		}
+		return new Version(0, 0, 0);
 	}
 }

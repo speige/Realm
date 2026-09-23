@@ -1,6 +1,8 @@
 using Godot;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -12,14 +14,17 @@ using System.Threading.Tasks;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using SharpToken;
+using Realm.Godot.Services;
 using Realm.Shared;
 using Realm.Shared.Distribution;
 using Realm.Shared.Metadata;
+using ZstdSharp;
 
 public partial class LobbyManager : Node
 {
     public static LobbyManager Instance { get; private set; }
     public bool IsSinglePlayer { get; set; } = false;
+    public string? LastHostError { get; private set; }
 
     private static readonly JsonSerializerOptions Options = new() { PropertyNameCaseInsensitive = true };
 
@@ -67,10 +72,10 @@ public partial class LobbyManager : Node
     }
 
     public List<string> AdminPublicKeys { get; private set; } = new();
-    public List<ServerEntry> OfficialServers { get; private set; } = new();
-    public List<string> RegistryServers { get; private set; } = new() { "http://127.0.0.1:5000" };
+    public List<string> OfficialServers { get; private set; } = new();
+    public List<string> RegistryServers => OfficialServers;
     private int _currentServerIndex = 0;
-    public string RegistryServerUrl => RegistryServers.Count > 0 ? RegistryServers[_currentServerIndex] : "http://127.0.0.1:5000";
+    public string RegistryServerUrl => OfficialServers.Count > 0 && _currentServerIndex < OfficialServers.Count && !string.IsNullOrWhiteSpace(OfficialServers[_currentServerIndex]) ? OfficialServers[_currentServerIndex] : ServersConfigHelper.GetDefaultServerUrl();
     public int ENetPort { get; private set; } = 8999;
     public int MaxPlayers { get; set; } = 8;
     
@@ -85,6 +90,7 @@ public partial class LobbyManager : Node
     public bool IsGameStarted { get; set; }
     public DateTime? GameSessionStartTime { get; private set; }
     public string ActiveMapName { get; set; }
+    public string ActiveMapVersion { get; set; } = "1.0.0";
     public bool SpectatorDelay { get; set; } = false;
     public string? LobbyJoinError { get; set; }
     public string HostStability { get; set; } = "Excellent";
@@ -97,6 +103,8 @@ public partial class LobbyManager : Node
 
     private readonly System.Net.Http.HttpClient _httpClient = new();
     private string? _connectedHostIp;
+    private int _connectedHostPort;
+    private bool _isConnectedToHost;
     private ClientWebSocket? _hostWebSocket;
     private CancellationTokenSource? _wsCts;
     private string? _hostPublicIp;
@@ -113,6 +121,33 @@ public partial class LobbyManager : Node
     private static InferenceSession? _onnxSession;
     private static Dictionary<string, int>? _vocab;
     private static readonly object _sessionLock = new();
+    private readonly SemaphoreSlim _mapDownloadLock = new(1, 1);
+    private class HostTransferSession
+    {
+        public string TransferId { get; set; } = string.Empty;
+        public int PeerId { get; set; }
+        public string TempFilePath { get; set; } = string.Empty;
+        public CancellationTokenSource Cts { get; set; } = new();
+    }
+
+    private class ClientTransferSession
+    {
+        public string TransferId { get; set; } = string.Empty;
+        public string MapName { get; set; } = string.Empty;
+        public string MapVersion { get; set; } = string.Empty;
+        public MapManifest Manifest { get; set; } = new();
+        public string TempFilePath { get; set; } = string.Empty;
+        public FileStream? TempFileStream { get; set; }
+        public long ExpectedTotalBytes { get; set; }
+        public int ExpectedTotalChunks { get; set; }
+        public int ReceivedChunks { get; set; }
+        public long ReceivedBytes { get; set; }
+    }
+
+    private readonly ConcurrentDictionary<string, HostTransferSession> _hostTransfers = new();
+    private TaskCompletionSource<string>? _manifestTcs;
+    private TaskCompletionSource<bool>? _transferCompleteTcs;
+    private ClientTransferSession? _currentClientTransfer;
 
     public void SwitchToNextServer()
     {
@@ -273,68 +308,17 @@ public partial class LobbyManager : Node
 
     private void LoadServersConfig()
     {
-        string path = "res://servers.json";
-        if (FileAccess.FileExists(path))
-        {
-            using var file = FileAccess.Open(path, FileAccess.ModeFlags.Read);
-            string jsonText = file.GetAsText();
-            try
-            {
-                var config = JsonSerializer.Deserialize<ServersConfig>(jsonText, Options);
-                if (config != null)
-                {
-                    ServersConfigHelper.NormalizeConfig(config);
-                    AdminPublicKeys = config.AdminPublicKeys;
-                    OfficialServers = config.Servers;
-                    RegistryServers = config.RegistryServers;
-                    _currentServerIndex = 0;
-                    GD.Print($"[LobbyManager] Loaded servers from {path}: {string.Join(", ", RegistryServers)}");
-                    return;
-                }
-            }
-            catch (Exception ex)
-            {
-                GD.PrintErr($"[LobbyManager] Error parsing {path}: {ex.Message}");
-            }
-        }
-
-        string templatePath = "res://servers.template.json";
-        if (FileAccess.FileExists(templatePath))
-        {
-            using var file = FileAccess.Open(templatePath, FileAccess.ModeFlags.Read);
-            string jsonText = file.GetAsText();
-            try
-            {
-                var config = JsonSerializer.Deserialize<ServersConfig>(jsonText, Options);
-                if (config != null)
-                {
-                    ServersConfigHelper.NormalizeConfig(config);
-                    AdminPublicKeys = config.AdminPublicKeys;
-                    OfficialServers = config.Servers;
-                    RegistryServers = config.RegistryServers;
-                    _currentServerIndex = 0;
-                    GD.Print($"[LobbyManager] Loaded servers from {templatePath}: {string.Join(", ", RegistryServers)}");
-                    return;
-                }
-            }
-            catch (Exception ex)
-            {
-                GD.PrintErr($"[LobbyManager] Error parsing {templatePath}: {ex.Message}");
-            }
-        }
-
-        var fallback = ServersConfigHelper.Load();
-        AdminPublicKeys = fallback.AdminPublicKeys;
-        OfficialServers = fallback.Servers;
-        RegistryServers = fallback.RegistryServers;
+        var config = ServersConfigHelper.Load();
+        AdminPublicKeys = config.AdminPublicKeys;
+        OfficialServers = config.Servers;
         _currentServerIndex = 0;
-        GD.Print($"[LobbyManager] Config servers.json not found or invalid, using fallback: {RegistryServerUrl}");
+        GD.Print($"[LobbyManager] Loaded servers: {string.Join(", ", RegistryServers)}");
     }
 
     public async Task RunNatTypeTestAsync()
     {
         GD.Print("[LobbyManager] Starting STUN NAT Type Test...");
-        LocalNatType = await NatTypeTester.DetermineNatTypeAsync(ENetPort);
+        LocalNatType = await NatTypeTester.DetermineNatTypeAsync(0);
         GD.Print($"[LobbyManager] NAT Type Classified: {LocalNatType}");
         
 
@@ -346,7 +330,7 @@ public partial class LobbyManager : Node
                 using var udp = new System.Net.Sockets.UdpClient();
                 udp.ExclusiveAddressUse = false;
                 udp.Client.SetSocketOption(System.Net.Sockets.SocketOptionLevel.Socket, System.Net.Sockets.SocketOptionName.ReuseAddress, true);
-                udp.Client.Bind(new System.Net.IPEndPoint(System.Net.IPAddress.Any, ENetPort));
+                udp.Client.Bind(new System.Net.IPEndPoint(System.Net.IPAddress.Any, 0));
                 
                 var serverEp = new System.Net.IPEndPoint(dnsAddresses[0], 19302);
                 byte[] req = new byte[20];
@@ -364,7 +348,7 @@ public partial class LobbyManager : Node
                     if (result.Success && result.MappedEndPoint != null)
                     {
                         _hostPublicIp = result.MappedEndPoint.Address.ToString();
-                        _hostPublicPort = result.MappedEndPoint.Port;
+                        _hostPublicPort = ENetPort;
                         GD.Print($"[LobbyManager] Public Endpoint Mapped: {_hostPublicIp}:{_hostPublicPort}");
                     }
                 }
@@ -390,12 +374,13 @@ public partial class LobbyManager : Node
 
 
 
-    public void HostSinglePlayerGame(string mapPathName, string mapDisplayName)
+    public void HostSinglePlayerGame(string mapPathName, string mapDisplayName, string? mapVersion = null)
     {
         IsSinglePlayer = true;
         IsHost = true;
         IsGameStarted = true;
         ActiveMapName = mapPathName;
+        ActiveMapVersion = !string.IsNullOrWhiteSpace(mapVersion) ? mapVersion : "1.0.0";
         PlayerList.Clear();
         
         LocalPlayer = new PlayerInfo
@@ -418,14 +403,16 @@ public partial class LobbyManager : Node
         CallDeferred(nameof(LoadMap), mapPathName);
     }
 
-    public async Task<bool> HostLobbyAsync(string mapPathName, string mapDisplayName)
+    public async Task<bool> HostLobbyAsync(string mapPathName, string mapDisplayName, string? explicitVersion = null)
     {
         IsHost = true;
         HostStability = HostStabilityTracker.GetOverallStability();
         IsGameStarted = false;
         SpectatorDelay = false;
+        LastHostError = null;
         PlayerList.Clear();
         ActiveMapName = mapPathName;
+        ActiveMapVersion = !string.IsNullOrWhiteSpace(explicitVersion) ? explicitVersion : "1.0.0";
 
 
         LocalPlayer = new PlayerInfo
@@ -448,17 +435,34 @@ public partial class LobbyManager : Node
         await RunNatTypeTestAsync();
         if (LocalNatType == NatType.Symmetric)
         {
+            LastHostError = "Lobby creation rejected: Symmetric NAT is not supported.";
             GD.PrintErr("[LobbyManager] Lobby creation rejected: Symmetric NAT is not supported.");
             return false;
         }
 
+        if (Multiplayer.MultiplayerPeer != null)
+        {
+            try
+            {
+                Multiplayer.MultiplayerPeer.Close();
+            }
+            catch { }
+            Multiplayer.MultiplayerPeer = null;
+        }
 
         var peer = new ENetMultiplayerPeer();
         var err = peer.CreateServer(ENetPort, MaxPlayers);
         if (err != Error.Ok)
         {
-            GD.PrintErr($"[LobbyManager] Failed to create ENet Server: {err}");
-            return false;
+            await Task.Delay(100);
+            peer = new ENetMultiplayerPeer();
+            err = peer.CreateServer(ENetPort, MaxPlayers);
+            if (err != Error.Ok)
+            {
+                LastHostError = $"Failed to create ENet Server on port {ENetPort}: {err}";
+                GD.PrintErr($"[LobbyManager] Failed to create ENet Server on port {ENetPort}: {err}");
+                return false;
+            }
         }
         Multiplayer.MultiplayerPeer = peer;
         if (Multiplayer is SceneMultiplayer sceneMultiplayer)
@@ -476,7 +480,7 @@ public partial class LobbyManager : Node
         {
             _mapServer?.Stop();
             _mapServer = new MapDistributionServer();
-            _mapServer.Start(ENetPort + 10, "Realm.MapScript/map.json");
+            _mapServer.Start(ENetPort + 10, mapPathName);
         }
         catch (Exception ex)
         {
@@ -489,22 +493,28 @@ public partial class LobbyManager : Node
             int hostPingBaseline = await MeasurePingToRegistryAsync();
             string localIpAddress = GetLocalIPAddress();
             
-            string mapVersion = "1.0";
+            string mapVersion = !string.IsNullOrWhiteSpace(explicitVersion) ? explicitVersion.Trim() : "1.0.0";
             string signature = "";
             string publicKey = "";
             string mapHash = "";
 
             try
             {
-                string mapJsonPath = System.IO.Path.Combine(mapPathName, "map.json");
-                if (System.IO.File.Exists(mapJsonPath))
+                string? manifestPath = MapAssetManager.FindManifestPath(mapPathName, mapVersion)
+                    ?? MapAssetManager.FindManifestPath(mapDisplayName, mapVersion);
+
+                if (!string.IsNullOrEmpty(manifestPath) && System.IO.File.Exists(manifestPath))
                 {
-                    string json = System.IO.File.ReadAllText(mapJsonPath);
+                    string json = System.IO.File.ReadAllText(manifestPath);
                     using var mapDoc = JsonDocument.Parse(json);
                     var root = mapDoc.RootElement;
-                    if (root.TryGetProperty("MapProperties", out var props) && props.TryGetProperty("MapVersion", out var mv))
+                    if (root.TryGetProperty("Version", out var vProp) && vProp.ValueKind == JsonValueKind.String)
                     {
-                        mapVersion = mv.GetString() ?? "1.0";
+                        mapVersion = vProp.GetString() ?? mapVersion;
+                    }
+                    else if (root.TryGetProperty("MapProperties", out var props) && props.TryGetProperty("MapVersion", out var mv))
+                    {
+                        mapVersion = mv.GetString() ?? mapVersion;
                     }
                     if (root.TryGetProperty("signature", out var sigProp))
                     {
@@ -514,9 +524,40 @@ public partial class LobbyManager : Node
                     {
                         publicKey = keyProp.GetString() ?? "";
                     }
-                    byte[] mapBytes = System.IO.File.ReadAllBytes(mapJsonPath);
-                    string mapBlake3 = RealmMetadataHelper.ComputeBlake3(mapBytes, ".json");
-                    mapHash = $"{mapBlake3}.json";
+                    if (!string.IsNullOrEmpty(signature) && !string.IsNullOrEmpty(publicKey))
+                    {
+                        byte[] mapBytes = System.IO.File.ReadAllBytes(manifestPath);
+                        string mapBlake3 = RealmMetadataHelper.ComputeBlake3(mapBytes, ".json");
+                        mapHash = $"{mapBlake3}.json";
+                    }
+                }
+                else
+                {
+                    string mapJsonPath = System.IO.Path.Combine(mapPathName, "map.json");
+                    if (System.IO.File.Exists(mapJsonPath))
+                    {
+                        string json = System.IO.File.ReadAllText(mapJsonPath);
+                        using var mapDoc = JsonDocument.Parse(json);
+                        var root = mapDoc.RootElement;
+                        if (root.TryGetProperty("MapProperties", out var props) && props.TryGetProperty("MapVersion", out var mv))
+                        {
+                            mapVersion = mv.GetString() ?? mapVersion;
+                        }
+                        if (root.TryGetProperty("signature", out var sigProp))
+                        {
+                            signature = sigProp.GetString() ?? "";
+                        }
+                        if (root.TryGetProperty("author_key", out var keyProp))
+                        {
+                            publicKey = keyProp.GetString() ?? "";
+                        }
+                        if (!string.IsNullOrEmpty(signature) && !string.IsNullOrEmpty(publicKey))
+                        {
+                            byte[] mapBytes = System.IO.File.ReadAllBytes(mapJsonPath);
+                            string mapBlake3 = RealmMetadataHelper.ComputeBlake3(mapBytes, ".json");
+                            mapHash = $"{mapBlake3}.json";
+                        }
+                    }
                 }
             }
             catch (Exception ex)
@@ -570,13 +611,21 @@ public partial class LobbyManager : Node
                     {
                         string body = await response.Content.ReadAsStringAsync();
                         using var errDoc = JsonDocument.Parse(body);
-                        if (errDoc.RootElement.TryGetProperty("Message", out var msgProp))
+                        if (errDoc.RootElement.TryGetProperty("message", out var msgProp) ||
+                            errDoc.RootElement.TryGetProperty("Message", out msgProp) ||
+                            errDoc.RootElement.TryGetProperty("title", out msgProp) ||
+                            errDoc.RootElement.TryGetProperty("detail", out msgProp))
                         {
                             errMsg = msgProp.GetString() ?? errMsg;
+                        }
+                        else if (!string.IsNullOrWhiteSpace(body))
+                        {
+                            errMsg = body;
                         }
                     }
                     catch {}
                 }
+                LastHostError = errMsg;
                 GD.PrintErr($"[LobbyManager] {errMsg}");
                 if (response != null && response.StatusCode == System.Net.HttpStatusCode.BadRequest)
                 {
@@ -684,8 +733,6 @@ public partial class LobbyManager : Node
             {
                 localIp = localIpProp.GetString();
             }
-            _connectedHostIp = hostIp;
-
             string connectIp = hostIp;
             int connectPort = hostPort;
             if (!string.IsNullOrEmpty(localIp) && hostIp == clientPublicIp)
@@ -694,6 +741,8 @@ public partial class LobbyManager : Node
                 connectIp = localIp;
                 connectPort = ENetPort;
             }
+            _connectedHostIp = connectIp;
+            _connectedHostPort = connectPort;
 
             bool isLocalConnection = IsPrivateIp(connectIp);
             if (!isLocalConnection)
@@ -770,6 +819,33 @@ public partial class LobbyManager : Node
         _mapServer?.Stop();
         _mapServer = null;
 
+        foreach (var kvp in _hostTransfers)
+        {
+            kvp.Value.Cts.Cancel();
+            try
+            {
+                if (File.Exists(kvp.Value.TempFilePath))
+                {
+                    File.Delete(kvp.Value.TempFilePath);
+                }
+            }
+            catch { }
+        }
+        _hostTransfers.Clear();
+
+        if (_currentClientTransfer != null)
+        {
+            try
+            {
+                _currentClientTransfer.TempFileStream?.Dispose();
+                if (File.Exists(_currentClientTransfer.TempFilePath))
+                {
+                    File.Delete(_currentClientTransfer.TempFilePath);
+                }
+            }
+            catch { }
+            _currentClientTransfer = null;
+        }
 
         if (Multiplayer.MultiplayerPeer != null)
         {
@@ -777,6 +853,7 @@ public partial class LobbyManager : Node
             Multiplayer.MultiplayerPeer = null;
         }
 
+        _isConnectedToHost = false;
         IsHost = false;
         IsGameStarted = false;
         PlayerList.Clear();
@@ -922,6 +999,24 @@ public partial class LobbyManager : Node
 
         if (IsHost)
         {
+            foreach (var kvp in _hostTransfers)
+            {
+                if (kvp.Value.PeerId == id)
+                {
+                    kvp.Value.Cts.Cancel();
+                    if (_hostTransfers.TryRemove(kvp.Key, out var session))
+                    {
+                        try
+                        {
+                            if (File.Exists(session.TempFilePath))
+                            {
+                                File.Delete(session.TempFilePath);
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
 
             int removedIdx = PlayerList.FindIndex(p => p.PeerId == id);
             if (removedIdx >= 0)
@@ -945,51 +1040,400 @@ public partial class LobbyManager : Node
         int myId = Multiplayer.GetUniqueId();
         GD.Print($"[LobbyManager] Connected to Host. Assigned local ENet ID: {myId}");
         LocalPlayer.PeerId = myId;
-        
-        if (!string.IsNullOrEmpty(_connectedHostIp))
+        _isConnectedToHost = true;
+    }
+
+    public async Task<bool> EnsureMapDownloadedAsync(string? mapName = null)
+    {
+        string targetMap = !string.IsNullOrWhiteSpace(mapName) ? mapName : ActiveMapName;
+        if (string.IsNullOrWhiteSpace(targetMap) || IsHost)
         {
-            Task.Run(async () =>
+            return true;
+        }
+
+        await _mapDownloadLock.WaitAsync();
+        try
+        {
+            if (MapAssetManager.IsMapDownloaded(targetMap))
             {
-                string hostIp = _connectedHostIp;
-                int port = ENetPort + 10;
-                bool p2pSuccess = false;
+                CallDeferred(nameof(EmitDownloadCompleted));
+                return true;
+            }
 
-                if (!string.IsNullOrEmpty(ActiveMapName))
+            bool isConnectedToHost = !IsHost && _isConnectedToHost;
+
+            if (isConnectedToHost)
+            {
+                GD.Print($"[LobbyManager] Requesting map manifest for '{targetMap}' from host via reliable ENet RPC...");
+                _manifestTcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+                Callable.From(() => RpcId(1, nameof(RequestMapManifestRpc), targetMap)).CallDeferred();
+
+                var manifestTask = await Task.WhenAny(_manifestTcs.Task, Task.Delay(10000));
+                string? manifestJson = manifestTask == _manifestTcs.Task ? _manifestTcs.Task.Result : null;
+
+                if (!string.IsNullOrWhiteSpace(manifestJson))
                 {
-                    GD.Print($"[LobbyManager] Attempting P2P download for map '{ActiveMapName}'...");
-                    var p2pClient = new PeerMapDownloader();
-                    p2pClient.DownloadProgressChanged += (progress) =>
+                    MapManifest? manifest = null;
+                    try
                     {
-                        CallDeferred(nameof(EmitDownloadProgress), progress);
-                    };
-                    p2pSuccess = await p2pClient.DownloadMapAsync(ActiveMapName);
+                        manifest = MapManifest.LoadFromJson(manifestJson) ?? JsonSerializer.Deserialize<MapManifest>(manifestJson);
+                    }
+                    catch (Exception ex)
+                    {
+                        GD.PrintErr($"[LobbyManager] Failed to deserialize manifest from host: {ex.Message}");
+                    }
+
+                    if (manifest != null)
+                    {
+                        var allHashes = manifest.Files != null ? manifest.Files.Values : (IEnumerable<string>)Array.Empty<string>();
+                        var missingHashes = await Task.Run(() => MapAssetManager.GetMissingHashes(allHashes));
+
+                        if (missingHashes.Count == 0)
+                        {
+                            GD.Print($"[LobbyManager] All assets for '{targetMap}' already exist locally in CAS.");
+                            string targetMapDir = MapAssetManager.GetMapDirectory(targetMap, manifest.Version ?? "1.0.0");
+                            await Task.Run(() =>
+                            {
+                                MapAssetManager.ExtractManifestFiles(manifest, targetMapDir);
+                                string localManifestPath = Path.Combine(targetMapDir, "manifest.json");
+                                AssetIndexService.Instance.RegisterManifest(manifest, localManifestPath);
+                            });
+
+                            CallDeferred(nameof(EmitDownloadCompleted));
+                            return true;
+                        }
+
+                        GD.Print($"[LobbyManager] Missing {missingHashes.Count} assets for '{targetMap}'. Requesting compressed zstd bundle from host...");
+                        CallDeferred(nameof(EmitDownloadProgress), 0.0f);
+                        string transferId = Guid.NewGuid().ToString("N");
+                        string tempDir = Path.Combine(Path.GetTempPath(), "Realm_Transfers");
+                        Directory.CreateDirectory(tempDir);
+                        string tempFilePath = Path.Combine(tempDir, $"{transferId}.zst");
+
+                        var transferSession = new ClientTransferSession
+                        {
+                            TransferId = transferId,
+                            MapName = targetMap,
+                            MapVersion = manifest.Version ?? "1.0.0",
+                            Manifest = manifest,
+                            TempFilePath = tempFilePath,
+                            TempFileStream = new FileStream(tempFilePath, FileMode.Create, System.IO.FileAccess.Write, FileShare.None, ZstdAssetBundleHelper.ChunkSize, useAsync: true)
+                        };
+
+                        _currentClientTransfer = transferSession;
+                        _transferCompleteTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+                        Callable.From(() => RpcId(1, nameof(RequestMapAssetTransferRpc), transferId, targetMap, manifest.Version ?? "1.0.0", missingHashes.ToArray())).CallDeferred();
+
+                        var transferTask = await Task.WhenAny(_transferCompleteTcs.Task, Task.Delay(300000));
+                        bool transferSuccess = transferTask == _transferCompleteTcs.Task && _transferCompleteTcs.Task.Result;
+
+                        if (transferSuccess)
+                        {
+                            GD.Print($"[LobbyManager] Transfer {transferId} completed. Extracting assets into CAS...");
+                            Callable.From(() => RpcId(1, nameof(AcknowledgeMapTransferCompleteRpc), transferId)).CallDeferred();
+
+                            try
+                            {
+                                transferSession.TempFileStream?.Dispose();
+                                transferSession.TempFileStream = null;
+                            }
+                            catch { }
+
+                            bool extractSuccess = await Task.Run(() =>
+                            {
+                                try
+                                {
+                                    var extractedAssets = ZstdAssetBundleHelper.ExtractBundleFromFile(transferSession.TempFilePath);
+                                    GD.Print($"[LobbyManager] Decompressed {extractedAssets.Count} assets from bundle.");
+                                    foreach (var (assetKey, data, metadata) in extractedAssets)
+                                    {
+                                        string ext = Path.GetExtension(assetKey);
+                                        MapAssetManager.Storage.StoreAsset(data, ext, metadata);
+                                    }
+
+                                    string targetMapDir = MapAssetManager.GetMapDirectory(targetMap, manifest.Version ?? "1.0.0");
+                                    MapAssetManager.ExtractManifestFiles(manifest, targetMapDir);
+                                    string localManifestPath = Path.Combine(targetMapDir, "manifest.json");
+                                    AssetIndexService.Instance.RegisterManifest(manifest, localManifestPath);
+
+                                    try
+                                    {
+                                        if (File.Exists(transferSession.TempFilePath))
+                                        {
+                                            File.Delete(transferSession.TempFilePath);
+                                        }
+                                    }
+                                    catch (Exception delEx)
+                                    {
+                                        GD.PrintErr($"[LobbyManager] Error deleting temp transfer file: {delEx.Message}");
+                                    }
+
+                                    return true;
+                                }
+                                catch (Exception ex)
+                                {
+                                    GD.PrintErr($"[LobbyManager] Error extracting bundle: {ex}");
+                                    return false;
+                                }
+                            });
+
+                            _currentClientTransfer = null;
+
+                            if (extractSuccess)
+                            {
+                                GD.Print($"[LobbyManager] Map '{targetMap}' successfully extracted and registered.");
+                                CallDeferred(nameof(EmitDownloadProgress), 1.0f);
+                                CallDeferred(nameof(EmitDownloadCompleted));
+                                return true;
+                            }
+                            else
+                            {
+                                GD.PrintErr($"[LobbyManager] Extraction failed for map '{targetMap}'.");
+                                CallDeferred(nameof(EmitDownloadFailed));
+                                return false;
+                            }
+                        }
+                        else
+                        {
+                            GD.PrintErr($"[LobbyManager] ENet transfer timed out or failed for '{targetMap}'.");
+                            if (_currentClientTransfer != null)
+                            {
+                                try
+                                {
+                                    _currentClientTransfer.TempFileStream?.Dispose();
+                                    if (File.Exists(_currentClientTransfer.TempFilePath))
+                                    {
+                                        File.Delete(_currentClientTransfer.TempFilePath);
+                                    }
+                                }
+                                catch { }
+                                _currentClientTransfer = null;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (MapAssetManager.IsMapDownloaded(targetMap))
+            {
+                CallDeferred(nameof(EmitDownloadCompleted));
+                return true;
+            }
+
+            GD.PrintErr($"[LobbyManager] Map download failed for '{targetMap}'.");
+            CallDeferred(nameof(EmitDownloadFailed));
+            return false;
+        }
+        finally
+        {
+            _mapDownloadLock.Release();
+        }
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void RequestMapManifestRpc(string targetMap)
+    {
+        if (!IsHost) return;
+        int senderId = Multiplayer.GetRemoteSenderId();
+        var manifest = MapAssetManager.FindHostManifest(targetMap);
+        if (manifest != null)
+        {
+            string json = JsonSerializer.Serialize(manifest);
+            Callable.From(() => RpcId(senderId, nameof(ReceiveMapManifestRpc), targetMap, manifest.Version ?? "1.0.0", json)).CallDeferred();
+        }
+        else
+        {
+            Callable.From(() => RpcId(senderId, nameof(ReceiveMapManifestRpc), targetMap, "", "")).CallDeferred();
+        }
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void ReceiveMapManifestRpc(string mapName, string mapVersion, string manifestJson)
+    {
+        _manifestTcs?.TrySetResult(manifestJson);
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void RequestMapAssetTransferRpc(string transferId, string mapName, string mapVersion, string[] missingHashes)
+    {
+        if (!IsHost) return;
+        int senderId = Multiplayer.GetRemoteSenderId();
+        _ = HandleHostAssetTransferAsync(senderId, transferId, mapName, mapVersion, missingHashes);
+    }
+
+    private async Task HandleHostAssetTransferAsync(int peerId, string transferId, string mapName, string mapVersion, string[] missingHashes)
+    {
+        var cts = new CancellationTokenSource();
+        string tempDir = Path.Combine(Path.GetTempPath(), "Realm_Transfers");
+        Directory.CreateDirectory(tempDir);
+        string tempFilePath = Path.Combine(tempDir, $"{transferId}.zst");
+
+        var session = new HostTransferSession
+        {
+            TransferId = transferId,
+            PeerId = peerId,
+            TempFilePath = tempFilePath,
+            Cts = cts
+        };
+        _hostTransfers[transferId] = session;
+
+        try
+        {
+            await Task.Run(() =>
+            {
+                var manifest = MapAssetManager.FindHostManifest(mapName, mapVersion);
+                string? mapDir = null;
+                string? manifestPath = MapAssetManager.FindManifestPath(mapName, mapVersion);
+                if (!string.IsNullOrEmpty(manifestPath) && File.Exists(manifestPath))
+                {
+                    mapDir = Path.GetDirectoryName(manifestPath);
                 }
 
-                if (p2pSuccess)
+                var assetsToPack = new List<(string AssetKey, byte[] Data, string? Metadata)>();
+                foreach (var hash in missingHashes)
                 {
-                    CallDeferred(nameof(EmitDownloadCompleted));
-                }
-                else
-                {
-                    GD.Print("[LobbyManager] P2P map download failed or unavailable. Falling back to HTTP host download...");
-                    var client = new MapDistributionClient();
-                    client.DownloadProgressChanged += (progress) =>
-                    {
-                        CallDeferred(nameof(EmitDownloadProgress), progress);
-                    };
+                    string norm = ContentAddressableStorage.NormalizeBlake3Hash(hash);
+                    byte[]? bytes = MapAssetManager.Storage.GetAssetBytes(norm) ?? MapAssetManager.P2PStorage.GetAssetBytes(norm);
 
-                    string downloadMapName = !string.IsNullOrEmpty(ActiveMapName) ? ActiveMapName : "downloaded_map";
-                    bool success = await client.DownloadMapAsync(hostIp, port, downloadMapName);
-                    if (success)
+                    if (bytes == null && manifest != null && manifest.Files != null && !string.IsNullOrEmpty(mapDir))
                     {
-                        CallDeferred(nameof(EmitDownloadCompleted));
+                        foreach (var kvp in manifest.Files)
+                        {
+                            if (ContentAddressableStorage.NormalizeBlake3Hash(kvp.Value) == norm)
+                            {
+                                string relPath = kvp.Key.Replace("res://", "").TrimStart('/', '\\');
+                                string localFilePath = Path.Combine(mapDir, relPath);
+                                if (File.Exists(localFilePath))
+                                {
+                                    bytes = File.ReadAllBytes(localFilePath);
+                                    string ext = Path.GetExtension(localFilePath);
+                                    MapAssetManager.Storage.StoreAsset(bytes, ext);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (bytes != null)
+                    {
+                        string? meta = MapAssetManager.Storage.GetAssetMetadata(norm);
+                        assetsToPack.Add((hash, bytes, meta));
                     }
                     else
                     {
-                        CallDeferred(nameof(EmitDownloadFailed));
+                        GD.PrintErr($"[LobbyManager] Host could not find asset payload for hash: {hash}");
                     }
                 }
-            });
+
+                ZstdAssetBundleHelper.CreateBundleToFile(tempFilePath, assetsToPack);
+            }, cts.Token);
+
+            var fileInfo = new FileInfo(tempFilePath);
+            long totalBytes = fileInfo.Length;
+            int totalChunks = (int)Math.Ceiling((double)totalBytes / ZstdAssetBundleHelper.ChunkSize);
+            if (totalChunks <= 0) totalChunks = 1;
+
+            Callable.From(() => RpcId(peerId, nameof(BeginMapTransferRpc), transferId, mapName, mapVersion, totalBytes, totalChunks)).CallDeferred();
+
+            using var fs = new FileStream(tempFilePath, FileMode.Open, System.IO.FileAccess.Read, FileShare.Read, ZstdAssetBundleHelper.ChunkSize);
+            byte[] buffer = new byte[ZstdAssetBundleHelper.ChunkSize];
+            int chunkIndex = 0;
+            int bytesRead;
+
+            while ((bytesRead = await fs.ReadAsync(buffer, 0, buffer.Length, cts.Token)) > 0)
+            {
+                if (cts.IsCancellationRequested) break;
+
+                byte[] chunkData = new byte[bytesRead];
+                Array.Copy(buffer, chunkData, bytesRead);
+
+                int currentChunkIndex = chunkIndex;
+                Callable.From(() => RpcId(peerId, nameof(SendMapTransferChunkRpc), transferId, currentChunkIndex, totalChunks, totalBytes, chunkData)).CallDeferred();
+                chunkIndex++;
+
+                if (chunkIndex % 4 == 0)
+                {
+                    await Task.Delay(1, cts.Token);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[LobbyManager] Error during host asset transfer {transferId} to peer {peerId}: {ex.Message}");
+        }
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void BeginMapTransferRpc(string transferId, string mapName, string mapVersion, long totalBytes, int totalChunks)
+    {
+        if (_currentClientTransfer != null && _currentClientTransfer.TransferId == transferId)
+        {
+            _currentClientTransfer.ExpectedTotalBytes = totalBytes;
+            _currentClientTransfer.ExpectedTotalChunks = totalChunks;
+            _currentClientTransfer.ReceivedChunks = 0;
+            _currentClientTransfer.ReceivedBytes = 0;
+            CallDeferred(nameof(EmitDownloadProgress), 0.0f);
+        }
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void SendMapTransferChunkRpc(string transferId, int chunkIndex, int totalChunks, long totalBytes, byte[] chunkData)
+    {
+        if (_currentClientTransfer == null || _currentClientTransfer.TransferId != transferId)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_currentClientTransfer.TempFileStream != null)
+            {
+                _currentClientTransfer.ExpectedTotalChunks = totalChunks;
+                _currentClientTransfer.ExpectedTotalBytes = totalBytes;
+
+                _currentClientTransfer.TempFileStream.Write(chunkData, 0, chunkData.Length);
+                _currentClientTransfer.ReceivedChunks++;
+                _currentClientTransfer.ReceivedBytes += chunkData.Length;
+
+                float progress = totalChunks > 0
+                    ? Math.Clamp((float)_currentClientTransfer.ReceivedChunks / totalChunks, 0.0f, 1.0f)
+                    : 1.0f;
+
+                CallDeferred(nameof(EmitDownloadProgress), progress);
+
+                if (_currentClientTransfer.ReceivedChunks >= totalChunks)
+                {
+                    _currentClientTransfer.TempFileStream.Flush();
+                    _currentClientTransfer.TempFileStream.Dispose();
+                    _currentClientTransfer.TempFileStream = null;
+
+                    _transferCompleteTcs?.TrySetResult(true);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[LobbyManager] Error writing transfer chunk: {ex.Message}");
+            _transferCompleteTcs?.TrySetException(ex);
+        }
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void AcknowledgeMapTransferCompleteRpc(string transferId)
+    {
+        if (_hostTransfers.TryRemove(transferId, out var session))
+        {
+            session.Cts.Cancel();
+            try
+            {
+                if (File.Exists(session.TempFilePath))
+                {
+                    File.Delete(session.TempFilePath);
+                }
+            }
+            catch { }
         }
     }
 
@@ -1010,12 +1454,14 @@ public partial class LobbyManager : Node
 
     private void OnConnectionFailedGodot()
     {
+        _isConnectedToHost = false;
         GD.PrintErr("[LobbyManager] Godot ENet connection failed.");
         ConnectionFailed?.Invoke("Direct connection handshake failed.");
     }
 
     private void OnServerDisconnectedGodot()
     {
+        _isConnectedToHost = false;
         GD.Print("[LobbyManager] Host disconnected.");
         if (IsGameStarted)
         {
@@ -1078,6 +1524,10 @@ public partial class LobbyManager : Node
     {
         ActiveMapName = mapName;
         ActiveMapChanged?.Invoke(mapName);
+        if (!IsHost)
+        {
+            _ = EnsureMapDownloadedAsync(mapName);
+        }
     }
 
     public void UpdateActiveMap(string mapName)
@@ -1139,11 +1589,20 @@ public partial class LobbyManager : Node
             if (p != null)
             {
                 p.IsReady = isReady;
-                UpdateAllPeerDiagnostics();
+                BroadcastPlayerList();
             }
         }
         else
         {
+            var p = PlayerList.Find(x => x.PeerId == peerId);
+            if (p != null)
+            {
+                p.IsReady = isReady;
+            }
+            if (LocalPlayer != null && LocalPlayer.PeerId == peerId)
+            {
+                LocalPlayer.IsReady = isReady;
+            }
             RpcId(1, nameof(UpdateReadyStateOnHost), peerId, isReady);
         }
     }
@@ -1157,7 +1616,7 @@ public partial class LobbyManager : Node
             if (p != null)
             {
                 p.IsReady = isReady;
-                UpdateAllPeerDiagnostics();
+                BroadcastPlayerList();
             }
         }
     }
@@ -1504,17 +1963,12 @@ public partial class LobbyManager : Node
         Realm.Godot.ReplaySystem.ReplayPlaybackManager.Instance.StopReplay();
         ActiveMapName = mapName;
 
-
-		if (!mapName.StartsWith("user://") && !mapName.StartsWith("res://") && !System.IO.Path.IsPathRooted(mapName))
-		{
-			MapAssetManager.CompileAndLoadPck(mapName);
-		}
         
 
         string path = "res://map.json";
-        if (FileAccess.FileExists(path))
+        if (Godot.FileAccess.FileExists(path))
         {
-            using var file = FileAccess.Open(path, FileAccess.ModeFlags.Read);
+            using var file = Godot.FileAccess.Open(path, Godot.FileAccess.ModeFlags.Read);
             string jsonText = file.GetAsText();
             GD.Print($"[LobbyManager] Loaded map.json map data successfully:\n{jsonText}");
         }

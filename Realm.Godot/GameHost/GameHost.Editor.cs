@@ -713,6 +713,44 @@ public partial class GameHost
 		return false;
 	}
 
+	public bool IsAttachmentKey(string key)
+	{
+		if (string.IsNullOrEmpty(key)) return false;
+		string norm = NormalizeModelAssetKey(key);
+
+		if (AttachmentRegistry.ContainsKey(key) || AttachmentRegistry.ContainsKey(norm)) return true;
+
+		foreach (var attMeta in AttachmentRegistry.Values)
+		{
+			if (!string.IsNullOrEmpty(attMeta.ModelPath) && NormalizeModelAssetKey(attMeta.ModelPath) == norm)
+				return true;
+			if (!string.IsNullOrEmpty(attMeta.AttachmentId) && NormalizeModelAssetKey(attMeta.AttachmentId) == norm)
+				return true;
+		}
+
+		if (key.Contains("/attachments/", StringComparison.OrdinalIgnoreCase) || key.Contains("\\attachments\\", StringComparison.OrdinalIgnoreCase) || key.StartsWith("attachments/", StringComparison.OrdinalIgnoreCase)) return true;
+		if (key.Contains("/weapons/", StringComparison.OrdinalIgnoreCase) || key.Contains("\\weapons\\", StringComparison.OrdinalIgnoreCase) || key.StartsWith("weapons/", StringComparison.OrdinalIgnoreCase)) return true;
+		if (key.Contains("/items/", StringComparison.OrdinalIgnoreCase) || key.Contains("\\items\\", StringComparison.OrdinalIgnoreCase) || key.StartsWith("items/", StringComparison.OrdinalIgnoreCase)) return true;
+
+		string resolved = ModelCache.ResolveModelPath(key);
+		if (!string.IsNullOrEmpty(resolved))
+		{
+			if (resolved.Contains("/attachments/", StringComparison.OrdinalIgnoreCase) || resolved.Contains("\\attachments\\", StringComparison.OrdinalIgnoreCase)) return true;
+			if (resolved.Contains("/weapons/", StringComparison.OrdinalIgnoreCase) || resolved.Contains("\\weapons\\", StringComparison.OrdinalIgnoreCase)) return true;
+			if (resolved.Contains("/items/", StringComparison.OrdinalIgnoreCase) || resolved.Contains("\\items\\", StringComparison.OrdinalIgnoreCase)) return true;
+		}
+
+		string resolvedNorm = ModelCache.ResolveModelPath(norm);
+		if (!string.IsNullOrEmpty(resolvedNorm))
+		{
+			if (resolvedNorm.Contains("/attachments/", StringComparison.OrdinalIgnoreCase) || resolvedNorm.Contains("\\attachments\\", StringComparison.OrdinalIgnoreCase)) return true;
+			if (resolvedNorm.Contains("/weapons/", StringComparison.OrdinalIgnoreCase) || resolvedNorm.Contains("\\weapons\\", StringComparison.OrdinalIgnoreCase)) return true;
+			if (resolvedNorm.Contains("/items/", StringComparison.OrdinalIgnoreCase) || resolvedNorm.Contains("\\items\\", StringComparison.OrdinalIgnoreCase)) return true;
+		}
+
+		return false;
+	}
+
 	public bool GetModelIgnorePlayerColor(object objOrId)
 	{
 		if (objOrId == null) return false;
@@ -731,15 +769,18 @@ public partial class GameHost
 			if (UnitRegistry.TryGetValue(primaryKey, out var meta)) return meta.IgnorePlayerColor;
 			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta)) return resMeta.IgnorePlayerColor;
 			if (PropRegistry.TryGetValue(primaryKey, out var propMeta)) return propMeta.IgnorePlayerColor;
+			if (AttachmentRegistry.TryGetValue(primaryKey, out _)) return true;
 		}
 
 		if (!string.IsNullOrEmpty(normAsset))
 		{
 			if (ResourceRegistry.TryGetValue(normAsset, out var resMeta2)) return resMeta2.IgnorePlayerColor;
 			if (PropRegistry.TryGetValue(normAsset, out var propMeta2)) return propMeta2.IgnorePlayerColor;
+			if (AttachmentRegistry.TryGetValue(normAsset, out _)) return true;
 		}
 
-		if (objOrId is Prop3D || IsPropOrResourceKey(primaryKey) || IsPropOrResourceKey(normPrimary) || IsPropOrResourceKey(assetKey) || IsPropOrResourceKey(normAsset))
+		if (objOrId is Prop3D || IsPropOrResourceKey(primaryKey) || IsPropOrResourceKey(normPrimary) || IsPropOrResourceKey(assetKey) || IsPropOrResourceKey(normAsset)
+			|| IsAttachmentKey(primaryKey) || IsAttachmentKey(normPrimary) || IsAttachmentKey(assetKey) || IsAttachmentKey(normAsset))
 		{
 			return true;
 		}
@@ -1273,7 +1314,7 @@ public partial class GameHost
 								{
 									ModelIgnorePlayerColor[normKey] = ipcVal2;
 								}
-								else if (catKvp.Key == "props" || catKvp.Key == "resources" || (itemObj.ContainsKey("default_asset_type") && (itemObj["default_asset_type"]?.ToString() == "props" || itemObj["default_asset_type"]?.ToString() == "resources")))
+								else if (catKvp.Key == "props" || catKvp.Key == "resources" || catKvp.Key == "attachments" || catKvp.Key == "weapons" || catKvp.Key == "items" || (itemObj.ContainsKey("default_asset_type") && (itemObj["default_asset_type"]?.ToString() == "props" || itemObj["default_asset_type"]?.ToString() == "resources" || itemObj["default_asset_type"]?.ToString() == "attachments" || itemObj["default_asset_type"]?.ToString() == "weapons" || itemObj["default_asset_type"]?.ToString() == "items")))
 								{
 									ModelIgnorePlayerColor[normKey] = true;
 								}

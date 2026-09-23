@@ -6,7 +6,7 @@ namespace Realm.Shared.Distribution;
 public class SeederNodeDto
 {
     public string SeederId { get; set; } = string.Empty;
-    public string IP { get; set; } = "127.0.0.1";
+    public string IP { get; set; } = string.Empty;
     public int Port { get; set; }
     public int CapacityPercentage { get; set; } = 100;
     public bool AcceptingUploads { get; set; } = true;
@@ -148,7 +148,35 @@ public class CreatorRegisteredEventPayload
 public class AdminGreenlightEventPayload
 {
     public string MapTitle { get; set; } = string.Empty;
-    public string MapVersion { get; set; } = "1.0";
+    public string? MapVersion { get; set; }
+    public string AdminPublicKey { get; set; } = string.Empty;
+    public string Signature { get; set; } = string.Empty;
+}
+
+public class AdminRemoveManifestRequest
+{
+    public string MapTitle { get; set; } = string.Empty;
+    public string? MapVersion { get; set; }
+    public string AdminPublicKey { get; set; } = string.Empty;
+    public string Signature { get; set; } = string.Empty;
+}
+
+public class RemoveManifestResponseDto
+{
+    public bool Success { get; set; }
+    public string MapTitle { get; set; } = string.Empty;
+    public string? MapVersion { get; set; }
+    public bool AllVersionsRemoved { get; set; }
+    public int ManifestsDeleted { get; set; }
+    public int DbRecordsRemoved { get; set; }
+    public List<string> DeletedManifestFiles { get; set; } = new();
+    public string Message { get; set; } = string.Empty;
+}
+
+public class AdminRemoveManifestEventPayload
+{
+    public string MapTitle { get; set; } = string.Empty;
+    public string? MapVersion { get; set; }
     public string AdminPublicKey { get; set; } = string.Empty;
     public string Signature { get; set; } = string.Empty;
 }
@@ -162,6 +190,7 @@ public class MapMetricReportEventPayload
     public int Stars { get; set; }
     public bool IsCompleteGame { get; set; }
     public string? AuthProvider { get; set; }
+    public string? AuthorPublicKey { get; set; }
     public DateTime TimestampUtc { get; set; } = DateTime.UtcNow;
 }
 

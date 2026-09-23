@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
-using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -19,7 +18,6 @@ public class MapDistributionClient
 
         try
         {
-
             var manifestResponse = await _httpClient.GetAsync(manifestUrl);
             if (!manifestResponse.IsSuccessStatusCode)
             {
@@ -28,23 +26,24 @@ public class MapDistributionClient
             }
 
             string manifestJson = await manifestResponse.Content.ReadAsStringAsync();
-            var manifest = JsonSerializer.Deserialize<MapManifest>(manifestJson);
+            var manifest = MapManifest.LoadFromJson(manifestJson) ?? JsonSerializer.Deserialize<MapManifest>(manifestJson);
             if (manifest == null || manifest.Files == null)
             {
                 MapAssetManager.LogErr("[MapDistributionClient] Manifest parsing failed.");
                 return false;
             }
 
-
-            string localManifestDir = MapAssetManager.GlobalArchiveDirectory;
-            if (!Directory.Exists(localManifestDir))
+            string version = !string.IsNullOrWhiteSpace(manifest.Version) ? manifest.Version.Trim() : "1.0.0";
+            string manifestMapName = !string.IsNullOrWhiteSpace(manifest.MapName) ? manifest.MapName.Trim() : mapName;
+            string manifestBlake3 = MapAssetManager.ComputeManifestBlake3(manifest);
+            string localMapDir = MapAssetManager.GetMapDirectory(manifestMapName, version, manifestBlake3, false);
+            if (!Directory.Exists(localMapDir))
             {
-                Directory.CreateDirectory(localManifestDir);
+                Directory.CreateDirectory(localMapDir);
             }
-            string localManifestPath = Path.Combine(localManifestDir, $"{mapName}_manifest.json");
-            File.WriteAllText(localManifestPath, manifestJson);
+            string localManifestPath = Path.Combine(localMapDir, "manifest.json");
+            File.WriteAllText(localManifestPath, manifest.ToJson());
             MapAssetManager.Log($"[MapDistributionClient] Saved manifest locally to {localManifestPath}");
-
 
             var missingHashes = MapAssetManager.GetMissingHashes(manifest.Files.Values);
             MapAssetManager.Log($"[MapDistributionClient] Missing {missingHashes.Count} of {manifest.Files.Count} hashes.");
@@ -52,21 +51,13 @@ public class MapDistributionClient
             if (missingHashes.Count > 0)
             {
                 string hostBaseUrl = $"http://{hostIp}:{port}";
-                bool casSuccess = false;
-
                 try
                 {
                     var distClient = new Realm.Shared.Distribution.DistributionClient(hostBaseUrl);
-                    var sharedManifest = new Realm.Shared.Distribution.MapManifest
-                    {
-                        MapName = manifest.MapName ?? mapName,
-                        Files = manifest.Files
-                    };
-
                     var seeders = new List<Realm.Shared.Distribution.SeederNodeDto>();
 
-                    casSuccess = await distClient.DownloadMissingAssetsMultiThreadedAsync(
-                        sharedManifest,
+                    await distClient.DownloadMissingAssetsMultiThreadedAsync(
+                        manifest,
                         MapAssetManager.Storage,
                         seeders,
                         fallbackHostUrl: hostBaseUrl,
@@ -79,59 +70,40 @@ public class MapDistributionClient
                 }
                 catch (Exception casEx)
                 {
-                    MapAssetManager.Log($"[MapDistributionClient] CAS download exception: {casEx.Message}. Will attempt delta fallback.");
+                    MapAssetManager.Log($"[MapDistributionClient] CAS download exception: {casEx.Message}. Will attempt fallback.");
                 }
 
                 var remainingMissing = MapAssetManager.GetMissingHashes(manifest.Files.Values);
+                if (remainingMissing.Count > 0 && LobbyManager.Instance != null && !string.IsNullOrEmpty(LobbyManager.Instance.RegistryServerUrl))
+                {
+                    try
+                    {
+                        string registryUrl = LobbyManager.Instance.RegistryServerUrl.TrimEnd('/');
+                        var regDistClient = new Realm.Shared.Distribution.DistributionClient(registryUrl, _httpClient);
+                        var seeders = await regDistClient.GetActiveSeedersAsync();
+                        await regDistClient.DownloadMissingAssetsMultiThreadedAsync(
+                            manifest,
+                            MapAssetManager.Storage,
+                            seeders,
+                            fallbackHostUrl: registryUrl,
+                            progressCallback: p =>
+                            {
+                                progressCallback?.Invoke(p);
+                                DownloadProgressChanged?.Invoke(p);
+                            },
+                            maximumConcurrency: 6);
+                    }
+                    catch (Exception regEx)
+                    {
+                        MapAssetManager.Log($"[MapDistributionClient] Registry CAS fallback error: {regEx.Message}");
+                    }
+                    remainingMissing = MapAssetManager.GetMissingHashes(manifest.Files.Values);
+                }
+
                 if (remainingMissing.Count > 0)
                 {
-                    string deltaUrl = $"http://{hostIp}:{port}/map/delta";
-                    MapAssetManager.Log($"[MapDistributionClient] Requesting delta archive for {remainingMissing.Count} missing hashes from {deltaUrl}");
-
-                    var requestMessage = new HttpRequestMessage(HttpMethod.Post, deltaUrl);
-                    requestMessage.Content = new StringContent(JsonSerializer.Serialize(remainingMissing), Encoding.UTF8, "application/json");
-                    using (var deltaResponse = await _httpClient.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead))
-                {
-                    if (!deltaResponse.IsSuccessStatusCode)
-                    {
-                        MapAssetManager.LogErr($"[MapDistributionClient] Delta request failed with status: {deltaResponse.StatusCode}");
-                        return false;
-                    }
-
-                    long? totalBytes = deltaResponse.Content.Headers.ContentLength;
-                    MapAssetManager.Log($"[MapDistributionClient] Expected delta size: {totalBytes ?? -1} bytes");
-
-                    string tempDeltaPath = Path.Combine(MapAssetManager.GlobalArchiveDirectory, Guid.NewGuid().ToString() + "_download_delta.7z");
-                    
-                    using (var responseStream = await deltaResponse.Content.ReadAsStreamAsync())
-                    using (var fs = new FileStream(tempDeltaPath, FileMode.Create, System.IO.FileAccess.Write, FileShare.None, 8192, true))
-                    {
-                        byte[] buffer = new byte[8192];
-                        long totalRead = 0;
-                        int bytesRead;
-
-                        while ((bytesRead = await responseStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
-                        {
-                            await fs.WriteAsync(buffer, 0, bytesRead);
-                            totalRead += bytesRead;
-
-                            if (totalBytes.HasValue && totalBytes.Value > 0)
-                            {
-                                float progress = (float)totalRead / totalBytes.Value;
-                                progressCallback?.Invoke(progress);
-                                DownloadProgressChanged?.Invoke(progress);
-                            }
-                        }
-                    }
-
-                    MapAssetManager.Log("[MapDistributionClient] Delta download complete. Ingesting delta files into global archive...");
-                    
-
-                    MapAssetManager.IngestDeltaArchive(tempDeltaPath);
-
-
-                    try { File.Delete(tempDeltaPath); } catch { }
-                }
+                    MapAssetManager.LogErr($"[MapDistributionClient] Failed to download {remainingMissing.Count} missing assets from host or registry.");
+                    return false;
                 }
             }
             else
@@ -140,8 +112,9 @@ public class MapDistributionClient
                 DownloadProgressChanged?.Invoke(1.0f);
             }
 
+            MapAssetManager.ExtractManifestFiles(manifest, localMapDir, isP2P: false);
             AssetIndexService.Instance.RegisterManifest(manifest, localManifestPath, isP2P: false);
-            MapAssetManager.Log("[MapDistributionClient] Map distribution client delta handshake completed successfully.");
+            MapAssetManager.Log("[MapDistributionClient] Map distribution client handshake completed successfully.");
             return true;
         }
         catch (Exception ex)
@@ -168,13 +141,15 @@ public class MapDistributionClient
                 return false;
             }
 
-            string localManifestDir = MapAssetManager.GlobalArchiveDirectory;
-            if (!Directory.Exists(localManifestDir))
+            string version = !string.IsNullOrWhiteSpace(manifest.Version) ? manifest.Version.Trim() : "1.0.0";
+            string manifestBlake3 = MapAssetManager.ComputeManifestBlake3(manifest);
+            string localMapDir = MapAssetManager.GetMapDirectory(manifest.MapName, version, manifestBlake3, false);
+            if (!Directory.Exists(localMapDir))
             {
-                Directory.CreateDirectory(localManifestDir);
+                Directory.CreateDirectory(localMapDir);
             }
 
-            string localManifestPath = Path.Combine(localManifestDir, $"{manifest.MapName}_manifest.json");
+            string localManifestPath = Path.Combine(localMapDir, "manifest.json");
             File.WriteAllText(localManifestPath, manifest.ToJson());
 
             var seeders = await distClient.GetActiveSeedersAsync(cancellationToken);
@@ -189,6 +164,7 @@ public class MapDistributionClient
 
             if (success)
             {
+                MapAssetManager.ExtractManifestFiles(manifest, localMapDir, isP2P: false);
                 AssetIndexService.Instance.RegisterManifest(manifest, localManifestPath, isP2P: false);
                 MapAssetManager.Log($"[MapDistributionClient] Map '{mapId}' successfully downloaded from registry and indexed.");
             }
@@ -202,4 +178,3 @@ public class MapDistributionClient
         }
     }
 }
-

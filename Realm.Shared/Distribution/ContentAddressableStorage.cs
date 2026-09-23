@@ -203,27 +203,10 @@ public class ContentAddressableStorage
                 metadataToEmbed = InjectAuthorKeysIntoMetadata(metadataToEmbed, authorPublicKey, authorSignature);
             }
 
-            if (!string.IsNullOrWhiteSpace(metadataToEmbed) && RealmMetadataHelper.SupportsMetadata(finalExtension))
-            {
-                bytesToWrite = RealmMetadataHelper.SyncBlake3MetadataBytes(assetBytes, finalExtension);
-            }
-
             File.WriteAllBytes(temporaryFilePath, bytesToWrite);
-
-            if (!string.IsNullOrWhiteSpace(metadataToEmbed) && RealmMetadataHelper.SupportsMetadata(finalExtension))
-            {
-                try
-                {
-                    RealmMetadataHelper.AddMetadata(temporaryFilePath, metadataToEmbed);
-                }
-                catch
-                {
-                }
-            }
-
             File.Move(temporaryFilePath, finalFilePath, true);
 
-            string? finalMetadata = RealmMetadataHelper.ExtractMetadata(finalFilePath) ?? metadataToEmbed;
+            string? finalMetadata = metadataToEmbed ?? RealmMetadataHelper.ExtractMetadata(finalFilePath);
             if (!string.IsNullOrWhiteSpace(finalMetadata))
             {
                 UpdateSidecarCache(normalizedHash, finalMetadata);
@@ -260,17 +243,6 @@ public class ContentAddressableStorage
 
             string incomingWithKeys = InjectAuthorKeysIntoMetadata(incomingMetadataJson, authorPublicKey, authorSignature);
             string mergedMetadata = AuthorSignatureHelper.MergeMetadataHeaders(existingMetadata, incomingWithKeys, isAuthorized);
-
-            if (RealmMetadataHelper.SupportsMetadata(existingFilePath))
-            {
-                try
-                {
-                    RealmMetadataHelper.AddMetadata(existingFilePath, mergedMetadata);
-                }
-                catch
-                {
-                }
-            }
 
             UpdateSidecarCache(normalizedHash, mergedMetadata);
             return true;
@@ -383,6 +355,26 @@ public class ContentAddressableStorage
         {
             Directory.Delete(_sidecarCacheDirectory, true);
             Directory.CreateDirectory(_sidecarCacheDirectory);
+        }
+    }
+
+    public void RemoveSidecarCache(string normalizedHash)
+    {
+        try
+        {
+            string cleanHash = NormalizeBlake3Hash(normalizedHash);
+            if (cleanHash.Length >= 2 && Directory.Exists(_sidecarCacheDirectory))
+            {
+                string shardDirectory = Path.Combine(_sidecarCacheDirectory, cleanHash.Substring(0, 2));
+                string sidecarPath = Path.Combine(shardDirectory, $"{cleanHash}.json");
+                if (File.Exists(sidecarPath))
+                {
+                    File.Delete(sidecarPath);
+                }
+            }
+        }
+        catch
+        {
         }
     }
 

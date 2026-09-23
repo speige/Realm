@@ -24,14 +24,14 @@ public class SeederPropagationEngine
         string seederId,
         int capacityPercentage,
         ContentAddressableStorage storage,
-        string registryServerUrl = "http://127.0.0.1:5000",
+        string? registryServerUrl = null,
         HttpClient? httpClient = null,
         TokenBucketThrottle? throttle = null)
     {
         _seederId = seederId;
         _capacityPercentage = capacityPercentage;
         _storage = storage;
-        _registryServerUrl = registryServerUrl.TrimEnd('/');
+        _registryServerUrl = (string.IsNullOrWhiteSpace(registryServerUrl) ? ServersConfigHelper.GetDefaultServerUrl() : registryServerUrl).TrimEnd('/');
         _httpClient = httpClient ?? new HttpClient();
         _throttle = throttle;
     }

@@ -1,5 +1,1 @@
-using System.Collections.Generic;
-
-public class MapManifest : Realm.Shared.Distribution.MapManifest
-{
-}
+global using MapManifest = Realm.Shared.Distribution.MapManifest;

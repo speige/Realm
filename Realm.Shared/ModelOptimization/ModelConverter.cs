@@ -46,7 +46,7 @@ public static class ModelConverter
 		{
 			SimplificationRatio = 0.5f,
 			MaxTextureResolution = maxRes,
-			ForceReDecimate = true
+			ForceReDecimate = forceReDecimate
 		};
 	}
 
@@ -57,7 +57,8 @@ public static class ModelConverter
 		bool force = false,
 		OptimizationOptions? options = null,
 		string? author = null,
-		string? chromaKey = null)
+		string? chromaKey = null,
+		string? existingMetadataJson = null)
 	{
 		string fullInput = Path.GetFullPath(inputPath);
 		var result = new ModelConversionResult { InputPath = fullInput };
@@ -101,7 +102,7 @@ public static class ModelConverter
 			result.OriginalSize = inputBytes.Length;
 
 			string fileName = Path.GetFileName(fullInput);
-			var convRes = ConvertToRmesh(inputBytes, fullInput, assetType, force, options, author, chromaKey);
+			var convRes = ConvertToRmesh(inputBytes, fullInput, assetType, force, options, author, chromaKey, existingMetadataJson);
 			if (!convRes.Success || convRes.OutputBytes == null)
 			{
 				result.Success = false;
@@ -141,7 +142,8 @@ public static class ModelConverter
 		bool force = false,
 		OptimizationOptions? options = null,
 		string? author = null,
-		string? chromaKey = null)
+		string? chromaKey = null,
+		string? existingMetadataJson = null)
 	{
 		var result = new ModelConversionResult
 		{
@@ -158,22 +160,19 @@ public static class ModelConverter
 		try
 		{
 			byte[] rawGlbBytes;
-			string? existingMetaJson = null;
+			string? existingMetaJson = existingMetadataJson;
 
 			if (RmeshFile.IsRmeshBytes(inputBytes))
 			{
 				var (parsedMeta, parsedGlb, _) = RmeshFile.Parse(inputBytes);
-				existingMetaJson = parsedMeta;
+				existingMetaJson ??= parsedMeta;
 				rawGlbBytes = parsedGlb;
 			}
 			else
 			{
 				rawGlbBytes = inputBytes.ToArray();
-				existingMetaJson = RealmMetadataHelper.ExtractMetadataFromGlbBytes(rawGlbBytes);
+				existingMetaJson ??= RealmMetadataHelper.ExtractMetadataFromGlbBytes(rawGlbBytes);
 			}
-
-			rawGlbBytes = GlbManifestUtils.StripOptimizationMetadata(rawGlbBytes).UnoptimizedBytes;
-			rawGlbBytes = GlbMeshSmoother.SmoothMesh(rawGlbBytes);
 
 			JsonObject metaObj;
 			if (!string.IsNullOrWhiteSpace(existingMetaJson))
@@ -221,17 +220,29 @@ public static class ModelConverter
 				return result;
 			}
 
-			var opt = options ?? GetAutomaticOptimizationOptions(effectiveAssetType, force);
-			var optimizer = new GlbOptimizer();
-			var optResult = optimizer.Optimize(rawGlbBytes, opt);
-			if (!optResult.Success || optResult.OutputGlbBytes == null)
-			{
-				result.Success = false;
-				result.ErrorMessage = optResult.ErrorMessage ?? "Optimization failed.";
-				return result;
-			}
+			bool shouldForce = force || (options.HasValue && options.Value.ForceReDecimate);
+			bool isAlreadyOptimized = GlbManifestUtils.HasOptimizationFlag(rawGlbBytes);
 
-			byte[] finalGlbBytes = optResult.OutputGlbBytes;
+			byte[] finalGlbBytes;
+			if (!shouldForce && isAlreadyOptimized)
+			{
+				finalGlbBytes = rawGlbBytes;
+			}
+			else
+			{
+				byte[] unoptimized = GlbManifestUtils.StripOptimizationMetadata(rawGlbBytes).UnoptimizedBytes;
+				var opt = options ?? GetAutomaticOptimizationOptions(effectiveAssetType, shouldForce);
+				opt.ForceReDecimate = shouldForce;
+				var optimizer = new GlbOptimizer();
+				var optResult = optimizer.Optimize(unoptimized, opt);
+				if (!optResult.Success || optResult.OutputGlbBytes == null)
+				{
+					result.Success = false;
+					result.ErrorMessage = optResult.ErrorMessage ?? "Optimization failed.";
+					return result;
+				}
+				finalGlbBytes = optResult.OutputGlbBytes;
+			}
 
 			bool supportsTeamColor = GlbPlayerColorProcessor.DetectSupportsTeamColor(finalGlbBytes);
 
@@ -246,7 +257,11 @@ public static class ModelConverter
 
 			if (!string.IsNullOrEmpty(inputFileName))
 			{
-				metaObj["preferred_file_name"] = Path.GetFileName(inputFileName);
+				string currentPreferred = metaObj["preferred_file_name"]?.ToString() ?? string.Empty;
+				if (string.IsNullOrEmpty(currentPreferred) || !inputFileName.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
+				{
+					metaObj["preferred_file_name"] = Path.GetFileName(inputFileName);
+				}
 			}
 
 			if (!string.IsNullOrEmpty(author) && (!metaObj.ContainsKey("author") || string.IsNullOrWhiteSpace(metaObj["author"]?.ToString())))
@@ -379,12 +394,24 @@ public static class ModelConverter
 			{
 				byte[] inputGlbBytes = File.ReadAllBytes(fullInput);
 				result.OriginalSize = inputGlbBytes.Length;
-				byte[] unoptimized = GlbManifestUtils.StripOptimizationMetadata(inputGlbBytes).UnoptimizedBytes;
-				byte[] smoothed = GlbMeshSmoother.SmoothMesh(unoptimized);
-				var opt = options ?? GetAutomaticOptimizationOptions(assetType, force);
-				var optimizer = new GlbOptimizer();
-				var optResult = optimizer.Optimize(smoothed, opt);
-				byte[] outputGlbBytes = optResult.Success && optResult.OutputGlbBytes != null ? optResult.OutputGlbBytes : smoothed;
+
+				bool shouldForce = force || (options.HasValue && options.Value.ForceReDecimate);
+				bool isAlreadyOptimized = GlbManifestUtils.HasOptimizationFlag(inputGlbBytes);
+
+				byte[] outputGlbBytes;
+				if (!shouldForce && isAlreadyOptimized)
+				{
+					outputGlbBytes = inputGlbBytes;
+				}
+				else
+				{
+					byte[] unoptimized = GlbManifestUtils.StripOptimizationMetadata(inputGlbBytes).UnoptimizedBytes;
+					var opt = options ?? GetAutomaticOptimizationOptions(assetType, shouldForce);
+					opt.ForceReDecimate = shouldForce;
+					var optimizer = new GlbOptimizer();
+					var optResult = optimizer.Optimize(unoptimized, opt);
+					outputGlbBytes = optResult.Success && optResult.OutputGlbBytes != null ? optResult.OutputGlbBytes : unoptimized;
+				}
 
 				string? targetDir = Path.GetDirectoryName(target);
 				if (!string.IsNullOrEmpty(targetDir) && !Directory.Exists(targetDir)) Directory.CreateDirectory(targetDir);

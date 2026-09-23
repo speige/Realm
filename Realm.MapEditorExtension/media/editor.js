@@ -223,8 +223,7 @@
         LoadingTitle: document.getElementById('prop-LoadingTitle'),
         LoadingSubtitle: document.getElementById('prop-LoadingSubtitle'),
         LoadingBodyText: document.getElementById('prop-LoadingBodyText'),
-        HowToPlayObjective: document.getElementById('prop-HowToPlayObjective'),
-        Version: document.getElementById('prop-Version')
+        HowToPlayObjective: document.getElementById('prop-HowToPlayObjective')
     };
 
     const instructionInput = document.getElementById('instruction-input');

@@ -1040,6 +1040,13 @@ public static partial class MapWorkspaceService
 					{
 						texEntry["swatchIndex"] = existingSwatchIndex;
 					}
+					if (!texEntry.ContainsKey("Scale_Factor") || texEntry["Scale_Factor"] == null)
+					{
+						string fullRtexPath = Path.Combine(workspacePath, "Assets", "textures", rtexFileName);
+						float sf = Realm.Shared.Textures.TextureConverter.CalculateLuminanceScaleFactor(fullRtexPath);
+						if (sf <= 0.0001f) sf = 1.0f;
+						texEntry["Scale_Factor"] = sf;
+					}
 					targetCatObj[rtexFileName] = texEntry;
 				}
 				else

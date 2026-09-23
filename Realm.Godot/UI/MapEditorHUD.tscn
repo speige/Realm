@@ -197,6 +197,11 @@ layout_mode = 2
 focus_mode = 0
 text = "🎮 TEST"
 
+[node name="BtnExportMap" type="Button" parent="LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile"]
+layout_mode = 2
+focus_mode = 0
+text = "📦 EXPORT (.7Z)"
+
 [node name="BtnPublish" type="Button" parent="LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile"]
 layout_mode = 2
 focus_mode = 0

@@ -3,6 +3,7 @@ using System;
 using System.Linq;
 using System.Text.Json;
 using System.Collections.Generic;
+using Realm.Shared.Distribution;
 
 public partial class CreatorDiscovery : Control
 {
@@ -419,7 +420,7 @@ public partial class CreatorDiscovery : Control
 
 	private async void LoadPortfolioData()
 	{
-		string seedServerUrl = GodotObject.IsInstanceValid(LobbyManager.Instance) ? LobbyManager.Instance.RegistryServerUrl : "http://localhost:5000";
+		string seedServerUrl = GodotObject.IsInstanceValid(LobbyManager.Instance) ? LobbyManager.Instance.RegistryServerUrl : ServersConfigHelper.GetDefaultServerUrl();
 		try
 		{
 			using (var httpClient = new System.Net.Http.HttpClient())
@@ -478,7 +479,7 @@ public partial class CreatorDiscovery : Control
 			n.QueueFree();
 		}
 
-		string seedServerUrl = GodotObject.IsInstanceValid(LobbyManager.Instance) ? LobbyManager.Instance.RegistryServerUrl : "http://localhost:5000";
+		string seedServerUrl = GodotObject.IsInstanceValid(LobbyManager.Instance) ? LobbyManager.Instance.RegistryServerUrl : ServersConfigHelper.GetDefaultServerUrl();
 		try
 		{
 			using (var httpClient = new System.Net.Http.HttpClient())

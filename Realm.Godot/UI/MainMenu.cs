@@ -16,6 +16,7 @@ public partial class MainMenu : Control
 	private Button _creatorDiscoveryButton;
 	private Button _mapEditorButton;
 	private Button _replaysButton;
+	private Button _storageButton;
 	private Button _settingsButton;
 	private Button _profileButton;
 	private Button _quitButton;
@@ -59,6 +60,7 @@ public partial class MainMenu : Control
 		_creatorDiscoveryButton = GetNodeOrNull<Button>("CentralPanel/VBoxContainer/CreatorDiscoveryButton");
 		_mapEditorButton = GetNode<Button>("CentralPanel/VBoxContainer/MapEditorButton");
 		_replaysButton = GetNodeOrNull<Button>("CentralPanel/VBoxContainer/ReplaysButton");
+		_storageButton = GetNodeOrNull<Button>("CentralPanel/VBoxContainer/StorageButton");
 		_settingsButton = GetNode<Button>("SettingsButton");
 		_profileButton = GetNode<Button>("ProfileButton");
 		_quitButton = GetNode<Button>("QuitButton");
@@ -101,6 +103,11 @@ public partial class MainMenu : Control
 		{
 			SetupMenuButton(_replaysButton, "REPLAYS", () => UIManager.Instance.TransitionTo(GameScreen.ReplayList), "res://Assets/UI/menu_replays_button.png");
 			_replaysButton.AddThemeConstantOverride("icon_max_width", 28);
+		}
+		if (_storageButton != null)
+		{
+			SetupMenuButton(_storageButton, "STORAGE", () => UIManager.Instance.TransitionTo(GameScreen.Storage), "res://Assets/UI/menu_storage_button.jpg");
+			_storageButton.AddThemeConstantOverride("icon_max_width", 28);
 		}
 		SetupIconButton(_settingsButton, "OPTIONS", "res://Assets/UI/gear_icon.png", () => UIManager.Instance.OpenSettingsOverlay(), new Vector2(22, 22), true);
 		SetupAvatarButton(_profileButton, () => ShowProfilePopup());
@@ -148,6 +155,7 @@ public partial class MainMenu : Control
 			if (_mapDiscoveryButton != null) _mapDiscoveryButton.Visible = false;
 			if (_creatorDiscoveryButton != null) _creatorDiscoveryButton.Visible = false;
 			if (_replaysButton != null) _replaysButton.Visible = false;
+			if (_storageButton != null) _storageButton.Visible = false;
 			if (_profileButton != null) _profileButton.Visible = false;
 		}
 	}

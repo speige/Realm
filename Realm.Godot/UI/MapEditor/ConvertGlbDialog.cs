@@ -546,7 +546,7 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 				string hash = convRes.OutputBytes != null
 					? RealmMetadataHelper.ComputeBlake3(convRes.OutputBytes, ".rmesh")
 					: RealmMetadataHelper.ComputeBlake3(destPath);
-				bool isPropOrRes = subCategory == "resources" || subCategory == "props";
+				bool isPropOrRes = subCategory == "resources" || subCategory == "props" || subCategory == "attachments" || subCategory == "weapons" || subCategory == "items" || subCategory == "projectiles";
 
 				var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(wsPath) ?? new JsonObject();
 				if (!assetsObj.ContainsKey("glb") || assetsObj["glb"] == null) assetsObj["glb"] = new JsonObject();

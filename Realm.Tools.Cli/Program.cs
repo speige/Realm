@@ -252,8 +252,8 @@ public class KeygenOptions
 	[Option('o', "output", Required = false, HelpText = "Output path to write private key file.")]
 	public string? Output { get; set; }
 
-	[Option('s', "server", Required = false, Default = "http://localhost:5000", HelpText = "Registry server URL to register unique username.")]
-	public string Server { get; set; } = "http://localhost:5000";
+	[Option('s', "server", Required = false, HelpText = "Registry server URL to register unique username.")]
+	public string? Server { get; set; }
 
 	[Option("register", Required = false, Default = false, HelpText = "Register the generated key pair and username with the official registry server.")]
 	public bool Register { get; set; }
@@ -667,7 +667,6 @@ public static class Program
 			}
 
 			string metaToDisplay = FormatFileMetadata(options.Input);
-			Console.WriteLine($"Metadata for {options.Input}:");
 			Console.WriteLine(metaToDisplay);
 
 			if (!string.IsNullOrEmpty(options.Output))
@@ -675,7 +674,6 @@ public static class Program
 				string? dir = Path.GetDirectoryName(options.Output);
 				if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
 				File.WriteAllText(options.Output, metaToDisplay);
-				Console.WriteLine($"Saved metadata to: {options.Output}");
 			}
 			return 0;
 		}
@@ -1071,7 +1069,7 @@ public static class Program
 			options.Recursive,
 			options.InPlace,
 			ModelConverter.IsModelFile,
-			file => Path.GetExtension(file).Equals(".rmesh", StringComparison.OrdinalIgnoreCase) ? ".glb" : ".rmesh",
+			file => options.InPlace ? Path.GetExtension(file) : (Path.GetExtension(file).Equals(".rmesh", StringComparison.OrdinalIgnoreCase) ? ".glb" : ".rmesh"),
 			(inputFile, targetFile) => ProcessSingleMeshConvert(inputFile, targetFile, options),
 			summaryActionName: "model conversion");
 	}
@@ -1105,12 +1103,19 @@ public static class Program
 			try
 			{
 				byte[] inputGlbBytes = File.ReadAllBytes(inputFile);
-				byte[] unoptimized = GlbManifestUtils.StripOptimizationMetadata(inputGlbBytes).UnoptimizedBytes;
-				byte[] smoothed = GlbMeshSmoother.SmoothMesh(unoptimized);
-				var opt = ModelConverter.GetAutomaticOptimizationOptions(options.AssetType, options.Force);
-				var optimizer = new GlbOptimizer();
-				var optResult = optimizer.Optimize(smoothed, opt);
-				byte[] outputGlbBytes = optResult.Success && optResult.OutputGlbBytes != null ? optResult.OutputGlbBytes : smoothed;
+				byte[] outputGlbBytes;
+				if (!options.Force && GlbManifestUtils.HasOptimizationFlag(inputGlbBytes))
+				{
+					outputGlbBytes = inputGlbBytes;
+				}
+				else
+				{
+					byte[] unoptimized = GlbManifestUtils.StripOptimizationMetadata(inputGlbBytes).UnoptimizedBytes;
+					var opt = ModelConverter.GetAutomaticOptimizationOptions(options.AssetType, options.Force);
+					var optimizer = new GlbOptimizer();
+					var optResult = optimizer.Optimize(unoptimized, opt);
+					outputGlbBytes = optResult.Success && optResult.OutputGlbBytes != null ? optResult.OutputGlbBytes : unoptimized;
+				}
 
 				string? outDir = Path.GetDirectoryName(targetFile);
 				if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir)) Directory.CreateDirectory(outDir);
@@ -1271,10 +1276,6 @@ public static class Program
 		string inputExt = Path.GetExtension(inputPath).ToLowerInvariant();
 		bool isRmeshInput = inputExt == ".rmesh";
 
-		var optimizer = new GlbOptimizer();
-		string? tempInputGlb = null;
-		string? tempColorResultGlb = null;
-		string? tempUnoptimizedPath = null;
 		string? existingMeta = null;
 
 		try
@@ -1293,42 +1294,20 @@ public static class Program
 				existingMeta = RealmMetadataHelper.ExtractMetadataFromGlbBytes(sourceGlbBytes);
 			}
 
-			bool wasOptimized = optimizer.IsOptimized(sourceGlbBytes);
-			tempInputGlb = Path.Combine(Path.GetTempPath(), $"realm_pc_in_{Guid.NewGuid():N}.glb");
-			File.WriteAllBytes(tempInputGlb, sourceGlbBytes);
+			var (success, processedGlbBytes, errorMessage, maskedFaces, totalFaces, detectedKey) =
+				Realm.Shared.GlbPlayerColorProcessor.ProcessBytes(sourceGlbBytes, processorOptions);
 
-			string colorSourcePath = tempInputGlb;
-			if (wasOptimized)
+			if (!success || processedGlbBytes == null)
 			{
-				Console.WriteLine($"  Detected pre-optimized GLB — unoptimizing first to restore mesh topology...");
-				var unoptResult = optimizer.Unoptimize(sourceGlbBytes);
-				if (!unoptResult.Success || unoptResult.OutputGlbBytes == null)
-				{
-					Console.Error.WriteLine($"  Failed to unoptimize {inputPath}: {unoptResult.ErrorMessage}");
-					return 1;
-				}
-
-				tempUnoptimizedPath = Path.Combine(Path.GetTempPath(), $"realm_pc_unopt_{Guid.NewGuid():N}.glb");
-				File.WriteAllBytes(tempUnoptimizedPath, unoptResult.OutputGlbBytes);
-				colorSourcePath = tempUnoptimizedPath;
-			}
-
-			tempColorResultGlb = Path.Combine(Path.GetTempPath(), $"realm_pc_out_{Guid.NewGuid():N}.glb");
-			var colorResult = Realm.Shared.GlbPlayerColorProcessor.ProcessFile(colorSourcePath, tempColorResultGlb, processorOptions);
-			if (!colorResult.Success || !File.Exists(tempColorResultGlb))
-			{
-				Console.Error.WriteLine($"  Failed player-color processing: {colorResult.ErrorMessage}");
+				Console.Error.WriteLine($"  Failed player-color processing: {errorMessage}");
 				return 1;
 			}
 
-			string resolvedChromaKey = colorResult.DetectedChromaKey ?? processorOptions.ChromaKey;
-			Console.WriteLine($"  Player-color mask applied (masked faces: {colorResult.MaskedFaceCount}/{colorResult.TotalFaceCount}, chroma key: {resolvedChromaKey})");
+			string resolvedChromaKey = detectedKey ?? processorOptions.ChromaKey;
+			Console.WriteLine($"  Player-color mask applied (masked faces: {maskedFaces}/{totalFaces}, chroma key: {resolvedChromaKey})");
 
-			byte[] processedGlbBytes = File.ReadAllBytes(tempColorResultGlb);
 			string? outDir = Path.GetDirectoryName(outputPath);
 			if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir)) Directory.CreateDirectory(outDir);
-
-			Console.WriteLine($"  Re-optimizing output (LODs regenerated from corrected textures)...");
 
 			string? targetAssetType = !string.IsNullOrWhiteSpace(assetType)
 				? assetType
@@ -1349,9 +1328,10 @@ public static class Program
 				processedGlbBytes,
 				inputPath,
 				targetAssetType,
-				force: true,
+				force: false,
 				author: targetAuthor,
-				chromaKey: resolvedChromaKey);
+				chromaKey: resolvedChromaKey,
+				existingMetadataJson: existingMeta);
 
 			if (!convResult.Success || convResult.OutputBytes == null)
 			{
@@ -1369,11 +1349,10 @@ public static class Program
 
 			return 0;
 		}
-		finally
+		catch (Exception ex)
 		{
-			if (tempInputGlb != null && File.Exists(tempInputGlb)) try { File.Delete(tempInputGlb); } catch { }
-			if (tempColorResultGlb != null && File.Exists(tempColorResultGlb)) try { File.Delete(tempColorResultGlb); } catch { }
-			if (tempUnoptimizedPath != null && File.Exists(tempUnoptimizedPath)) try { File.Delete(tempUnoptimizedPath); } catch { }
+			Console.Error.WriteLine($"  Failed to process {inputPath}: {ex.Message}");
+			return 1;
 		}
 	}
 
@@ -1495,7 +1474,8 @@ public static class Program
 					inputPath,
 					targetAssetType,
 					force: true,
-					author: targetAuthor);
+					author: targetAuthor,
+					existingMetadataJson: existingMeta);
 
 				if (!convRes.Success || convRes.OutputBytes == null)
 				{
@@ -1552,11 +1532,12 @@ public static class Program
 
 		if (options.Register || !string.IsNullOrWhiteSpace(options.Username))
 		{
+			string serverUrl = !string.IsNullOrWhiteSpace(options.Server) ? options.Server : ServersConfigHelper.GetDefaultServerUrl();
 			string username = !string.IsNullOrWhiteSpace(options.Username) ? options.Username.Trim() : "Creator_" + Guid.NewGuid().ToString("N")[..6];
 			string payload = $"{username}:{publicKeyBase64}";
 			string signature = AuthorSignatureHelper.SignMessage(privateKeyBase64, payload);
 
-			Console.WriteLine($"Registering username '{username}' with {options.Server}...");
+			Console.WriteLine($"Registering username '{username}' with {serverUrl}...");
 			try
 			{
 				using var httpClient = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
@@ -1567,7 +1548,7 @@ public static class Program
 					Signature = signature
 				};
 				var content = new System.Net.Http.StringContent(JsonSerializer.Serialize(regPayload), System.Text.Encoding.UTF8, "application/json");
-				var response = httpClient.PostAsync($"{options.Server.TrimEnd('/')}/api/creators/register", content).GetAwaiter().GetResult();
+				var response = httpClient.PostAsync($"{serverUrl.TrimEnd('/')}/api/creators/register", content).GetAwaiter().GetResult();
 				string responseText = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
 
 				if (response.IsSuccessStatusCode)
@@ -1588,8 +1569,8 @@ public static class Program
 		Console.WriteLine();
 		Console.WriteLine("To graduate this key pair to an Admin Key:");
 		Console.WriteLine("1. Keep your Private Key secret.");
-		Console.WriteLine("2. Add the Public Key to Realm.Lobby/appsettings.json under 'AdminPublicKey':");
-		Console.WriteLine($"   \"AdminPublicKey\": \"{publicKeyBase64}\"");
+		Console.WriteLine("2. Add the Public Key to Realm.Lobby/appsettings.json under 'AdminPublicKeys':");
+		Console.WriteLine($"   \"AdminPublicKeys\": [\n     \"{publicKeyBase64}\"\n   ]");
 		Console.WriteLine("=================================================");
 		return 0;
 	}

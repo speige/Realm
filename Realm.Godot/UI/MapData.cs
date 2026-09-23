@@ -1,7 +1,12 @@
+using System.Collections.Generic;
+
 public class MapData
 {
 	public string MapId { get; set; }
 	public string Title { get; set; }
+	public string Version { get; set; } = "1.0.0";
+	public string ManifestHash { get; set; } = string.Empty;
+	public List<MapData> AvailableVersions { get; set; } = new();
 	public string Creator { get; set; }
 	public string ThumbnailPath { get; set; }
 	public string Description { get; set; }
@@ -32,12 +37,13 @@ public class MapData
 
 	public static MapData[] GetDummyMaps()
 	{
-		return new MapData[]
+		var maps = new MapData[]
 		{
 			new MapData
 			{
 				MapId = "castle_td",
 				Title = "CASTLE TD",
+				Version = "1.0.0",
 				Creator = "Realm Builder",
 				ThumbnailPath = "res://Assets/UI/moonlit_castle.png",
 				Description = "Defend the last fortress against waves of ancient evil! Includes the sintepres sucitoure unit. Features deep mountain passes, branching paths, unique hero units, and custom tower designs. Can you withstand the boss waves?",
@@ -79,6 +85,7 @@ public class MapData
 			{
 				MapId = "moonlit_valley",
 				Title = "MOONLIT VALLEY",
+				Version = "1.0.0",
 				Creator = "Elven Scout",
 				ThumbnailPath = "res://Assets/UI/moonlit_forest.png",
 				Description = "An elven sanctuary under attack by the undead horde. Harvest timber, fortify ancient trees, and command the forest spirits to push back the darkness in this beautiful, defense-focused melee map.",
@@ -117,6 +124,7 @@ public class MapData
 			{
 				MapId = "frostbite_pass",
 				Title = "FROSTBITE PASS",
+				Version = "1.0.0",
 				Creator = "Ice Mage",
 				ThumbnailPath = "res://Assets/UI/snowy_forest_path.png",
 				Description = "Brace yourself for freezing winds and relentless siege attacks. Frostbite Pass is a highly tactical map where snow slows unit movement and avalanches can shift the battlefield layout.",
@@ -155,6 +163,7 @@ public class MapData
 			{
 				MapId = "forest_trails",
 				Title = "FOREST TRAILS",
+				Version = "1.0.0",
 				Creator = "Pathfinder",
 				ThumbnailPath = "res://Assets/UI/forest_path.png",
 				Description = "A simple yet beautiful beginner-friendly map featuring lush forests, wide lanes, and rich resource spots. Perfect for testing new strategies or practicing build orders.",
@@ -189,6 +198,12 @@ public class MapData
 				}
 			}
 		};
+
+		foreach (var m in maps)
+		{
+			m.AvailableVersions = new List<MapData> { m };
+		}
+		return maps;
 	}
 
 	public static MapData FromDto(Realm.Shared.Distribution.DiscoveryMapDto dto, string? serverBaseUrl = null)
@@ -228,39 +243,61 @@ public class MapData
 
 		var features = dto.Features != null && dto.Features.Count > 0
 			? dto.Features.ToArray()
-			: new string[] { "Custom Assets", "Verified Map", "Community Rated" };
+			: (dto.Tags != null && dto.Tags.Count > 0 ? dto.Tags.ToArray() : new string[] { "Custom Assets", "Verified Map", "Community Rated" });
 
-		int totalVotes = dto.TotalReviews > 0 ? dto.TotalReviews : 10;
-		int v5 = (int)(totalVotes * 0.7);
-		int v3 = (int)(totalVotes * 0.2);
-		int v1 = System.Math.Max(0, totalVotes - v5 - v3);
-
-		return new MapData
+		float rating = dto.RatingStars > 0 ? dto.RatingStars : (dto.AverageRating > 0 ? (float)dto.AverageRating : 5.0f);
+		int totalVotes = dto.TotalReviews;
+		int v5 = 0, v3 = 0, v1 = 0;
+		if (totalVotes > 0)
 		{
-			MapId = !string.IsNullOrEmpty(dto.MapId) ? dto.MapId : $"{dto.Title}_{dto.Version}",
+			v5 = System.Math.Clamp((int)System.Math.Round(totalVotes * System.Math.Max(0.0, (rating - 3.0) / 2.0)), 0, totalVotes);
+			v1 = System.Math.Clamp((int)System.Math.Round(totalVotes * System.Math.Max(0.0, (3.0 - rating) / 2.0)), 0, totalVotes - v5);
+			v3 = totalVotes - v5 - v1;
+		}
+
+		string version = !string.IsNullOrWhiteSpace(dto.Version) ? dto.Version.Trim() : "1.0.0";
+		string avgPlaytime = dto.PlaytimeMinutes > 0
+			? (dto.GamesPlayed > 0 ? $"{(int)System.Math.Max(1, System.Math.Round((double)dto.PlaytimeMinutes / dto.GamesPlayed))} min" : $"{dto.PlaytimeMinutes} min")
+			: "N/A";
+		string playerCount = dto.GamesPlayed > 0 ? $"{dto.GamesPlayed:N0} Played" : "New Release";
+		string completionRate = dto.GamesPlayed > 0 ? "100%" : "N/A";
+		string fileSize = !string.IsNullOrWhiteSpace(dto.FileSizeFormatted)
+			? dto.FileSizeFormatted
+			: (dto.TotalSizeBytes > 0 ? $"{dto.TotalSizeBytes / (1024.0 * 1024.0):F1} MB" : "0 MB");
+		string genre = !string.IsNullOrWhiteSpace(dto.Genre)
+			? dto.Genre
+			: (dto.Tags != null && dto.Tags.Count > 0 ? dto.Tags[0] : "Custom Map");
+
+		var mapData = new MapData
+		{
+			MapId = !string.IsNullOrEmpty(dto.MapId) ? dto.MapId : $"{dto.Title}_{version}",
 			Title = dto.Title,
+			Version = version,
 			Creator = dto.Creator,
 			ThumbnailPath = thumbPath,
 			Description = !string.IsNullOrEmpty(dto.Description) ? dto.Description : "A custom map package published to the Realm network.",
 			Screenshots = screenshots.ToArray(),
 			Features = features,
-			RatingStars = dto.RatingStars > 0 ? dto.RatingStars : 5.0f,
+			RatingStars = rating,
 			Votes5Star = $"{v5:N0} Votes",
 			Votes3Star = $"{v3:N0} Votes",
 			Votes1Star = $"{v1:N0} Votes",
-			AvgRating = $"{dto.RatingStars:F1} / 5.0",
-			AvgPlaytime = dto.PlaytimeMinutes > 0 ? $"{dto.PlaytimeMinutes} min" : "30 min",
-			PlayerCount = dto.GamesPlayed > 0 ? $"{dto.GamesPlayed} Played" : "New Release",
-			CompletionRate = "85%",
-			FileSize = !string.IsNullOrEmpty(dto.FileSizeFormatted) ? dto.FileSizeFormatted : "10 MB",
-			EngineVersion = dto.EngineVersion,
-			MaxPlayers = dto.MaxPlayers,
-			Genre = !string.IsNullOrEmpty(dto.Genre) ? dto.Genre : "Custom Map",
+			AvgRating = $"{rating:F1} / 5.0",
+			AvgPlaytime = avgPlaytime,
+			PlayerCount = playerCount,
+			CompletionRate = completionRate,
+			FileSize = fileSize,
+			EngineVersion = !string.IsNullOrWhiteSpace(dto.EngineVersion) ? dto.EngineVersion : "Godot Realm Engine v1.0",
+			MaxPlayers = !string.IsNullOrWhiteSpace(dto.MaxPlayers) ? dto.MaxPlayers : "8 Players",
+			Genre = genre,
 			Awards = dto.Awards != null && dto.Awards.Count > 0 ? dto.Awards.ToArray() : new string[]
 			{
 				"res://Assets/UI/gold_coin.png",
 				"res://Assets/UI/battle_shield.png"
 			}
 		};
+
+		mapData.AvailableVersions = new List<MapData> { mapData };
+		return mapData;
 	}
 }

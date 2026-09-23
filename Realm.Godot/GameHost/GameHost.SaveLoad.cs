@@ -146,7 +146,7 @@ public partial class GameHost
 			MaxZ = r.MaxZ
 		}).ToList();
 
-		string path = string.IsNullOrEmpty(customPath) ? "user://terrain.json" : customPath;
+		string path = string.IsNullOrEmpty(customPath) ? System.IO.Path.Combine(CurrentMapDirectory ?? MapWorkspaceService.GetDefaultWorkspaceGlobalPath(), "terrain.json") : customPath;
 		string absolutePath = ProjectSettings.GlobalizePath(path);
 		CurrentMapDirectory = System.IO.Path.GetDirectoryName(absolutePath);
 
@@ -186,7 +186,7 @@ public partial class GameHost
 		IsLoadingMap = true;
 		try
 		{
-			string path = string.IsNullOrEmpty(customPath) ? "user://terrain.json" : customPath;
+			string path = string.IsNullOrEmpty(customPath) ? System.IO.Path.Combine(CurrentMapDirectory ?? MapWorkspaceService.GetDefaultWorkspaceGlobalPath(), "terrain.json") : customPath;
 			string absolutePath = ProjectSettings.GlobalizePath(path);
 			CurrentMapDirectory = System.IO.Path.GetDirectoryName(absolutePath);
 			if (ensureGlbOptimized)

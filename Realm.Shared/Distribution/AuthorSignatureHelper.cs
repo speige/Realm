@@ -25,6 +25,14 @@ public static class AuthorSignatureHelper
         return (Convert.ToBase64String(privateBytes), Convert.ToBase64String(publicBytes));
     }
 
+    public static string GetPublicKey(string privateKeyBase64)
+    {
+        byte[] privateBytes = Convert.FromBase64String(privateKeyBase64);
+        using var key = Key.Import(Algorithm, privateBytes, KeyBlobFormat.RawPrivateKey, new KeyCreationParameters { ExportPolicy = KeyExportPolicies.AllowPlaintextExport });
+        byte[] publicBytes = key.PublicKey.Export(KeyBlobFormat.RawPublicKey);
+        return Convert.ToBase64String(publicBytes);
+    }
+
     public static string SignMessage(string privateKeyBase64, string message)
     {
         byte[] privateBytes = Convert.FromBase64String(privateKeyBase64);

@@ -4,7 +4,7 @@ render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_sc
 uniform sampler2D texture_albedo : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D texture_orm : hint_default_black, filter_linear_mipmap, repeat_enable;
 uniform bool has_orm_texture = false;
-uniform bool has_player_mask = true;
+uniform bool has_player_mask = false;
 uniform sampler2D texture_normal : hint_normal, filter_linear_mipmap, repeat_enable;
 uniform bool has_normal_texture = false;
 uniform float normal_scale = 1.0;

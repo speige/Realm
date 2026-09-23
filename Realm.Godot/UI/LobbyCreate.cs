@@ -12,13 +12,18 @@ public partial class LobbyCreate : Control
 
 	private Button _backButton;
 	private Button _createButton;
+	private Button _importMapButton;
 	private OptionButton _mapSelectButton;
+	private OptionButton _versionSelectButton;
+	private HBoxContainer _versionContainer;
+	private Label _versionLabel;
 	private RichTextLabel _briefingText;
 
 	private Label _titleLabel;
 	private Label _mapSelectLabel;
 
 	private List<MapBriefingDetails> _availableMaps = new List<MapBriefingDetails>();
+	private List<string> _availableVersions = new List<string>();
 
 	public override void _Ready()
 	{
@@ -39,6 +44,66 @@ public partial class LobbyCreate : Control
 		_briefingPanel = GetNode<PanelContainer>("CentralPanel/ContentContainer/BriefingPanel");
 		_briefingText = GetNode<RichTextLabel>("CentralPanel/ContentContainer/BriefingPanel/TextPanelWrapper/BriefingText");
 		
+		var mapSelectHBox = new HBoxContainer();
+		mapSelectHBox.Name = "MapSelectHBox";
+		mapSelectHBox.Alignment = BoxContainer.AlignmentMode.Center;
+		mapSelectHBox.AddThemeConstantOverride("separation", 10);
+		mapSelectHBox.CustomMinimumSize = new Vector2(620, 44);
+		mapSelectHBox.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
+
+		var contentContainer = _mapSelectButton.GetParent();
+		int mapSelectIndex = _mapSelectButton.GetIndex();
+		contentContainer.RemoveChild(_mapSelectButton);
+		contentContainer.AddChild(mapSelectHBox);
+		contentContainer.MoveChild(mapSelectHBox, mapSelectIndex);
+
+		_mapSelectButton.CustomMinimumSize = new Vector2(380, 44);
+		_mapSelectButton.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
+		mapSelectHBox.AddChild(_mapSelectButton);
+
+		_importMapButton = new Button();
+		_importMapButton.Name = "ImportMapButton";
+		_importMapButton.AddThemeConstantOverride("icon_max_width", 24);
+		_importMapButton.CustomMinimumSize = new Vector2(210, 44);
+		UIStyle.ApplyButtonText(_importMapButton, "📥 " + TranslationServer.Translate("IMPORT MAP (.ZIP / .7Z)"), 13);
+		_importMapButton.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		_importMapButton.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		_importMapButton.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		_importMapButton.FocusMode = FocusModeEnum.None;
+		_importMapButton.MouseFilter = MouseFilterEnum.Stop;
+		_importMapButton.MouseEntered += () => UIManager.Instance?.PlayHoverSound();
+		_importMapButton.Pressed += () =>
+		{
+			UIManager.Instance?.PlayClickSound();
+			UIManager.Instance?.PromptAndImportMapArchive((mapTitle, mapVersion) =>
+			{
+				RefreshAvailableMaps(mapTitle, mapVersion);
+			});
+		};
+		mapSelectHBox.AddChild(_importMapButton);
+
+		_versionContainer = new HBoxContainer();
+		_versionContainer.Name = "VersionContainer";
+		_versionContainer.Alignment = BoxContainer.AlignmentMode.Center;
+		_versionContainer.AddThemeConstantOverride("separation", 10);
+		_versionContainer.CustomMinimumSize = new Vector2(400, 44);
+		_versionContainer.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
+
+		_versionLabel = new Label();
+		_versionLabel.Text = Tr("VERSION:");
+		_versionLabel.VerticalAlignment = VerticalAlignment.Center;
+		_versionContainer.AddChild(_versionLabel);
+
+		_versionSelectButton = new OptionButton();
+		_versionSelectButton.Name = "VersionSelectButton";
+		_versionSelectButton.CustomMinimumSize = new Vector2(180, 44);
+		_versionSelectButton.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
+		_versionSelectButton.ItemSelected += (idx) => UIManager.Instance.PlayClickSound();
+		_versionContainer.AddChild(_versionSelectButton);
+
+		contentContainer.AddChild(_versionContainer);
+		contentContainer.MoveChild(_versionContainer, mapSelectHBox.GetIndex() + 1);
+
 		var textPanelWrapper = GetNode<PanelContainer>("CentralPanel/ContentContainer/BriefingPanel/TextPanelWrapper");
 		textPanelWrapper.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
 
@@ -55,19 +120,8 @@ public partial class LobbyCreate : Control
 
 		ApplyThemeStyles();
 
-		_availableMaps = MapInfoHelper.GetAvailableMaps();
-		_mapSelectButton.Clear();
-		foreach (var map in _availableMaps)
-		{
-			_mapSelectButton.AddItem(map.DisplayName);
-		}
-
-		_mapSelectButton.ItemSelected += OnMapSelected;
-		if (_mapSelectButton.ItemCount > 0)
-		{
-			_mapSelectButton.Selected = 0;
-			OnMapSelected(0);
-		}
+		_mapSelectButton.ItemSelected += (idx) => OnMapSelected(idx);
+		RefreshAvailableMaps();
 	}
 
 	private void ApplyThemeStyles()
@@ -94,6 +148,19 @@ public partial class LobbyCreate : Control
 		_mapSelectButton.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
 		_mapSelectButton.AddThemeColorOverride("font_pressed_color", UIStyle.ColorCyanGlow);
 		_mapSelectButton.AddThemeFontSizeOverride("font_size", 16);
+
+		_versionLabel.Text = Tr("VERSION:");
+		_versionLabel.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		_versionLabel.AddThemeFontSizeOverride("font_size", 14);
+
+		_versionSelectButton.AddThemeStyleboxOverride("normal", UIStyle.CreateDropdownStyle(false, false));
+		_versionSelectButton.AddThemeStyleboxOverride("hover", UIStyle.CreateDropdownStyle(true, false));
+		_versionSelectButton.AddThemeStyleboxOverride("pressed", UIStyle.CreateDropdownStyle(false, true));
+		_versionSelectButton.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		_versionSelectButton.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		_versionSelectButton.AddThemeColorOverride("font_hover_color", UIStyle.ColorGold);
+		_versionSelectButton.AddThemeColorOverride("font_pressed_color", UIStyle.ColorCyanGlow);
+		_versionSelectButton.AddThemeFontSizeOverride("font_size", 15);
 
 		_briefingText.AddThemeColorOverride("default_color", new Color(0.85f, 0.85f, 0.9f));
 		_briefingText.AddThemeFontSizeOverride("normal_font_size", 14);
@@ -144,6 +211,12 @@ public partial class LobbyCreate : Control
 	{
 		UIManager.Instance.PlayClickSound();
 
+		string selectedVersion = "1.0.0";
+		if (_availableVersions.Count > 0 && _versionSelectButton.Selected >= 0 && _versionSelectButton.Selected < _availableVersions.Count)
+		{
+			selectedVersion = _availableVersions[_versionSelectButton.Selected];
+		}
+
 		if (LobbyManager.Instance.IsSinglePlayer)
 		{
 			string singleMapPathName = "melee";
@@ -165,7 +238,7 @@ public partial class LobbyCreate : Control
 			}
 
 			_createButton.Disabled = true;
-			LobbyManager.Instance.HostSinglePlayerGame(singleMapPathName, singleMapDisplayName);
+			LobbyManager.Instance.HostSinglePlayerGame(singleMapPathName, singleMapDisplayName, selectedVersion);
 			_createButton.Disabled = false;
 			return;
 		}
@@ -196,7 +269,7 @@ public partial class LobbyCreate : Control
 		}
 
 		_createButton.Disabled = true;
-		bool success = await LobbyManager.Instance.HostLobbyAsync(mapPathName, mapDisplayName);
+		bool success = await LobbyManager.Instance.HostLobbyAsync(mapPathName, mapDisplayName, selectedVersion);
 		_createButton.Disabled = false;
 
 		if (success)
@@ -207,6 +280,8 @@ public partial class LobbyCreate : Control
 		{
 			UIManager.Instance.PlayWarningSound();
 			GD.PrintErr("[LobbyCreate] Failed to host lobby.");
+			string errorMsg = LobbyManager.Instance.LastHostError ?? Tr("Failed to host lobby on the registry server.");
+			ShowHostErrorModal(errorMsg);
 		}
 	}
 
@@ -370,12 +445,130 @@ public partial class LobbyCreate : Control
 		vbox.AddChild(okBtn);
 	}
 
+	private void ShowHostErrorModal(string errorMessage)
+	{
+		var warningPopup = new Panel();
+		warningPopup.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		warningPopup.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		AddChild(warningPopup);
+
+		var cardPanel = new Panel();
+		cardPanel.CustomMinimumSize = new Vector2(480, 240);
+		cardPanel.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
+		cardPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		warningPopup.AddChild(cardPanel);
+
+		var vbox = new VBoxContainer();
+		vbox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		vbox.CustomMinimumSize = new Vector2(440, 200);
+		vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		vbox.SizeFlagsVertical = SizeFlags.ExpandFill;
+		cardPanel.AddChild(vbox);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 20) });
+
+		var titleLabel = new Label();
+		UIStyle.ApplyTitle(titleLabel, Tr("LOBBY CREATION ERROR"), 20);
+		titleLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.35f, 0.35f));
+		vbox.AddChild(titleLabel);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 10) });
+
+		var descLabel = new Label();
+		descLabel.Text = errorMessage;
+		descLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		descLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+		descLabel.AddThemeFontSizeOverride("font_size", 14);
+		descLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
+		vbox.AddChild(descLabel);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 15) });
+
+		var okBtn = new Button();
+		okBtn.Flat = false;
+		okBtn.AddThemeConstantOverride("icon_max_width", 0);
+		okBtn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		okBtn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		okBtn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		okBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		UIStyle.ApplyButtonText(okBtn, Tr("OK"), 14);
+		okBtn.CustomMinimumSize = new Vector2(160, 40);
+		okBtn.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+		okBtn.Pressed += () =>
+		{
+			UIManager.Instance.PlayClickSound();
+			warningPopup.QueueFree();
+		};
+		vbox.AddChild(okBtn);
+	}
+
+	private void RefreshAvailableMaps(string? selectMapName = null, string? selectMapVersion = null)
+	{
+		_availableMaps = MapInfoHelper.GetAvailableMaps();
+		_mapSelectButton.Clear();
+		int targetIndex = 0;
+
+		for (int i = 0; i < _availableMaps.Count; i++)
+		{
+			var map = _availableMaps[i];
+			_mapSelectButton.AddItem(map.DisplayName);
+
+			if (!string.IsNullOrEmpty(selectMapName) &&
+			    (string.Equals(map.DisplayName, selectMapName, StringComparison.OrdinalIgnoreCase) ||
+			     string.Equals(map.PathName, selectMapName, StringComparison.OrdinalIgnoreCase)))
+			{
+				targetIndex = i;
+			}
+		}
+
+		if (_mapSelectButton.ItemCount > 0)
+		{
+			_mapSelectButton.Selected = targetIndex;
+			OnMapSelected(targetIndex, selectMapVersion);
+		}
+	}
+
 	private void OnMapSelected(long index)
 	{
-		UIManager.Instance.PlayClickSound();
+		OnMapSelected(index, null);
+	}
+
+	private void OnMapSelected(long index, string? targetVersion)
+	{
+		UIManager.Instance?.PlayClickSound();
 		if (index >= 0 && index < _availableMaps.Count)
 		{
-			_briefingText.Text = _availableMaps[(int)index].Description;
+			var selectedMap = _availableMaps[(int)index];
+			_briefingText.Text = selectedMap.Description;
+			RefreshVersionsForSelectedMap(selectedMap, targetVersion);
+		}
+	}
+
+	private void RefreshVersionsForSelectedMap(MapBriefingDetails selectedMap, string? targetVersion = null)
+	{
+		_availableVersions = MapInfoHelper.GetDownloadedVersionsForMap(selectedMap.PathName, selectedMap.DisplayName);
+		_versionSelectButton.Clear();
+		int selectedVersionIdx = 0;
+
+		for (int i = 0; i < _availableVersions.Count; i++)
+		{
+			string ver = _availableVersions[i];
+			string label = !string.IsNullOrWhiteSpace(ver) ? $"v{ver.TrimStart('v', 'V')}" : "v1.0.0";
+			_versionSelectButton.AddItem(label, i);
+
+			if (!string.IsNullOrEmpty(targetVersion))
+			{
+				string cleanTarget = targetVersion.TrimStart('v', 'V');
+				if (ver.Contains(cleanTarget, StringComparison.OrdinalIgnoreCase) || label.Contains(cleanTarget, StringComparison.OrdinalIgnoreCase))
+				{
+					selectedVersionIdx = i;
+				}
+			}
+		}
+
+		if (_versionSelectButton.ItemCount > 0)
+		{
+			_versionSelectButton.Selected = selectedVersionIdx;
 		}
 	}
 

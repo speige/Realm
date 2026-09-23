@@ -1,6 +1,5 @@
 using Godot;
 using LiteDB;
-using SharpCompress.Archives;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -71,7 +70,17 @@ public class AssetIndexService : IDisposable
 
 	public AssetIndexService()
 	{
-		string userDirectory = ProjectSettings.GlobalizePath("user://");
+		string userDirectory;
+		if (MapAssetManager.IsGodotEngineRunning)
+		{
+			userDirectory = ProjectSettings.GlobalizePath("user://");
+		}
+		else
+		{
+			string appData = System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData);
+			userDirectory = Path.Combine(appData, "Godot", "app_userdata", "Realm");
+		}
+
 		if (!Directory.Exists(userDirectory))
 		{
 			Directory.CreateDirectory(userDirectory);
@@ -148,7 +157,7 @@ public class AssetIndexService : IDisposable
 	{
 		lock (_syncLock)
 		{
-			string legacyArchive = NormalizePath(MapAssetManager.GlobalArchiveFile);
+			string legacyArchive = NormalizePath(Path.Combine(MapAssetManager.GlobalArchiveDirectory, "global_assets.7z"));
 			var forbiddenFolders = _folderCollection.FindAll()
 				.Where(f => IsForbiddenPath(f.DirectoryPath) ||
 							string.Equals(f.DirectoryPath, legacyArchive, StringComparison.OrdinalIgnoreCase) ||
@@ -194,12 +203,20 @@ public class AssetIndexService : IDisposable
 				_assetCollection.DeleteMany(Query.In("_id", orphanedAssets));
 			}
 
+			var orphanedPackages = _mapPackageCollection.FindAll()
+				.Where(p => string.IsNullOrWhiteSpace(p.ManifestPath) || !File.Exists(p.ManifestPath))
+				.Select(p => (BsonValue)p.Id)
+				.ToArray();
+			if (orphanedPackages.Length > 0)
+			{
+				_mapPackageCollection.DeleteMany(Query.In("_id", orphanedPackages));
+			}
+
 			if (Directory.Exists(MapAssetManager.GlobalArchiveDirectory))
 			{
-				var manifestFiles = Directory.GetFiles(MapAssetManager.GlobalArchiveDirectory, "*manifest*.json");
+				var manifestFiles = Directory.GetFiles(MapAssetManager.GlobalArchiveDirectory, "manifest.json", SearchOption.AllDirectories);
 				foreach (var file in manifestFiles)
 				{
-					if (Path.GetFileName(file) == "pck_cache.json" || Path.GetFileName(file) == "servers.json") continue;
 					try
 					{
 						var manifest = MapManifest.LoadFromFile(file);
@@ -327,7 +344,7 @@ public class AssetIndexService : IDisposable
 		lock (_syncLock)
 		{
 			return _mapPackageCollection.FindAll()
-				.Where(p => !p.IsP2P)
+				.Where(p => !p.IsP2P && !string.IsNullOrWhiteSpace(p.ManifestPath) && File.Exists(p.ManifestPath))
 				.OrderBy(p => p.MapName, StringComparer.OrdinalIgnoreCase)
 				.ThenByDescending(p => p.MapVersion, StringComparer.OrdinalIgnoreCase)
 				.ToList();

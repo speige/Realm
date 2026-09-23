@@ -85,14 +85,14 @@ Your public IP address is needed for players to connect. You can retrieve it usi
   ```
 
 ### 2. Request Seed Node Verification
-To protect the network from malicious tampering and rogue IP injection, official registry endpoints and admin keys are managed securely via GitHub Secrets embedded during official release builds.
+To protect the network from malicious tampering and rogue IP injection, official registry endpoints and admin keys are managed securely via GitHub repository variables embedded during official release builds.
 
 To have your seed node registered in the official registry:
 1. Open an Issue or Registration Request on the project repository with:
    - Your static public IP or persistent domain name (e.g. `http://<YOUR_STATIC_PUBLIC_IP>:5000`)
    - Your server region / hosting location (e.g., `us-east`, `eu-central`)
    - Proof of uptime and reachability on port 5000
-2. Maintainers will perform connectivity checks and add your node to the official `SERVERS_JSON` registry secret.
+2. Maintainers will perform connectivity checks and add your node to the official `SERVERS_JSON` registry variable.
 3. Once verified, your node will be included in official release builds and peer-to-peer discovery.
 
 

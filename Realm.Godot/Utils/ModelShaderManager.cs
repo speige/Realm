@@ -252,6 +252,7 @@ public static class ModelShaderManager
 		int step = totalPixels > 262144 ? 4 : 1;
 		int stride = channels * step;
 		int maskCount = 0;
+		int unmaskCount = 0;
 
 		for (int i = 0; i < data.Length; i += stride)
 		{
@@ -259,16 +260,16 @@ public static class ModelShaderManager
 			if (r > 32)
 			{
 				maskCount++;
-				if (maskCount > 5)
-				{
-					_playerMaskCheckCache[ormId] = true;
-					return true;
-				}
+			}
+			else
+			{
+				unmaskCount++;
 			}
 		}
 
-		_playerMaskCheckCache[ormId] = false;
-		return false;
+		bool hasMask = maskCount > 5 && unmaskCount > 5;
+		_playerMaskCheckCache[ormId] = hasMask;
+		return hasMask;
 	}
 
 	public static bool ModelHasPlayerMask(Node rootNode)
@@ -337,7 +338,7 @@ public static class ModelShaderManager
 
 		foreach (var child in node.GetChildren())
 		{
-			if (child is Node childNode && ModelHasPlayerMaskRecursive(childNode))
+			if (child is Node childNode && !IsAttachmentNode(childNode) && ModelHasPlayerMaskRecursive(childNode))
 			{
 				return true;
 			}
@@ -528,6 +529,17 @@ public static class ModelShaderManager
 		return material;
 	}
 
+	public static bool IsAttachmentNode(Node node)
+	{
+		if (node == null || !GodotObject.IsInstanceValid(node)) return false;
+		if (node.HasMeta("AttachmentId") || node.HasMeta("CleanAttachmentId")) return true;
+		string nodeName = node.Name.ToString();
+		return nodeName.StartsWith("Att_", StringComparison.OrdinalIgnoreCase)
+			|| nodeName.StartsWith("AttVisual_", StringComparison.OrdinalIgnoreCase)
+			|| nodeName.StartsWith("BoneAttachment_", StringComparison.OrdinalIgnoreCase)
+			|| nodeName.StartsWith("SocketAttachment_", StringComparison.OrdinalIgnoreCase);
+	}
+
 	private static bool IsExcludedMesh(GeometryInstance3D geomInst)
 	{
 		if (geomInst == null) return true;
@@ -590,7 +602,7 @@ public static class ModelShaderManager
 
 		foreach (var child in node.GetChildren())
 		{
-			if (child is Node childNode)
+			if (child is Node childNode && !IsAttachmentNode(childNode))
 			{
 				ApplyPlayerColorShaderRecursive(childNode, playerColor, ignorePlayerColor, normalizeLuminance, isUnitOrBuilding);
 			}
@@ -616,7 +628,7 @@ public static class ModelShaderManager
 
 		foreach (var child in node.GetChildren())
 		{
-			if (child is Node childNode)
+			if (child is Node childNode && !IsAttachmentNode(childNode))
 			{
 				SetUnitReadabilityRecursive(childNode, ambientBoost, rimIntensity);
 			}
@@ -679,7 +691,7 @@ public static class ModelShaderManager
 
 		foreach (var child in node.GetChildren())
 		{
-			if (child is Node childNode)
+			if (child is Node childNode && !IsAttachmentNode(childNode))
 			{
 				SetPlayerColorRecursive(childNode, playerColor);
 			}
@@ -704,7 +716,7 @@ public static class ModelShaderManager
 
 		foreach (var child in node.GetChildren())
 		{
-			if (child is Node childNode)
+			if (child is Node childNode && !IsAttachmentNode(childNode))
 			{
 				SetIgnorePlayerColorRecursive(childNode, ignorePlayerColor);
 			}

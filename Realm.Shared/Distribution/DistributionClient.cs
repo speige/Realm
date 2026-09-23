@@ -19,9 +19,9 @@ public class DistributionClient
     private readonly string _registryServerUrl;
     private readonly TokenBucketThrottle? _throttle;
 
-    public DistributionClient(string registryServerUrl = "http://127.0.0.1:5000", HttpClient? httpClient = null, TokenBucketThrottle? throttle = null)
+    public DistributionClient(string? registryServerUrl = null, HttpClient? httpClient = null, TokenBucketThrottle? throttle = null)
     {
-        _registryServerUrl = registryServerUrl.TrimEnd('/');
+        _registryServerUrl = (string.IsNullOrWhiteSpace(registryServerUrl) ? ServersConfigHelper.GetDefaultServerUrl() : registryServerUrl).TrimEnd('/');
         _httpClient = httpClient ?? new HttpClient();
         _throttle = throttle;
     }
@@ -363,7 +363,19 @@ public class DistributionClient
                         string? metadataHeader = null;
                         if (response.Headers.TryGetValues("X-Asset-Metadata", out var metaValues))
                         {
-                            metadataHeader = metaValues.FirstOrDefault();
+                            string? rawHeader = metaValues.FirstOrDefault();
+                            if (!string.IsNullOrWhiteSpace(rawHeader))
+                            {
+                                try
+                                {
+                                    byte[] metaBytes = Convert.FromBase64String(rawHeader);
+                                    metadataHeader = Encoding.UTF8.GetString(metaBytes);
+                                }
+                                catch
+                                {
+                                    metadataHeader = rawHeader;
+                                }
+                            }
                         }
 
                         var storeResult = targetStorage.StoreAsset(downloadedBytes, extension, metadataHeader);
@@ -531,6 +543,109 @@ public class DistributionClient
         {
             return false;
         }
+    }
+
+    public async Task<RemoveManifestResponseDto> RemoveManifestVersionAsync(string mapTitle, string mapVersion, string adminPrivateKeyBase64, CancellationToken cancellationToken = default)
+    {
+        string url = $"{_registryServerUrl}/api/admin/remove_manifest";
+        string adminPublicKey = AuthorSignatureHelper.GetPublicKey(adminPrivateKeyBase64);
+        string payload = $"remove_manifest:{mapTitle.Trim().ToLowerInvariant()}:{mapVersion.Trim().ToLowerInvariant()}";
+        string signature = AuthorSignatureHelper.SignMessage(adminPrivateKeyBase64, payload);
+        string bypassToken = AdminBypassAuth.CreateBypassToken(adminPrivateKeyBase64, mapTitle.Trim(), mapVersion.Trim());
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.Add("X-Admin-Bypass", bypassToken);
+        request.Headers.Add("X-Admin-PublicKey", adminPublicKey);
+        request.Headers.Add("X-Cluster-Signature", signature);
+
+        var body = new AdminRemoveManifestRequest
+        {
+            MapTitle = mapTitle.Trim(),
+            MapVersion = mapVersion.Trim(),
+            AdminPublicKey = adminPublicKey,
+            Signature = signature
+        };
+        request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+        try
+        {
+            var response = await _httpClient.SendAsync(request, cancellationToken);
+            string json = await response.Content.ReadAsStringAsync(cancellationToken);
+            var result = JsonSerializer.Deserialize<RemoveManifestResponseDto>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return result ?? new RemoveManifestResponseDto
+            {
+                Success = response.IsSuccessStatusCode,
+                MapTitle = mapTitle,
+                MapVersion = mapVersion,
+                Message = json
+            };
+        }
+        catch (Exception ex)
+        {
+            return new RemoveManifestResponseDto
+            {
+                Success = false,
+                MapTitle = mapTitle,
+                MapVersion = mapVersion,
+                Message = ex.Message
+            };
+        }
+    }
+
+    public async Task<RemoveManifestResponseDto> RemoveAllManifestVersionsAsync(string mapTitle, string adminPrivateKeyBase64, CancellationToken cancellationToken = default)
+    {
+        string url = $"{_registryServerUrl}/api/admin/remove_manifest";
+        string adminPublicKey = AuthorSignatureHelper.GetPublicKey(adminPrivateKeyBase64);
+        string payload = $"remove_manifest:{mapTitle.Trim().ToLowerInvariant()}:all";
+        string signature = AuthorSignatureHelper.SignMessage(adminPrivateKeyBase64, payload);
+        string bypassToken = AdminBypassAuth.CreateBypassToken(adminPrivateKeyBase64, mapTitle.Trim(), "all");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.Add("X-Admin-Bypass", bypassToken);
+        request.Headers.Add("X-Admin-PublicKey", adminPublicKey);
+        request.Headers.Add("X-Cluster-Signature", signature);
+
+        var body = new AdminRemoveManifestRequest
+        {
+            MapTitle = mapTitle.Trim(),
+            MapVersion = null,
+            AdminPublicKey = adminPublicKey,
+            Signature = signature
+        };
+        request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+        try
+        {
+            var response = await _httpClient.SendAsync(request, cancellationToken);
+            string json = await response.Content.ReadAsStringAsync(cancellationToken);
+            var result = JsonSerializer.Deserialize<RemoveManifestResponseDto>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return result ?? new RemoveManifestResponseDto
+            {
+                Success = response.IsSuccessStatusCode,
+                MapTitle = mapTitle,
+                AllVersionsRemoved = true,
+                Message = json
+            };
+        }
+        catch (Exception ex)
+        {
+            return new RemoveManifestResponseDto
+            {
+                Success = false,
+                MapTitle = mapTitle,
+                AllVersionsRemoved = true,
+                Message = ex.Message
+            };
+        }
+    }
+
+    public async Task<RemoveManifestResponseDto> RemoveManifestAsync(string mapTitle, string? mapVersion, string adminPrivateKeyBase64, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(mapVersion))
+        {
+            return await RemoveAllManifestVersionsAsync(mapTitle, adminPrivateKeyBase64, cancellationToken);
+        }
+        return await RemoveManifestVersionAsync(mapTitle, mapVersion, adminPrivateKeyBase64, cancellationToken);
     }
 
     public async Task<CasPruneResponseDto> PruneServerCasAsync(string adminPrivateKeyBase64, CancellationToken cancellationToken = default)

@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 using Arch.Core;
 using Godot;
 using Realm.Ecs.Common;
@@ -203,7 +204,11 @@ public class SaveLoadService
 			else
 			{
 				int maxBackups = EditorSettingsDialog.CurrentSettings?.MaxBackupSnapshots ?? 3;
-				CreateWorkspaceBackup(directory, maxBackups);
+				if (maxBackups > 0)
+				{
+					string backupSourceDir = directory;
+					_ = Task.Run(() => CreateWorkspaceBackup(backupSourceDir, maxBackups));
+				}
 			}
 
 			string heightsPath = Path.Combine(directory, "terrain_heights.exr");
@@ -1135,7 +1140,14 @@ public class SaveLoadService
 
 		try
 		{
-			string wsName = Path.GetFileName(workspacePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+			string fullWsPath = Path.GetFullPath(workspacePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			string fullUserDataDir = Path.GetFullPath(OS.GetUserDataDir()).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			if (string.Equals(fullWsPath, fullUserDataDir, StringComparison.OrdinalIgnoreCase))
+			{
+				return string.Empty;
+			}
+
+			string wsName = Path.GetFileName(fullWsPath);
 			if (string.IsNullOrEmpty(wsName)) wsName = MapWorkspaceService.DefaultWorkspaceFolder;
 
 			string backupsRoot = Path.Combine(OS.GetUserDataDir(), "map_backups", wsName);
@@ -1149,7 +1161,7 @@ public class SaveLoadService
 
 			Directory.CreateDirectory(targetBackupDir);
 
-			CopyDirectoryContentsSafe(workspacePath, targetBackupDir);
+			CopyDirectoryContentsSafe(workspacePath, targetBackupDir, backupsRoot);
 
 			PruneOldBackups(backupsRoot, maxBackups);
 
@@ -1162,29 +1174,37 @@ public class SaveLoadService
 		}
 	}
 
-	private static void CopyDirectoryContentsSafe(string sourceDir, string targetDir)
+	private static void CopyDirectoryContentsSafe(string sourceDir, string targetDir, string backupsRoot = null)
 	{
 		var source = new DirectoryInfo(sourceDir);
 		if (!source.Exists) return;
 
 		var excludedFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
 		{
-			".git", "bin", "obj", ".godot", ".vs", ".vscode"
+			".git", "bin", "obj", ".godot", ".vs", ".vscode", "map_backups", "backups", ".dotnet", ".wasi", ".sidecarcache", ".cache"
 		};
 
-		foreach (var dir in source.GetDirectories())
-		{
-			if (excludedFolders.Contains(dir.Name)) continue;
-			string destSubDir = Path.Combine(targetDir, dir.Name);
-			Directory.CreateDirectory(destSubDir);
-			CopyDirectoryContentsSafe(dir.FullName, destSubDir);
-		}
+		Directory.CreateDirectory(targetDir);
 
 		foreach (var file in source.GetFiles())
 		{
 			if (file.Extension.Equals(".tmp", StringComparison.OrdinalIgnoreCase)) continue;
 			string destFile = Path.Combine(targetDir, file.Name);
 			file.CopyTo(destFile, true);
+		}
+
+		foreach (var dir in source.GetDirectories())
+		{
+			if (excludedFolders.Contains(dir.Name)) continue;
+			if (!string.IsNullOrEmpty(backupsRoot) &&
+				(string.Equals(dir.FullName, backupsRoot, StringComparison.OrdinalIgnoreCase) ||
+				 dir.FullName.StartsWith(backupsRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
+			{
+				continue;
+			}
+
+			string destSubDir = Path.Combine(targetDir, dir.Name);
+			CopyDirectoryContentsSafe(dir.FullName, destSubDir, backupsRoot);
 		}
 	}
 
@@ -1507,6 +1527,16 @@ public class SaveLoadService
 		AddTypeMembersToSet(typeof(Realm.Ecs.Definitions.MapProperties), set);
 		set.Add(nameof(Realm.Ecs.Definitions.MapProperties));
 
+		foreach (var prop in typeof(MapMetadata).GetProperties(BindingFlags.Public | BindingFlags.Instance))
+		{
+			set.Add(prop.Name);
+			var jsonAttr = prop.GetCustomAttribute<System.Text.Json.Serialization.JsonPropertyNameAttribute>();
+			if (jsonAttr != null && !string.IsNullOrEmpty(jsonAttr.Name))
+			{
+				set.Add(jsonAttr.Name);
+			}
+		}
+
 		foreach (var field in typeof(GameHost).GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
 		{
 			if (field.Name.StartsWith("Model", StringComparison.OrdinalIgnoreCase))
@@ -1522,6 +1552,19 @@ public class SaveLoadService
 		set.Add("decals");
 		set.Add("vfx_spritesheets");
 		set.Add("noise_textures");
+		set.Add("icons");
+		set.Add("skyboxes");
+		set.Add("ribbons");
+		set.Add("CustomUnits");
+		set.Add("CustomBuildings");
+		set.Add("CustomResources");
+		set.Add("CustomProps");
+		set.Add("CustomAbilities");
+		set.Add("CustomWeapons");
+		set.Add("CustomUpgrades");
+		set.Add("CustomItems");
+		set.Add("CustomAttachments");
+		set.Add("CustomVfx");
 
 		Type[] entityTypes = new[]
 		{

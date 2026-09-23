@@ -1080,11 +1080,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         </div>
                     </div>
                     <div class="form-section">
-                        <h3>Changelog & Versioning</h3>
-                        <div class="form-group">
-                            <label for="prop-Version">Map Version</label>
-                            <input type="text" id="prop-Version" placeholder="e.g. 1.0.0" />
-                        </div>
+                        <h3>Changelog</h3>
                         <div id="changelog-container" class="list-editor-container">
                             <div id="changelog-list"></div>
                             <button type="button" id="add-changelog-btn" class="btn secondary-btn">+ Add Changelog Entry</button>

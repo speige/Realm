@@ -225,13 +225,20 @@ public partial class LobbyRoom : Control
 		_briefingLabel.AddThemeColorOverride("default_color", new Color(0.85f, 0.85f, 0.9f));
 
 
-		string[] headers = { "PlayersPanel/VBoxContainer/TableHeader/TeamCol", "PlayersPanel/VBoxContainer/TableHeader/ColorCol", 
-							 "PlayersPanel/VBoxContainer/TableHeader/NameCol", "PlayersPanel/VBoxContainer/TableHeader/FactionCol" };
+		string[] headers = { "PlayersPanel/VBoxContainer/TableHeader/ReadyCol",
+							 "PlayersPanel/VBoxContainer/TableHeader/TeamCol",
+							 "PlayersPanel/VBoxContainer/TableHeader/ColorCol", 
+							 "PlayersPanel/VBoxContainer/TableHeader/NameCol",
+							 "PlayersPanel/VBoxContainer/TableHeader/FactionCol" };
 		foreach (var path in headers)
 		{
-			var lbl = GetNode<Label>(path);
-			lbl.AddThemeColorOverride("font_color", UIStyle.ColorGold);
-			lbl.AddThemeFontSizeOverride("font_size", 15);
+			var lbl = GetNodeOrNull<Label>(path);
+			if (lbl != null)
+			{
+				lbl.Text = Tr(lbl.Text);
+				lbl.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+				lbl.AddThemeFontSizeOverride("font_size", 15);
+			}
 		}
 
 
@@ -329,6 +336,12 @@ public partial class LobbyRoom : Control
 		{
 			_startButton.Disconnect(Button.SignalName.Pressed, pressedCallable);
 		}
+
+		var readyToggleCallable = Callable.From(OnClientReadyTogglePressed);
+		if (_startButton.IsConnected(Button.SignalName.Pressed, readyToggleCallable))
+		{
+			_startButton.Disconnect(Button.SignalName.Pressed, readyToggleCallable);
+		}
 		
 		if (LobbyManager.Instance.IsHost)
 		{
@@ -338,8 +351,21 @@ public partial class LobbyRoom : Control
 		}
 		else
 		{
-			UIStyle.ApplyButtonText(_startButton, "WAITING FOR HOST...", 18);
-			_startButton.Disabled = true;
+			string activeMap = LobbyManager.Instance.ActiveMapName ?? "";
+			bool isMapReady = !string.IsNullOrEmpty(activeMap) && MapAssetManager.IsMapDownloaded(activeMap);
+			if (!isMapReady)
+			{
+				UIStyle.ApplyButtonText(_startButton, "DOWNLOADING MAP...", 18);
+				_startButton.Disabled = true;
+			}
+			else
+			{
+				var localPlayer = LobbyManager.Instance.LocalPlayer;
+				bool isReady = localPlayer != null && localPlayer.IsReady;
+				UIStyle.ApplyButtonText(_startButton, isReady ? "NOT READY" : "READY", 22);
+				_startButton.Disabled = false;
+				_startButton.Pressed += OnClientReadyTogglePressed;
+			}
 		}
 		
 		var mouseEnteredCallable = Callable.From(OnStartButtonMouseEntered);
@@ -348,6 +374,19 @@ public partial class LobbyRoom : Control
 			_startButton.Disconnect(Control.SignalName.MouseEntered, mouseEnteredCallable);
 		}
 		_startButton.MouseEntered += OnStartButtonMouseEntered;
+	}
+
+	private void OnClientReadyTogglePressed()
+	{
+		UIManager.Instance.PlayClickSound();
+		var localPlayer = LobbyManager.Instance.LocalPlayer;
+		if (localPlayer != null)
+		{
+			bool newReady = !localPlayer.IsReady;
+			localPlayer.IsReady = newReady;
+			LobbyManager.Instance.UpdateReadyState(localPlayer.PeerId, newReady);
+			SetupStartButton();
+		}
 	}
 
 	
@@ -572,16 +611,42 @@ public partial class LobbyRoom : Control
 	private void OnActiveMapChanged(string mapName)
 	{
 		UpdateSelectedMapUI();
+		if (!LobbyManager.Instance.IsHost && _downloadProgress != null && _downloadLabel != null)
+		{
+			if (MapAssetManager.IsMapDownloaded(mapName))
+			{
+				_downloadProgress.Value = 100.0f;
+				_downloadLabel.Text = Tr("Map package ready.");
+				_downloadLabel.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+			}
+			else
+			{
+				_downloadProgress.Value = 0.0f;
+				_downloadLabel.Text = Tr("Checking map package...");
+				_downloadLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+			}
+		}
+		SetupStartButton();
 	}
 
 
-		private async void VerifyMapAuthorship(string mapName)
+	private async void VerifyMapAuthorship(string mapName)
 	{
 		_authorshipWarningLabel.Visible = false;
 		_primaryAuthorLabel.Text = Tr("Author: Unknown");
 		_otherAuthorsList.Clear();
 		
-		string mapJsonPath = ProjectSettings.GlobalizePath("user://maps/" + mapName + "/map.json");
+		string? manifestPath = MapAssetManager.FindManifestPath(mapName);
+		string mapDir = manifestPath != null ? System.IO.Path.GetDirectoryName(manifestPath)! : ProjectSettings.GlobalizePath("user://maps/" + mapName);
+		string mapJsonPath = System.IO.Path.Combine(mapDir, "metadata.json");
+		if (!System.IO.File.Exists(mapJsonPath))
+		{
+			mapJsonPath = System.IO.Path.Combine(mapDir, "map.json");
+		}
+		if (!System.IO.File.Exists(mapJsonPath))
+		{
+			mapJsonPath = System.IO.Path.Combine(mapDir, "manifest.json");
+		}
 		if (!System.IO.File.Exists(mapJsonPath))
 		{
 			return; 
@@ -591,13 +656,24 @@ public partial class LobbyRoom : Control
 		{
 			string jsonContent = System.IO.File.ReadAllText(mapJsonPath);
 			var mapDoc = JsonNode.Parse(jsonContent);
-			if (mapDoc != null && mapDoc["Contributors"] is JsonArray contArr)
+			if (mapDoc != null)
 			{
-				foreach (var node in contArr)
+				if (mapDoc["Contributors"] is JsonArray contArr)
 				{
-					if (node != null)
+					foreach (var node in contArr)
 					{
-						_otherAuthorsList.Add(node.GetValue<string>());
+						if (node != null)
+						{
+							_otherAuthorsList.Add(node.GetValue<string>());
+						}
+					}
+				}
+				else if (mapDoc["Author"] != null)
+				{
+					string auth = mapDoc["Author"]!.ToString();
+					if (!string.IsNullOrEmpty(auth))
+					{
+						_primaryAuthorLabel.Text = Tr("Author:") + " " + auth;
 					}
 				}
 			}
@@ -882,7 +958,9 @@ private void UpdateSelectedMapUI()
 
 	private PanelContainer CreatePlayerRow(LobbyManager.PlayerInfo p)
 	{
-		bool isLocalPlayer = p.PeerId == Multiplayer.GetUniqueId() || (p.PeerId == 1 && LobbyManager.Instance.IsHost && Multiplayer.GetUniqueId() == 1);
+		bool isLocalPlayer = (LobbyManager.Instance.LocalPlayer != null && p.PeerId == LobbyManager.Instance.LocalPlayer.PeerId) ||
+		                     (LobbyManager.Instance.IsHost && p.PeerId == 1) ||
+		                     (p.PeerId == Multiplayer.GetUniqueId());
 
 		var panel = new PanelContainer();
 		panel.CustomMinimumSize = new Vector2(0, 52);
@@ -900,20 +978,29 @@ private void UpdateSelectedMapUI()
 		var hBox = new HBoxContainer();
 		panel.AddChild(hBox);
 
-		if (p.PeerId >= 1)
+		if (p.PeerId >= 1 || isLocalPlayer)
 		{
 			var readyCheck = new CheckBox();
 			readyCheck.Name = "ReadyCheck";
 			readyCheck.Text = Tr("READY  ");
 			readyCheck.ButtonPressed = p.IsReady;
 			readyCheck.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+			readyCheck.AddThemeConstantOverride("icon_max_width", 20);
+			UIStyle.ApplyCheckboxStyle(readyCheck);
 
 			if (isLocalPlayer)
 			{
+				readyCheck.Disabled = false;
 				readyCheck.Toggled += (toggled) =>
 				{
 					UIManager.Instance.PlayClickSound();
+					p.IsReady = toggled;
+					if (LobbyManager.Instance.LocalPlayer != null && LobbyManager.Instance.LocalPlayer.PeerId == p.PeerId)
+					{
+						LobbyManager.Instance.LocalPlayer.IsReady = toggled;
+					}
 					LobbyManager.Instance.UpdateReadyState(p.PeerId, toggled);
+					SetupStartButton();
 				};
 			}
 			else
@@ -1175,10 +1262,18 @@ private void UpdateSelectedMapUI()
 		var hBox = row.GetChildCount() > 0 ? row.GetChild(0) as HBoxContainer : null;
 		if (hBox == null) return;
 
+		bool isLocalPlayer = (LobbyManager.Instance.LocalPlayer != null && p.PeerId == LobbyManager.Instance.LocalPlayer.PeerId) ||
+		                     (LobbyManager.Instance.IsHost && p.PeerId == 1) ||
+		                     (p.PeerId == Multiplayer.GetUniqueId());
+
 		var readyCheck = hBox.GetNodeOrNull<CheckBox>("ReadyCheck");
-		if (readyCheck != null && readyCheck.ButtonPressed != p.IsReady)
+		if (readyCheck != null)
 		{
-			readyCheck.SetPressedNoSignal(p.IsReady);
+			if (readyCheck.ButtonPressed != p.IsReady)
+			{
+				readyCheck.SetPressedNoSignal(p.IsReady);
+			}
+			readyCheck.Disabled = !isLocalPlayer;
 		}
 
 		var optTeam = hBox.GetNodeOrNull<OptionButton>("OptTeam");
@@ -1362,15 +1457,19 @@ private void UpdateSelectedMapUI()
 		_downloadProgress.AddThemeFontSizeOverride("font_size", 12);
 		AddChild(_downloadProgress);
 
+		bool isReady = !string.IsNullOrEmpty(LobbyManager.Instance.ActiveMapName) && MapAssetManager.IsMapDownloaded(LobbyManager.Instance.ActiveMapName);
+		if (isReady)
+		{
+			_downloadProgress.Value = 100.0f;
+			_downloadLabel.Text = Tr("Map package ready.");
+			_downloadLabel.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+		}
 
 		LobbyManager.Instance.MapDownloadProgressChanged += OnMapDownloadProgress;
 		LobbyManager.Instance.MapDownloadCompleted += OnMapDownloadCompleted;
 		LobbyManager.Instance.MapDownloadFailed += OnMapDownloadFailed;
-		
 
-		_startButton.Disabled = true;
-		_startButton.Text = Tr("WAITING FOR HOST");
-		_startButton.AddThemeColorOverride("font_disabled_color", new Color(0.5f, 0.5f, 0.5f));
+		SetupStartButton();
 	}
 
 	private void OnMapDownloadProgress(float progress)
@@ -1396,6 +1495,7 @@ private void UpdateSelectedMapUI()
 			_downloadLabel.Text = Tr("Map package ready.");
 			_downloadLabel.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
 		}
+		SetupStartButton();
 	}
 
 	private void OnMapDownloadFailed()

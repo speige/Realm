@@ -101,13 +101,20 @@ public class PeerSeederManager
             string dir = MapAssetManager.GlobalArchiveDirectory;
             if (Directory.Exists(dir))
             {
-                var files = Directory.GetFiles(dir, "*_manifest.json");
-                foreach (var file in files)
+                var manifestFiles = Directory.GetFiles(dir, "manifest.json", SearchOption.AllDirectories);
+                foreach (var file in manifestFiles)
                 {
-                    string name = Path.GetFileName(file);
-                    if (name == "downloaded_map_manifest.json") continue;
-                    string mapId = name.Substring(0, name.Length - "_manifest.json".Length);
-                    mapIds.Add(mapId);
+                    try
+                    {
+                        var manifest = MapManifest.LoadFromFile(file);
+                        if (manifest != null && !string.IsNullOrWhiteSpace(manifest.MapName))
+                        {
+                            string mapId = !string.IsNullOrWhiteSpace(manifest.Version) ? $"{manifest.MapName}_{manifest.Version}" : manifest.MapName;
+                            mapIds.Add(mapId);
+                            mapIds.Add(manifest.MapName);
+                        }
+                    }
+                    catch { }
                 }
             }
         }
@@ -322,8 +329,16 @@ public class PeerSeederManager
         {
             if (_activeSeedingMapId != mapId || _activeSeedingMapBytes == null)
             {
-                string manifestPath = Path.Combine(MapAssetManager.GlobalArchiveDirectory, $"{mapId}_manifest.json");
-                if (File.Exists(manifestPath))
+                string? manifestPath = MapAssetManager.FindManifestPath(mapId);
+                if (manifestPath == null && mapId.Contains('_'))
+                {
+                    int lastUnder = mapId.LastIndexOf('_');
+                    string mName = mapId.Substring(0, lastUnder);
+                    string mVer = mapId.Substring(lastUnder + 1);
+                    manifestPath = MapAssetManager.FindManifestPath(mName, mVer);
+                }
+
+                if (manifestPath != null && File.Exists(manifestPath))
                 {
                     _activeSeedingMapBytes = File.ReadAllBytes(manifestPath);
                     _activeSeedingMapId = mapId;
@@ -356,8 +371,16 @@ public class PeerSeederManager
         {
             if (_activeSeedingMapId != mapId || _activeSeedingMapBytes == null)
             {
-                string manifestPath = Path.Combine(MapAssetManager.GlobalArchiveDirectory, $"{mapId}_manifest.json");
-                if (File.Exists(manifestPath))
+                string? manifestPath = MapAssetManager.FindManifestPath(mapId);
+                if (manifestPath == null && mapId.Contains('_'))
+                {
+                    int lastUnder = mapId.LastIndexOf('_');
+                    string mName = mapId.Substring(0, lastUnder);
+                    string mVer = mapId.Substring(lastUnder + 1);
+                    manifestPath = MapAssetManager.FindManifestPath(mName, mVer);
+                }
+
+                if (manifestPath != null && File.Exists(manifestPath))
                 {
                     _activeSeedingMapBytes = File.ReadAllBytes(manifestPath);
                     _activeSeedingMapId = mapId;
@@ -460,34 +483,23 @@ public class PeerSeederManager
         _activeSeedingHash = "";
         _activeSeedingFileBytes = null;
 
-        string globalArchive = MapAssetManager.GlobalArchiveFile;
-        if (!File.Exists(globalArchive)) return;
-
         try
         {
-            using (var archive = SharpCompress.Archives.ArchiveFactory.OpenArchive(globalArchive, null))
+            string norm = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(hash);
+            byte[]? bytes = MapAssetManager.Storage.GetAssetBytes(norm) ?? MapAssetManager.P2PStorage.GetAssetBytes(norm);
+            if (bytes != null)
             {
-                foreach (var entry in archive.Entries)
-                {
-                    if (!entry.IsDirectory && entry.Key == hash)
-                    {
-                        using (var ms = new MemoryStream())
-                        {
-                            using (var entryStream = entry.OpenEntryStream())
-                            {
-                                entryStream.CopyTo(ms);
-                            }
-                            _activeSeedingFileBytes = ms.ToArray();
-                            _activeSeedingHash = hash;
-                        }
-                        break;
-                    }
-                }
+                _activeSeedingFileBytes = bytes;
+                _activeSeedingHash = hash;
+            }
+            else
+            {
+                GD.PrintErr($"[PeerSeeder] Hash {hash} not found in CAS storage.");
             }
         }
         catch (Exception ex)
         {
-            GD.PrintErr($"[PeerSeeder] Failed to load hash {hash} from archive: {ex.Message}");
+            GD.PrintErr($"[PeerSeeder] Failed to load hash {hash} from CAS storage: {ex.Message}");
         }
     }
 

@@ -40,17 +40,15 @@ public static class LocalizationManager
 
 			if (!string.IsNullOrEmpty(CurrentMapName))
 			{
-				string mapPath = (CurrentMapName.StartsWith("user://") || CurrentMapName.StartsWith("res://"))
-					? $"{CurrentMapName.TrimEnd('/')}/locale/{locale}.json"
-					: $"res://Maps/{CurrentMapName}/locale/{locale}.json";
-				if (FileAccess.FileExists(mapPath))
+				string? resolvedDir = GameHost.ResolveMapDirectory(CurrentMapName);
+				if (!string.IsNullOrEmpty(resolvedDir))
 				{
-					using var file = FileAccess.Open(mapPath, FileAccess.ModeFlags.Read);
-					if (file != null)
+					string localePath = System.IO.Path.Combine(resolvedDir, "locale", $"{locale}.json");
+					if (System.IO.File.Exists(localePath))
 					{
-						string content = file.GetAsText();
 						try
 						{
+							string content = System.IO.File.ReadAllText(localePath);
 							var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(content);
 							if (dict != null)
 							{
@@ -61,6 +59,33 @@ public static class LocalizationManager
 						catch (System.Exception e)
 						{
 							GD.PrintErr($"Failed to load map translation for {locale} in {CurrentMapName}: {e.Message}");
+						}
+					}
+				}
+				else
+				{
+					string mapPath = (CurrentMapName.StartsWith("user://") || CurrentMapName.StartsWith("res://"))
+						? $"{CurrentMapName.TrimEnd('/')}/locale/{locale}.json"
+						: $"res://Maps/{CurrentMapName}/locale/{locale}.json";
+					if (FileAccess.FileExists(mapPath))
+					{
+						using var file = FileAccess.Open(mapPath, FileAccess.ModeFlags.Read);
+						if (file != null)
+						{
+							string content = file.GetAsText();
+							try
+							{
+								var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(content);
+								if (dict != null)
+								{
+									foreach (var kvp in dict)
+										mergedDict[kvp.Key] = kvp.Value;
+								}
+							}
+							catch (System.Exception e)
+							{
+								GD.PrintErr($"Failed to load map translation for {locale} in {CurrentMapName}: {e.Message}");
+							}
 						}
 					}
 				}

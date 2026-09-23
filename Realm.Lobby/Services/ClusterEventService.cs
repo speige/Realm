@@ -141,6 +141,7 @@ public class ClusterEventService
             "map_published" => ApplyMapPublished(evt, db, cas),
             "creator_registered" => ApplyCreatorRegistered(evt, db, adminPublicKeys),
             "admin_greenlight" => ApplyAdminGreenlight(evt, db, adminPublicKeys),
+            "admin_remove_manifest" => ApplyAdminRemoveManifest(evt, db, cas, adminPublicKeys),
             "map_metric_report" => ApplyMapMetricReport(evt, db),
             _ => false
         };
@@ -568,6 +569,16 @@ public class ClusterEventService
                         if (!string.IsNullOrEmpty(h)) referencedHashes.Add(h);
                     }
                 }
+
+                var mf = MapManifest.LoadFromJson(root.GetRawText());
+                if (mf != null)
+                {
+                    foreach (var fileProp in mf.Files)
+                    {
+                        string h = ContentAddressableStorage.NormalizeBlake3Hash(fileProp.Value);
+                        if (!string.IsNullOrEmpty(h)) referencedHashes.Add(h);
+                    }
+                }
             }
             catch { }
         }
@@ -575,7 +586,7 @@ public class ClusterEventService
         var manifestDir = Path.Combine(cas.RootDirectory, "manifests");
         if (Directory.Exists(manifestDir))
         {
-            foreach (var file in Directory.EnumerateFiles(manifestDir, "*_manifest.json"))
+            foreach (var file in Directory.EnumerateFiles(manifestDir, "*.json"))
             {
                 try
                 {
@@ -589,18 +600,48 @@ public class ClusterEventService
                             if (!string.IsNullOrEmpty(h)) referencedHashes.Add(h);
                         }
                     }
+
+                    var mf = MapManifest.LoadFromJson(json);
+                    if (mf != null)
+                    {
+                        foreach (var fileProp in mf.Files)
+                        {
+                            string h = ContentAddressableStorage.NormalizeBlake3Hash(fileProp.Value);
+                            if (!string.IsNullOrEmpty(h)) referencedHashes.Add(h);
+                        }
+                    }
                 }
                 catch { }
             }
         }
 
-        var assetDirs = new List<string> { cas.RootDirectory, ".data/assets" };
-        foreach (var dir in assetDirs)
-        {
-            if (!Directory.Exists(dir)) continue;
+        var scannedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var searchLocations = new List<(string DirectoryPath, SearchOption Option)>();
 
-            foreach (var filePath in Directory.EnumerateFiles(dir, "*", SearchOption.TopDirectoryOnly))
+        if (Directory.Exists(cas.AssetsDirectory))
+        {
+            searchLocations.Add((cas.AssetsDirectory, SearchOption.AllDirectories));
+        }
+
+        if (Directory.Exists(".data/assets") && !string.Equals(Path.GetFullPath(".data/assets"), Path.GetFullPath(cas.AssetsDirectory), StringComparison.OrdinalIgnoreCase))
+        {
+            searchLocations.Add((".data/assets", SearchOption.AllDirectories));
+        }
+
+        if (Directory.Exists(cas.RootDirectory))
+        {
+            searchLocations.Add((cas.RootDirectory, SearchOption.TopDirectoryOnly));
+        }
+
+        foreach (var (directoryPath, option) in searchLocations)
+        {
+            if (!Directory.Exists(directoryPath)) continue;
+
+            foreach (var filePath in Directory.EnumerateFiles(directoryPath, "*", option))
             {
+                string fullPath = Path.GetFullPath(filePath);
+                if (!scannedPaths.Add(fullPath)) continue;
+
                 string fileName = Path.GetFileName(filePath);
                 if (fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) continue;
 
@@ -620,6 +661,8 @@ public class ClusterEventService
                     if (!string.Equals(computedHash, normalizedHash, StringComparison.OrdinalIgnoreCase))
                     {
                         File.Delete(filePath);
+                        cas.RemoveSidecarCache(normalizedHash);
+                        db.Delete("asset_signatures", normalizedHash);
                         corruptPruned++;
                         bytesFreed += fileSize;
                         continue;
@@ -628,6 +671,8 @@ public class ClusterEventService
                     if (!referencedHashes.Contains(normalizedHash))
                     {
                         File.Delete(filePath);
+                        cas.RemoveSidecarCache(normalizedHash);
+                        db.Delete("asset_signatures", normalizedHash);
                         orphansPruned++;
                         bytesFreed += fileSize;
                     }
@@ -635,6 +680,35 @@ public class ClusterEventService
                 catch { }
             }
         }
+
+        var allSignatures = db.GetAllWithKeys<JsonDocument>("asset_signatures");
+        foreach (var pair in allSignatures)
+        {
+            string normalizedHash = ContentAddressableStorage.NormalizeBlake3Hash(pair.Key);
+            if (!referencedHashes.Contains(normalizedHash) || !cas.HasAsset(normalizedHash))
+            {
+                db.Delete("asset_signatures", pair.Key);
+            }
+        }
+
+        if (Directory.Exists(cas.SidecarCacheDirectory))
+        {
+            foreach (var sidecarFile in Directory.EnumerateFiles(cas.SidecarCacheDirectory, "*.json", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    string sidecarHash = ContentAddressableStorage.NormalizeBlake3Hash(Path.GetFileName(sidecarFile));
+                    if (!referencedHashes.Contains(sidecarHash) || !cas.HasAsset(sidecarHash))
+                    {
+                        File.Delete(sidecarFile);
+                    }
+                }
+                catch { }
+            }
+        }
+
+        CleanEmptySubdirectories(cas.AssetsDirectory);
+        CleanEmptySubdirectories(cas.SidecarCacheDirectory);
 
         return new CasPruneResponseDto
         {
@@ -645,6 +719,27 @@ public class ClusterEventService
             BytesFreed = bytesFreed,
             Message = $"Prune completed: {totalScanned} scanned, {orphansPruned} orphans deleted, {corruptPruned} corrupt files deleted, {bytesFreed} bytes freed."
         };
+    }
+
+    private static void CleanEmptySubdirectories(string rootDirectory)
+    {
+        if (!Directory.Exists(rootDirectory)) return;
+
+        try
+        {
+            foreach (var subDirectory in Directory.EnumerateDirectories(rootDirectory))
+            {
+                if (!Directory.EnumerateFileSystemEntries(subDirectory).Any())
+                {
+                    try
+                    {
+                        Directory.Delete(subDirectory);
+                    }
+                    catch { }
+                }
+            }
+        }
+        catch { }
     }
 
     private bool ApplyMapPublished(ClusterEventDto evt, DataStoreService db, ContentAddressableStorage cas)
@@ -708,8 +803,13 @@ public class ClusterEventService
         }
 
         string compositeKey = $"{mapTitle}_{mapVersion}";
-        var stats = db.Get<MapStats>("map_stats", compositeKey) ?? db.Get<MapStats>("map_stats", mapTitle);
-        if (stats == null || !stats.IsGreenlit)
+        string authorStatsKey = $"{mapTitle}_{mapVersion}_{publicKey}";
+        var mapLevelStats = db.Get<MapStats>("map_stats", mapTitle);
+        var stats = db.Get<MapStats>("map_stats", authorStatsKey)
+            ?? db.Get<MapStats>("map_stats", $"{mapTitle}_{publicKey}")
+            ?? db.Get<MapStats>("map_stats", compositeKey)
+            ?? mapLevelStats;
+        if ((stats == null || !stats.IsGreenlit) && (mapLevelStats == null || !mapLevelStats.IsGreenlit))
         {
             Console.WriteLine($"[ClusterEventService] Rejected map_published event: Map '{mapTitle}' is not greenlit");
             return false;
@@ -825,7 +925,7 @@ public class ClusterEventService
         }
 
         string mapTitle = payload?.MapTitle ?? "";
-        string mapVersion = payload?.MapVersion ?? "1.0";
+        string? mapVersion = payload?.MapVersion;
         string adminPublicKey = payload?.AdminPublicKey ?? evt.PublicKey;
         string signature = payload?.Signature ?? evt.Signature;
 
@@ -840,24 +940,362 @@ public class ClusterEventService
             return false;
         }
 
-        string sigPayload = $"greenlight:{mapTitle.ToLowerInvariant()}:{mapVersion.ToLowerInvariant()}";
-        if (!AuthorSignatureHelper.VerifySignature(adminPublicKey.Trim(), sigPayload, signature))
+        string sigPayload = $"greenlight:{mapTitle.ToLowerInvariant()}";
+        string oldSigPayload = !string.IsNullOrWhiteSpace(mapVersion) ? $"greenlight:{mapTitle.ToLowerInvariant()}:{mapVersion.ToLowerInvariant()}" : sigPayload;
+        if (!AuthorSignatureHelper.VerifySignature(adminPublicKey.Trim(), sigPayload, signature) &&
+            !AuthorSignatureHelper.VerifySignature(adminPublicKey.Trim(), oldSigPayload, signature))
         {
             Console.WriteLine($"[ClusterEventService] Rejected admin_greenlight event: Invalid admin signature");
             return false;
         }
 
-        string compositeKey = $"{mapTitle}_{mapVersion}";
-        var stats = db.Get<MapStats>("map_stats", compositeKey)
-            ?? db.Get<MapStats>("map_stats", mapTitle)
-            ?? new MapStats();
-
+        var stats = db.Get<MapStats>("map_stats", mapTitle) ?? new MapStats();
         stats.AdminOverrideGreenlit = true;
-
-        db.Upsert("map_stats", compositeKey, stats);
         db.Upsert("map_stats", mapTitle, stats);
 
+        if (!string.IsNullOrWhiteSpace(mapVersion))
+        {
+            string compositeKey = $"{mapTitle}_{mapVersion.Trim()}";
+            db.Upsert("map_stats", compositeKey, stats);
+        }
+
         return true;
+    }
+
+    private bool ApplyAdminRemoveManifest(ClusterEventDto evt, DataStoreService db, ContentAddressableStorage cas, HashSet<string> adminPublicKeys)
+    {
+        AdminRemoveManifestEventPayload? payload = null;
+        if (!string.IsNullOrWhiteSpace(evt.PayloadJson))
+        {
+            try
+            {
+                payload = JsonSerializer.Deserialize<AdminRemoveManifestEventPayload>(evt.PayloadJson, JsonOpts);
+            }
+            catch { }
+        }
+
+        string mapTitle = payload?.MapTitle ?? "";
+        string? mapVersion = payload?.MapVersion;
+        string adminPublicKey = payload?.AdminPublicKey ?? evt.PublicKey;
+        string signature = payload?.Signature ?? evt.Signature;
+
+        if (string.IsNullOrWhiteSpace(mapTitle))
+        {
+            return false;
+        }
+
+        if (adminPublicKeys.Count > 0)
+        {
+            string targetVer = mapVersion ?? "all";
+            string sigPayload1 = $"remove_manifest:{mapTitle.Trim().ToLowerInvariant()}:{targetVer.ToLowerInvariant()}";
+            string sigPayload2 = $"remove_manifest:{mapTitle.Trim().ToLowerInvariant()}";
+
+            bool isSigValid = false;
+            if (!string.IsNullOrWhiteSpace(adminPublicKey) && adminPublicKeys.Contains(adminPublicKey.Trim()))
+            {
+                isSigValid = AuthorSignatureHelper.VerifySignature(adminPublicKey.Trim(), sigPayload1, signature)
+                    || AuthorSignatureHelper.VerifySignature(adminPublicKey.Trim(), sigPayload2, signature)
+                    || AdminBypassAuth.VerifyBypassToken(adminPublicKey.Trim(), mapTitle, targetVer, signature);
+            }
+            else
+            {
+                isSigValid = AuthorSignatureHelper.VerifySignatureAny(adminPublicKeys, sigPayload1, signature)
+                    || AuthorSignatureHelper.VerifySignatureAny(adminPublicKeys, sigPayload2, signature)
+                    || AdminBypassAuth.VerifyBypassToken(adminPublicKeys, mapTitle, targetVer, signature);
+            }
+
+            if (!isSigValid)
+            {
+                Console.WriteLine($"[ClusterEventService] Rejected admin_remove_manifest event: Invalid admin signature for {mapTitle}");
+                return false;
+            }
+        }
+
+        var result = RemoveManifest(cas, db, mapTitle, mapVersion);
+        return result.Success;
+    }
+
+    public RemoveManifestResponseDto RemoveManifest(ContentAddressableStorage cas, DataStoreService db, string mapTitle, string? mapVersion = null)
+    {
+        if (string.IsNullOrWhiteSpace(mapTitle))
+        {
+            return new RemoveManifestResponseDto
+            {
+                Success = false,
+                Message = "Map title cannot be empty."
+            };
+        }
+
+        string targetMap = mapTitle.Trim();
+        string? targetVersion = string.IsNullOrWhiteSpace(mapVersion) ? null : mapVersion.Trim();
+        bool allVersions = targetVersion == null;
+
+        int manifestsDeleted = 0;
+        int dbRecordsRemoved = 0;
+        var deletedFiles = new List<string>();
+
+        string manifestDir = Path.Combine(cas.RootDirectory, "manifests");
+
+        if (!allVersions)
+        {
+            string compositeKey = $"{targetMap}_{targetVersion}";
+            var candidateNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                $"{compositeKey}_manifest.json",
+                $"{compositeKey}.json",
+                $"{compositeKey.Replace(' ', '_')}_manifest.json",
+                $"{compositeKey.Replace(' ', '_')}.json",
+                $"{compositeKey.Replace('_', ' ')}_manifest.json",
+                $"{compositeKey.Replace('_', ' ')}.json"
+            };
+
+            if (Directory.Exists(manifestDir))
+            {
+                foreach (var filePath in Directory.EnumerateFiles(manifestDir, "*.json"))
+                {
+                    string fileName = Path.GetFileName(filePath);
+                    bool shouldDelete = candidateNames.Contains(fileName);
+
+                    if (!shouldDelete)
+                    {
+                        try
+                        {
+                            var mf = MapManifest.LoadFromFile(filePath);
+                            if (mf != null &&
+                                (string.Equals(mf.MapName, targetMap, StringComparison.OrdinalIgnoreCase) ||
+                                 string.Equals(mf.MapName?.Replace(' ', '_'), targetMap.Replace(' ', '_'), StringComparison.OrdinalIgnoreCase)) &&
+                                string.Equals(mf.Version, targetVersion, StringComparison.OrdinalIgnoreCase))
+                            {
+                                shouldDelete = true;
+                            }
+                        }
+                        catch { }
+                    }
+
+                    if (shouldDelete)
+                    {
+                        try
+                        {
+                            File.Delete(filePath);
+                            manifestsDeleted++;
+                            deletedFiles.Add(fileName);
+                        }
+                        catch { }
+                    }
+                }
+            }
+
+            var allPublished = db.GetAllWithKeys<JsonDocument>("published_maps");
+            foreach (var pair in allPublished)
+            {
+                bool match = string.Equals(pair.Key, compositeKey, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(pair.Key.Replace(' ', '_'), compositeKey.Replace(' ', '_'), StringComparison.OrdinalIgnoreCase);
+
+                if (!match)
+                {
+                    try
+                    {
+                        var root = pair.Value.RootElement;
+                        string name = root.TryGetProperty("MapName", out var mn) ? mn.GetString() ?? "" : "";
+                        string ver = root.TryGetProperty("Version", out var vr) ? vr.GetString() ?? "" : "";
+                        if ((string.Equals(name, targetMap, StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(name.Replace(' ', '_'), targetMap.Replace(' ', '_'), StringComparison.OrdinalIgnoreCase)) &&
+                            string.Equals(ver, targetVersion, StringComparison.OrdinalIgnoreCase))
+                        {
+                            match = true;
+                        }
+                    }
+                    catch { }
+                }
+
+                if (match)
+                {
+                    db.Delete("published_maps", pair.Key);
+                    dbRecordsRemoved++;
+                }
+            }
+
+            var remainingVersions = new List<(string version, JsonDocument doc, string? filePath)>();
+            if (Directory.Exists(manifestDir))
+            {
+                foreach (var filePath in Directory.EnumerateFiles(manifestDir, "*.json"))
+                {
+                    try
+                    {
+                        var mf = MapManifest.LoadFromFile(filePath);
+                        if (mf != null &&
+                            (string.Equals(mf.MapName, targetMap, StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(mf.MapName?.Replace(' ', '_'), targetMap.Replace(' ', '_'), StringComparison.OrdinalIgnoreCase)) &&
+                            !string.Equals(mf.Version, targetVersion, StringComparison.OrdinalIgnoreCase))
+                        {
+                            var doc = JsonDocument.Parse(File.ReadAllText(filePath));
+                            remainingVersions.Add((mf.Version ?? "1.0", doc, filePath));
+                        }
+                    }
+                    catch { }
+                }
+            }
+
+            var remainingDb = db.GetAllWithKeys<JsonDocument>("published_maps");
+            foreach (var pair in remainingDb)
+            {
+                if (string.Equals(pair.Key, targetMap, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(pair.Key.Replace(' ', '_'), targetMap.Replace(' ', '_'), StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var root = pair.Value.RootElement;
+                    string name = root.TryGetProperty("MapName", out var mn) ? mn.GetString() ?? "" : "";
+                    string ver = root.TryGetProperty("Version", out var vr) ? vr.GetString() ?? "" : "";
+                    if ((string.Equals(name, targetMap, StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(name.Replace(' ', '_'), targetMap.Replace(' ', '_'), StringComparison.OrdinalIgnoreCase)) &&
+                        !string.Equals(ver, targetVersion, StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!remainingVersions.Any(r => string.Equals(r.version, ver, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            remainingVersions.Add((ver, pair.Value, null));
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            if (remainingVersions.Count > 0)
+            {
+                var latest = remainingVersions.OrderByDescending(r => r.version, StringComparer.OrdinalIgnoreCase).First();
+                string defaultManifestPath = Path.Combine(manifestDir, $"{targetMap}_manifest.json");
+                try
+                {
+                    File.WriteAllText(defaultManifestPath, JsonSerializer.Serialize(latest.doc));
+                }
+                catch { }
+                db.Upsert("published_maps", targetMap, latest.doc);
+            }
+            else
+            {
+                if (Directory.Exists(manifestDir))
+                {
+                    var unversionedCandidates = new List<string>
+                    {
+                        Path.Combine(manifestDir, $"{targetMap}_manifest.json"),
+                        Path.Combine(manifestDir, $"{targetMap}.json"),
+                        Path.Combine(manifestDir, $"{targetMap.Replace(' ', '_')}_manifest.json"),
+                        Path.Combine(manifestDir, $"{targetMap.Replace(' ', '_')}.json")
+                    };
+                    foreach (var unvPath in unversionedCandidates)
+                    {
+                        if (File.Exists(unvPath))
+                        {
+                            try
+                            {
+                                File.Delete(unvPath);
+                                manifestsDeleted++;
+                                deletedFiles.Add(Path.GetFileName(unvPath));
+                            }
+                            catch { }
+                        }
+                    }
+                }
+
+                db.Delete("published_maps", targetMap);
+                db.Delete("published_maps", targetMap.Replace(' ', '_'));
+                db.Delete("published_maps", targetMap.Replace('_', ' '));
+            }
+
+            db.Delete("map_stats", compositeKey);
+        }
+        else
+        {
+            if (Directory.Exists(manifestDir))
+            {
+                foreach (var filePath in Directory.EnumerateFiles(manifestDir, "*.json"))
+                {
+                    string fileName = Path.GetFileName(filePath);
+                    bool shouldDelete = fileName.StartsWith($"{targetMap}_", StringComparison.OrdinalIgnoreCase)
+                        || fileName.StartsWith($"{targetMap.Replace(' ', '_')}_", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(fileName, $"{targetMap}.json", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(fileName, $"{targetMap.Replace(' ', '_')}.json", StringComparison.OrdinalIgnoreCase);
+
+                    if (!shouldDelete)
+                    {
+                        try
+                        {
+                            var mf = MapManifest.LoadFromFile(filePath);
+                            if (mf != null &&
+                                (string.Equals(mf.MapName, targetMap, StringComparison.OrdinalIgnoreCase) ||
+                                 string.Equals(mf.MapName?.Replace(' ', '_'), targetMap.Replace(' ', '_'), StringComparison.OrdinalIgnoreCase)))
+                            {
+                                shouldDelete = true;
+                            }
+                        }
+                        catch { }
+                    }
+
+                    if (shouldDelete)
+                    {
+                        try
+                        {
+                            File.Delete(filePath);
+                            manifestsDeleted++;
+                            deletedFiles.Add(fileName);
+                        }
+                        catch { }
+                    }
+                }
+            }
+
+            var allPublished = db.GetAllWithKeys<JsonDocument>("published_maps");
+            foreach (var pair in allPublished)
+            {
+                bool match = string.Equals(pair.Key, targetMap, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(pair.Key.Replace(' ', '_'), targetMap.Replace(' ', '_'), StringComparison.OrdinalIgnoreCase)
+                    || pair.Key.StartsWith($"{targetMap}_", StringComparison.OrdinalIgnoreCase)
+                    || pair.Key.StartsWith($"{targetMap.Replace(' ', '_')}_", StringComparison.OrdinalIgnoreCase);
+
+                if (!match)
+                {
+                    try
+                    {
+                        var root = pair.Value.RootElement;
+                        string name = root.TryGetProperty("MapName", out var mn) ? mn.GetString() ?? "" : "";
+                        if (string.Equals(name, targetMap, StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(name.Replace(' ', '_'), targetMap.Replace(' ', '_'), StringComparison.OrdinalIgnoreCase))
+                        {
+                            match = true;
+                        }
+                    }
+                    catch { }
+                }
+
+                if (match)
+                {
+                    db.Delete("published_maps", pair.Key);
+                    dbRecordsRemoved++;
+                }
+            }
+
+            db.Delete("map_ownership", targetMap);
+            db.Delete("map_ownership", targetMap.ToLowerInvariant().Replace(" ", "-"));
+            db.Delete("map_ownership", targetMap.Replace(" ", "_"));
+            db.Delete("map_stats", targetMap);
+        }
+
+        return new RemoveManifestResponseDto
+        {
+            Success = true,
+            MapTitle = targetMap,
+            MapVersion = targetVersion,
+            AllVersionsRemoved = allVersions,
+            ManifestsDeleted = manifestsDeleted,
+            DbRecordsRemoved = dbRecordsRemoved,
+            DeletedManifestFiles = deletedFiles,
+            Message = allVersions
+                ? $"Successfully removed all published manifest versions for map '{targetMap}'."
+                : $"Successfully removed published manifest for map '{targetMap}' version '{targetVersion}'."
+        };
     }
 
     private bool ApplyMapMetricReport(ClusterEventDto evt, DataStoreService db)
@@ -879,10 +1317,14 @@ public class ClusterEventService
 
         string mapTitle = payload.MapTitle.Trim();
         string mapVersion = string.IsNullOrWhiteSpace(payload.MapVersion) ? "1.0" : payload.MapVersion.Trim();
+        string authorPublicKey = payload.AuthorPublicKey?.Trim() ?? "";
         string compositeKey = $"{mapTitle}_{mapVersion}";
+        string authorCompositeKey = !string.IsNullOrEmpty(authorPublicKey) ? $"{mapTitle}_{mapVersion}_{authorPublicKey}" : compositeKey;
         string playerIdentifier = !string.IsNullOrWhiteSpace(payload.PlayerId) ? payload.PlayerId.Trim() : "Anonymous";
 
-        string engagementKey = $"{playerIdentifier}_{compositeKey}".ToLowerInvariant();
+        string engagementKey = !string.IsNullOrEmpty(authorPublicKey)
+            ? $"{playerIdentifier}_{authorCompositeKey}".ToLowerInvariant()
+            : $"{playerIdentifier}_{compositeKey}".ToLowerInvariant();
         var engagement = db.Get<PlayerMapEngagement>("player_engagement", engagementKey)
             ?? new PlayerMapEngagement { PlayerId = playerIdentifier };
 
@@ -900,7 +1342,9 @@ public class ClusterEventService
             engagement.IsVerifiedAccount = true;
         }
 
-        var stats = db.Get<MapStats>("map_stats", compositeKey)
+        var stats = db.Get<MapStats>("map_stats", authorCompositeKey)
+            ?? (!string.IsNullOrEmpty(authorPublicKey) ? db.Get<MapStats>("map_stats", $"{mapTitle}_{authorPublicKey}") : null)
+            ?? db.Get<MapStats>("map_stats", compositeKey)
             ?? db.Get<MapStats>("map_stats", mapTitle)
             ?? new MapStats();
 
@@ -935,8 +1379,16 @@ public class ClusterEventService
         }
 
         db.Upsert("player_engagement", engagementKey, engagement);
-        db.Upsert("map_stats", compositeKey, stats);
-        db.Upsert("map_stats", mapTitle, stats);
+        db.Upsert("map_stats", authorCompositeKey, stats);
+        if (!string.IsNullOrEmpty(authorPublicKey))
+        {
+            db.Upsert("map_stats", $"{mapTitle}_{authorPublicKey}", stats);
+        }
+        if (stats.IsGreenlit)
+        {
+            db.Upsert("map_stats", compositeKey, stats);
+            db.Upsert("map_stats", mapTitle, stats);
+        }
 
         return true;
     }

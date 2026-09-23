@@ -1,9 +1,7 @@
 using Blake3;
 using Godot;
+using Realm.Shared.Distribution;
 using Realm.Shared.Metadata;
-using SharpCompress.Archives;
-using SharpCompress.Common;
-using SharpCompress.Writers.SevenZip;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -132,8 +130,6 @@ public static class MapAssetManager
         }
     }
 
-    public static string P2PArchiveFile => Path.Combine(P2PArchiveDirectory, "p2p_assets.7z");
-
     public static void ClearP2PCache()
     {
         lock (ArchiveLock)
@@ -195,8 +191,6 @@ public static class MapAssetManager
         }
     }
 
-    public static string GlobalArchiveFile => Path.Combine(GlobalArchiveDirectory, "global_assets.7z");
-
     public static string ComputeBlake3(byte[] bytes, string? extensionOrPath = null)
     {
         return RealmMetadataHelper.ComputeBlake3(bytes, extensionOrPath);
@@ -207,128 +201,26 @@ public static class MapAssetManager
         return RealmMetadataHelper.ComputeBlake3(stream, extensionOrPath);
     }
 
+    public static string ComputeManifestBlake3(MapManifest manifest)
+    {
+        if (manifest == null) return string.Empty;
+        return manifest.ComputeManifestBlake3();
+    }
+
     public static List<string> GetMissingHashes(IEnumerable<string> hashes)
     {
         var missing = new List<string>();
-        var hashesToCheckArchive = new List<string>();
+        if (hashes == null) return missing;
 
         foreach (var hash in hashes)
         {
             string norm = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(hash);
             if (!Storage.HasAsset(norm) && !P2PStorage.HasAsset(norm))
             {
-                hashesToCheckArchive.Add(hash);
-            }
-        }
-
-        if (hashesToCheckArchive.Count == 0)
-        {
-            return missing;
-        }
-
-        lock (ArchiveLock)
-        {
-            var existingHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            if (File.Exists(GlobalArchiveFile))
-            {
-                try
-                {
-                    using (var archive = ArchiveFactory.OpenArchive(GlobalArchiveFile, null))
-                    {
-                        foreach (var entry in archive.Entries)
-                        {
-                            if (!entry.IsDirectory)
-                            {
-                                existingHashes.Add(entry.Key);
-                                string normKey = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(entry.Key);
-                                existingHashes.Add(normKey);
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MapAssetManager.LogErr($"[MapAssetManager] Error checking global archive: {ex.Message}");
-                }
-            }
-
-            if (File.Exists(P2PArchiveFile))
-            {
-                try
-                {
-                    using (var archive = ArchiveFactory.OpenArchive(P2PArchiveFile, null))
-                    {
-                        foreach (var entry in archive.Entries)
-                        {
-                            if (!entry.IsDirectory)
-                            {
-                                existingHashes.Add(entry.Key);
-                                string normKey = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(entry.Key);
-                                existingHashes.Add(normKey);
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MapAssetManager.LogErr($"[MapAssetManager] Error checking p2p archive: {ex.Message}");
-                }
-            }
-
-            foreach (var hash in hashesToCheckArchive)
-            {
-                string norm = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(hash);
-                if (!existingHashes.Contains(hash) && !existingHashes.Contains(norm))
-                {
-                    missing.Add(hash);
-                }
+                missing.Add(hash);
             }
         }
         return missing;
-    }
-
-    public static void IngestDeltaArchive(string delta7zPath)
-    {
-        lock (ArchiveLock)
-        {
-            try
-            {
-                if (!File.Exists(delta7zPath))
-                {
-                    MapAssetManager.LogErr($"[MapAssetManager] Delta archive not found at {delta7zPath}");
-                    return;
-                }
-
-                var filesToInsert = new Dictionary<string, byte[]>();
-                using (var deltaArchive = ArchiveFactory.OpenArchive(delta7zPath, null))
-                {
-                    foreach (var entry in deltaArchive.Entries)
-                    {
-                        if (entry.IsDirectory) continue;
-                        
-                        using (var ms = new MemoryStream())
-                        {
-                            using (var entryStream = entry.OpenEntryStream())
-                            {
-                                entryStream.CopyTo(ms);
-                            }
-                            filesToInsert[entry.Key] = ms.ToArray();
-                        }
-                    }
-                }
-
-                if (filesToInsert.Count > 0)
-                {
-                    AddOrUpdateGlobalArchive(filesToInsert);
-                    MapAssetManager.Log($"[MapAssetManager] Successfully ingested {filesToInsert.Count} files from delta archive.");
-                }
-            }
-            catch (Exception ex)
-            {
-                MapAssetManager.LogErr($"[MapAssetManager] Failed to ingest delta archive: {ex.Message}");
-            }
-        }
     }
 
     public static void AddOrUpdateGlobalArchive(Dictionary<string, byte[]> newFilesByHash)
@@ -339,119 +231,6 @@ public static class MapAssetManager
         {
             string ext = Path.GetExtension(kvp.Key);
             Storage.StoreAsset(kvp.Value, ext);
-        }
-
-        if (!Directory.Exists(GlobalArchiveDirectory))
-        {
-            Directory.CreateDirectory(GlobalArchiveDirectory);
-        }
-
-        string tempFile = Path.Combine(GlobalArchiveDirectory, Guid.NewGuid().ToString() + ".7z");
-        
-        lock (ArchiveLock)
-        {
-            try
-            {
-                using (var newFs = File.Create(tempFile))
-                {
-                    using (var writer = new SevenZipWriter(newFs, new SevenZipWriterOptions() { CompressionType = CompressionType.LZMA }))
-                    {
-                        var writtenKeys = new HashSet<string>();
-
-
-                        if (File.Exists(GlobalArchiveFile))
-                        {
-                            using (var oldArchive = ArchiveFactory.OpenArchive(GlobalArchiveFile, null))
-                            {
-                                foreach (var entry in oldArchive.Entries)
-                                {
-                                    if (entry.IsDirectory) continue;
-                                    
-                                    if (!writtenKeys.Contains(entry.Key))
-                                    {
-                                        using (var oldStream = entry.OpenEntryStream())
-                                        {
-                                            writer.Write(entry.Key, oldStream, entry.LastModifiedTime ?? DateTime.UtcNow);
-                                        }
-                                        writtenKeys.Add(entry.Key);
-                                    }
-                                }
-                            }
-                        }
-
-
-                        foreach (var kvp in newFilesByHash)
-                        {
-                           if (!writtenKeys.Contains(kvp.Key))
-                           {
-                               using (var ms = new MemoryStream(kvp.Value))
-                               {
-                                   writer.Write(kvp.Key, ms, DateTime.UtcNow);
-                               }
-                               writtenKeys.Add(kvp.Key);
-                           }
-                        }
-                    }
-                }
-
-
-                if (File.Exists(GlobalArchiveFile))
-                {
-                    File.Delete(GlobalArchiveFile);
-                }
-                File.Move(tempFile, GlobalArchiveFile);
-            }
-            catch (Exception ex)
-            {
-                MapAssetManager.LogErr($"[MapAssetManager] Error writing global archive: {ex.Message}");
-                if (File.Exists(tempFile))
-                {
-                    try { File.Delete(tempFile); } catch { }
-                }
-            }
-        }
-    }
-
-    public static void IngestP2PDeltaArchive(string delta7zPath)
-    {
-        lock (ArchiveLock)
-        {
-            try
-            {
-                if (!File.Exists(delta7zPath))
-                {
-                    MapAssetManager.LogErr($"[MapAssetManager] P2P Delta archive not found at {delta7zPath}");
-                    return;
-                }
-
-                var filesToInsert = new Dictionary<string, byte[]>();
-                using (var deltaArchive = ArchiveFactory.OpenArchive(delta7zPath, null))
-                {
-                    foreach (var entry in deltaArchive.Entries)
-                    {
-                        if (entry.IsDirectory) continue;
-                        
-                        using (var ms = new MemoryStream())
-                        {
-                            using (var entryStream = entry.OpenEntryStream())
-                            {
-                                entryStream.CopyTo(ms);
-                            }
-                            filesToInsert[entry.Key] = ms.ToArray();
-                        }
-                    }
-                }
-
-                if (filesToInsert.Count > 0)
-                {
-                    AddOrUpdateP2PArchive(filesToInsert);
-                    MapAssetManager.Log($"[MapAssetManager] Successfully ingested {filesToInsert.Count} files from P2P delta archive.");
-                }
-            }
-            catch (Exception ex)
-            {
-                MapAssetManager.LogErr($"[MapAssetManager] Failed to ingest P2P delta archive: {ex.Message}");
-            }
         }
     }
 
@@ -464,178 +243,439 @@ public static class MapAssetManager
             string ext = Path.GetExtension(kvp.Key);
             P2PStorage.StoreAsset(kvp.Value, ext);
         }
+    }
 
-        if (!Directory.Exists(P2PArchiveDirectory))
+    public static string GetMapDirectory(string mapName, string version = "1.0.0", string? manifestHash = null, bool isP2P = false)
+    {
+        string root = isP2P ? P2PArchiveDirectory : GlobalArchiveDirectory;
+        if (!string.IsNullOrWhiteSpace(manifestHash))
         {
-            Directory.CreateDirectory(P2PArchiveDirectory);
+            string normHash = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(manifestHash);
+            return Path.Combine(root, mapName, version, normHash);
+        }
+        return Path.Combine(root, mapName, version);
+    }
+
+    public static string GetManifestPath(string mapName, string version = "1.0.0", string? manifestHash = null, bool isP2P = false)
+    {
+        return Path.Combine(GetMapDirectory(mapName, version, manifestHash, isP2P), "manifest.json");
+    }
+
+    public static void ExtractManifestFiles(MapManifest manifest, string targetDirectory, bool isP2P = false)
+    {
+        if (manifest == null || manifest.Files == null || string.IsNullOrWhiteSpace(targetDirectory))
+        {
+            return;
         }
 
-        string tempFile = Path.Combine(P2PArchiveDirectory, Guid.NewGuid().ToString() + ".7z");
-        
-        lock (ArchiveLock)
+        if (!Directory.Exists(targetDirectory))
         {
-            try
-            {
-                using (var newFs = File.Create(tempFile))
-                {
-                    using (var writer = new SevenZipWriter(newFs, new SevenZipWriterOptions() { CompressionType = CompressionType.LZMA }))
-                    {
-                        var writtenKeys = new HashSet<string>();
+            Directory.CreateDirectory(targetDirectory);
+        }
 
-                        if (File.Exists(P2PArchiveFile))
+        try
+        {
+            foreach (var kvp in manifest.Files)
+            {
+                string relativePath = kvp.Key;
+                if (relativePath.StartsWith("res://", StringComparison.OrdinalIgnoreCase))
+                {
+                    relativePath = relativePath.Substring(6);
+                }
+                relativePath = relativePath.TrimStart('/', '\\');
+
+                string hash = kvp.Value;
+                string norm = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(hash);
+                string destinationFilePath = Path.Combine(targetDirectory, relativePath);
+
+                string? destinationDir = Path.GetDirectoryName(destinationFilePath);
+                if (!string.IsNullOrEmpty(destinationDir) && !Directory.Exists(destinationDir))
+                {
+                    Directory.CreateDirectory(destinationDir);
+                }
+
+                string? casFilePath = (isP2P ? P2PStorage.FindAssetFilePath(norm) : Storage.FindAssetFilePath(norm))
+                                   ?? Storage.FindAssetFilePath(norm)
+                                   ?? P2PStorage.FindAssetFilePath(norm);
+
+                if (casFilePath != null && File.Exists(casFilePath))
+                {
+                    HardLinkHelper.CreateHardLinkOrCopy(destinationFilePath, casFilePath);
+                }
+                else
+                {
+                    byte[]? casBytes = (isP2P ? P2PStorage.GetAssetBytes(norm) : Storage.GetAssetBytes(norm))
+                                    ?? Storage.GetAssetBytes(norm)
+                                    ?? P2PStorage.GetAssetBytes(norm);
+
+                    if (casBytes != null)
+                    {
+                        File.WriteAllBytes(destinationFilePath, casBytes);
+                    }
+                    else
+                    {
+                        MapAssetManager.LogErr($"[MapAssetManager] Could not extract {relativePath}: hash {hash} not found in CAS storage.");
+                    }
+                }
+            }
+
+            string manifestPath = Path.Combine(targetDirectory, "manifest.json");
+            File.WriteAllText(manifestPath, manifest.ToJson());
+        }
+        catch (Exception ex)
+        {
+            MapAssetManager.LogErr($"[MapAssetManager] Error extracting manifest files to {targetDirectory}: {ex.Message}");
+        }
+    }
+
+    private static List<string> GetMapNameVariations(string rawName)
+    {
+        var variations = new List<string>();
+        if (string.IsNullOrWhiteSpace(rawName)) return variations;
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void AddVariation(string name)
+        {
+            name = name.Trim();
+            if (string.IsNullOrEmpty(name)) return;
+            if (seen.Add(name))
+            {
+                variations.Add(name);
+            }
+            string withUnderscores = name.Replace(' ', '_');
+            if (seen.Add(withUnderscores))
+            {
+                variations.Add(withUnderscores);
+            }
+            string withSpaces = name.Replace('_', ' ');
+            if (seen.Add(withSpaces))
+            {
+                variations.Add(withSpaces);
+            }
+        }
+
+        AddVariation(rawName);
+
+        string stripped = rawName.Trim();
+        if (stripped.StartsWith("[Beta-Testing]", StringComparison.OrdinalIgnoreCase))
+        {
+            stripped = stripped.Substring("[Beta-Testing]".Length).Trim();
+        }
+        if (stripped.StartsWith("Realm_", StringComparison.OrdinalIgnoreCase) || stripped.StartsWith("Realm ", StringComparison.OrdinalIgnoreCase))
+        {
+            AddVariation(stripped.Substring(6).Trim());
+        }
+        if (stripped.EndsWith("_Demo", StringComparison.OrdinalIgnoreCase))
+        {
+            AddVariation(stripped.Substring(0, stripped.Length - 5).Trim());
+        }
+        if (stripped.EndsWith(" Demo", StringComparison.OrdinalIgnoreCase))
+        {
+            AddVariation(stripped.Substring(0, stripped.Length - 5).Trim());
+        }
+        int dashIdx = stripped.LastIndexOf('-');
+        if (dashIdx > 0)
+        {
+            string candidateTitle = stripped.Substring(0, dashIdx).Trim();
+            if (!string.IsNullOrEmpty(candidateTitle))
+            {
+                AddVariation(candidateTitle);
+            }
+        }
+        AddVariation(stripped);
+
+        return variations;
+    }
+
+    public static string? FindManifestPath(string mapName, string? version = null, string? manifestHash = null)
+    {
+        if (string.IsNullOrWhiteSpace(mapName))
+        {
+            return null;
+        }
+
+        string targetMapName = mapName.Trim();
+        string? targetVersion = !string.IsNullOrWhiteSpace(version) ? version.Trim() : null;
+
+        if (string.IsNullOrEmpty(targetVersion) && targetMapName.Contains('_'))
+        {
+            int lastUnderscore = targetMapName.LastIndexOf('_');
+            string candidateName = targetMapName.Substring(0, lastUnderscore).Trim();
+            string candidateVer = targetMapName.Substring(lastUnderscore + 1).Trim();
+            if (!string.IsNullOrEmpty(candidateName) && !string.IsNullOrEmpty(candidateVer) && (candidateVer.Contains('.') || char.IsDigit(candidateVer[0])))
+            {
+                targetMapName = candidateName;
+                targetVersion = candidateVer;
+            }
+        }
+
+        var variations = GetMapNameVariations(targetMapName);
+
+        if (!string.IsNullOrEmpty(targetVersion))
+        {
+            if (!string.IsNullOrEmpty(manifestHash))
+            {
+                foreach (var variation in variations)
+                {
+                    string directPath = GetManifestPath(variation, targetVersion, manifestHash, false);
+                    if (File.Exists(directPath)) return directPath;
+                    string p2pPath = GetManifestPath(variation, targetVersion, manifestHash, true);
+                    if (File.Exists(p2pPath)) return p2pPath;
+                }
+            }
+
+            foreach (var variation in variations)
+            {
+                string directPath = GetManifestPath(variation, targetVersion, null, false);
+                if (File.Exists(directPath)) return directPath;
+                string p2pPath = GetManifestPath(variation, targetVersion, null, true);
+                if (File.Exists(p2pPath)) return p2pPath;
+
+                string[] baseDirs = new[]
+                {
+                    GetMapDirectory(variation, targetVersion, null, false),
+                    GetMapDirectory(variation, targetVersion, null, true)
+                };
+                foreach (var bDir in baseDirs)
+                {
+                    if (Directory.Exists(bDir))
+                    {
+                        foreach (var sub in Directory.GetDirectories(bDir))
                         {
-                            using (var oldArchive = ArchiveFactory.OpenArchive(P2PArchiveFile, null))
+                            string subMf = Path.Combine(sub, "manifest.json");
+                            if (File.Exists(subMf)) return subMf;
+                        }
+                    }
+                }
+            }
+
+            string[] roots = new[] { GlobalArchiveDirectory, P2PArchiveDirectory };
+            foreach (var root in roots)
+            {
+                if (!Directory.Exists(root)) continue;
+                foreach (var dir in Directory.GetDirectories(root))
+                {
+                    string dirName = Path.GetFileName(dir);
+                    if (dirName.StartsWith(".")) continue;
+
+                    string candidate = Path.Combine(dir, targetVersion, "manifest.json");
+                    if (File.Exists(candidate))
+                    {
+                        try
+                        {
+                            var mf = MapManifest.LoadFromFile(candidate);
+                            if (mf != null && string.Equals(mf.Version, targetVersion, StringComparison.OrdinalIgnoreCase))
                             {
-                                foreach (var entry in oldArchive.Entries)
+                                foreach (var variation in variations)
                                 {
-                                    if (entry.IsDirectory) continue;
-                                    
-                                    if (!writtenKeys.Contains(entry.Key))
+                                    if (string.Equals(mf.MapName, variation, StringComparison.OrdinalIgnoreCase) ||
+                                        string.Equals(dirName, variation, StringComparison.OrdinalIgnoreCase))
                                     {
-                                        using (var oldStream = entry.OpenEntryStream())
-                                        {
-                                            writer.Write(entry.Key, oldStream, entry.LastModifiedTime ?? DateTime.UtcNow);
-                                        }
-                                        writtenKeys.Add(entry.Key);
+                                        return candidate;
                                     }
                                 }
                             }
                         }
-
-                        foreach (var kvp in newFilesByHash)
-                        {
-                           if (!writtenKeys.Contains(kvp.Key))
-                           {
-                               using (var ms = new MemoryStream(kvp.Value))
-                               {
-                                   writer.Write(kvp.Key, ms, DateTime.UtcNow);
-                               }
-                               writtenKeys.Add(kvp.Key);
-                           }
-                        }
+                        catch { }
                     }
-                }
 
-                if (File.Exists(P2PArchiveFile))
-                {
-                    File.Delete(P2PArchiveFile);
-                }
-                File.Move(tempFile, P2PArchiveFile);
-            }
-            catch (Exception ex)
-            {
-                MapAssetManager.LogErr($"[MapAssetManager] Error writing p2p archive: {ex.Message}");
-                if (File.Exists(tempFile))
-                {
-                    try { File.Delete(tempFile); } catch { }
-                }
-            }
-        }
-    }
-
-    public static string CreateTemporaryDeltaArchive(List<string> missingHashes)
-    {
-        if (!Directory.Exists(GlobalArchiveDirectory))
-        {
-            Directory.CreateDirectory(GlobalArchiveDirectory);
-        }
-
-        string tempDeltaPath = Path.Combine(GlobalArchiveDirectory, Guid.NewGuid().ToString() + "_delta.7z");
-        
-        lock (ArchiveLock)
-        {
-            try
-            {
-                using (var newFs = File.Create(tempDeltaPath))
-                using (var writer = new SevenZipWriter(newFs, new SevenZipWriterOptions() { CompressionType = CompressionType.LZMA }))
-                {
-                    var entryMap = new Dictionary<string, IArchiveEntry>();
-                    IArchive? hostArchive = null;
-                    if (File.Exists(GlobalArchiveFile))
+                    string versionDir = Path.Combine(dir, targetVersion);
+                    if (Directory.Exists(versionDir))
                     {
-                        hostArchive = ArchiveFactory.OpenArchive(GlobalArchiveFile, null);
-                        foreach (var entry in hostArchive.Entries)
+                        foreach (var hashSub in Directory.GetDirectories(versionDir))
                         {
-                            if (!entry.IsDirectory)
+                            string hashCandidate = Path.Combine(hashSub, "manifest.json");
+                            if (File.Exists(hashCandidate))
                             {
-                                entryMap[entry.Key] = entry;
+                                try
+                                {
+                                    var mf = MapManifest.LoadFromFile(hashCandidate);
+                                    if (mf != null && string.Equals(mf.Version, targetVersion, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        foreach (var variation in variations)
+                                        {
+                                            if (string.Equals(mf.MapName, variation, StringComparison.OrdinalIgnoreCase) ||
+                                                string.Equals(dirName, variation, StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                return hashCandidate;
+                                            }
+                                        }
+                                    }
+                                }
+                                catch { }
                             }
                         }
                     }
+                }
+            }
 
-                    var p2pEntryMap = new Dictionary<string, IArchiveEntry>();
-                    IArchive? p2pArchive = null;
-                    if (File.Exists(P2PArchiveFile))
+            return null;
+        }
+
+        foreach (var variation in variations)
+        {
+            string[] checkRoots = new[] { GlobalArchiveDirectory, P2PArchiveDirectory };
+            foreach (var cRoot in checkRoots)
+            {
+                string mapDir = Path.Combine(cRoot, variation);
+                if (Directory.Exists(mapDir))
+                {
+                    string rootManifest = Path.Combine(mapDir, "manifest.json");
+                    if (File.Exists(rootManifest)) return rootManifest;
+
+                    var versionDirs = Directory.GetDirectories(mapDir);
+                    Array.Sort(versionDirs, StringComparer.OrdinalIgnoreCase);
+                    for (int i = versionDirs.Length - 1; i >= 0; i--)
                     {
-                        p2pArchive = ArchiveFactory.OpenArchive(P2PArchiveFile, null);
-                        foreach (var entry in p2pArchive.Entries)
+                        string candidate = Path.Combine(versionDirs[i], "manifest.json");
+                        if (File.Exists(candidate)) return candidate;
+
+                        var hashDirs = Directory.GetDirectories(versionDirs[i]);
+                        Array.Sort(hashDirs, StringComparer.OrdinalIgnoreCase);
+                        for (int j = hashDirs.Length - 1; j >= 0; j--)
                         {
-                            if (!entry.IsDirectory)
-                            {
-                                p2pEntryMap[entry.Key] = entry;
-                            }
+                            string hashCandidate = Path.Combine(hashDirs[j], "manifest.json");
+                            if (File.Exists(hashCandidate)) return hashCandidate;
                         }
                     }
+                }
+            }
+        }
 
+        string[] searchRoots = new[] { GlobalArchiveDirectory, P2PArchiveDirectory };
+        foreach (var root in searchRoots)
+        {
+            if (!Directory.Exists(root)) continue;
+
+            foreach (var dir in Directory.GetDirectories(root))
+            {
+                string dirName = Path.GetFileName(dir);
+                if (dirName.StartsWith(".")) continue;
+
+                var manifestCandidates = new List<string>();
+                string rootMf = Path.Combine(dir, "manifest.json");
+                if (File.Exists(rootMf)) manifestCandidates.Add(rootMf);
+
+                foreach (var sd in Directory.GetDirectories(dir))
+                {
+                    string subMf = Path.Combine(sd, "manifest.json");
+                    if (File.Exists(subMf)) manifestCandidates.Add(subMf);
+
+                    foreach (var hsd in Directory.GetDirectories(sd))
+                    {
+                        string hsubMf = Path.Combine(hsd, "manifest.json");
+                        if (File.Exists(hsubMf)) manifestCandidates.Add(hsubMf);
+                    }
+                }
+
+                foreach (var mfPath in manifestCandidates)
+                {
                     try
                     {
-                        foreach (var hash in missingHashes)
+                        var mf = MapManifest.LoadFromFile(mfPath);
+                        if (mf != null)
                         {
-                            string norm = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(hash);
-                            byte[]? casBytes = Storage.GetAssetBytes(norm) ?? P2PStorage.GetAssetBytes(norm);
-                            if (casBytes != null)
+                            foreach (var variation in variations)
                             {
-                                using var ms = new MemoryStream(casBytes);
-                                writer.Write(hash, ms, DateTime.UtcNow);
-                            }
-                            else if (entryMap.TryGetValue(hash, out var hostEntry))
-                            {
-                                using (var entryStream = hostEntry.OpenEntryStream())
+                                if (string.Equals(mf.MapName, variation, StringComparison.OrdinalIgnoreCase) ||
+                                    string.Equals(dirName, variation, StringComparison.OrdinalIgnoreCase))
                                 {
-                                    writer.Write(hash, entryStream, hostEntry.LastModifiedTime ?? DateTime.UtcNow);
+                                    return mfPath;
                                 }
-                            }
-                            else if (p2pEntryMap.TryGetValue(hash, out var p2pEntry))
-                            {
-                                using (var entryStream = p2pEntry.OpenEntryStream())
-                                {
-                                    writer.Write(hash, entryStream, p2pEntry.LastModifiedTime ?? DateTime.UtcNow);
-                                }
-                            }
-                            else
-                            {
-                                MapAssetManager.LogErr($"[MapAssetManager] Requested hash {hash} not found in host storage or archive.");
                             }
                         }
                     }
-                    finally
+                    catch { }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    public static MapManifest? FindHostManifest(string mapName, string? version = null)
+    {
+        string? manifestPath = FindManifestPath(mapName, version);
+        if (!string.IsNullOrEmpty(manifestPath) && File.Exists(manifestPath))
+        {
+            var manifest = MapManifest.LoadFromFile(manifestPath);
+            if (manifest != null) return manifest;
+        }
+
+        return IngestHostMap(mapName);
+    }
+
+    public static bool IsMapDownloaded(string mapName, string? version = null, string? manifestHash = null)
+    {
+        if (string.IsNullOrWhiteSpace(mapName))
+        {
+            return false;
+        }
+
+        string? manifestPath = FindManifestPath(mapName, version, manifestHash);
+        if (manifestPath == null || !File.Exists(manifestPath))
+        {
+            return false;
+        }
+
+        string mapDir = Path.GetDirectoryName(manifestPath) ?? string.Empty;
+
+        try
+        {
+            string manifestJson = File.ReadAllText(manifestPath);
+            var manifest = MapManifest.LoadFromJson(manifestJson) ?? JsonSerializer.Deserialize<MapManifest>(manifestJson);
+            if (manifest == null)
+            {
+                return false;
+            }
+
+            if (manifest.Files == null || manifest.Files.Count == 0)
+            {
+                return true;
+            }
+
+            var missingHashes = GetMissingHashes(manifest.Files.Values);
+            if (missingHashes.Count == 0)
+            {
+                bool hasMissingDiskFile = false;
+                foreach (var kvp in manifest.Files)
+                {
+                    string rel = kvp.Key.StartsWith("res://", StringComparison.OrdinalIgnoreCase) ? kvp.Key.Substring(6) : kvp.Key;
+                    rel = rel.TrimStart('/', '\\');
+                    if (!File.Exists(Path.Combine(mapDir, rel)))
                     {
-                        hostArchive?.Dispose();
-                        p2pArchive?.Dispose();
+                        hasMissingDiskFile = true;
+                        break;
                     }
                 }
-                return tempDeltaPath;
-            }
-            catch (Exception ex)
-            {
-                MapAssetManager.LogErr($"[MapAssetManager] Failed to create temporary delta archive: {ex.Message}");
-                if (File.Exists(tempDeltaPath))
+                if (hasMissingDiskFile)
                 {
-                    try { File.Delete(tempDeltaPath); } catch { }
+                    ExtractManifestFiles(manifest, mapDir, isP2P: manifestPath.Contains("p2p_cache", StringComparison.OrdinalIgnoreCase));
                 }
-                throw;
+                return true;
             }
+            return false;
+        }
+        catch
+        {
+            return false;
         }
     }
 
     public static void PruneGlobalArchive()
     {
         string archiveDir = GlobalArchiveDirectory;
-        string archiveFile = GlobalArchiveFile;
-        Task.Run(() => PruneGlobalArchiveInternal(archiveDir, archiveFile));
+        Task.Run(() => PruneGlobalArchiveInternal(archiveDir));
     }
 
-    private static void PruneGlobalArchiveInternal(string archiveDir, string archiveFile)
+    public static void PruneGlobalArchiveSync()
+    {
+        string archiveDir = GlobalArchiveDirectory;
+        PruneGlobalArchiveInternal(archiveDir);
+    }
+
+    private static void PruneGlobalArchiveInternal(string archiveDir)
     {
         lock (ArchiveLock)
         {
@@ -648,13 +688,31 @@ public static class MapAssetManager
                     return;
                 }
 
-                var manifestFiles = Directory.GetFiles(archiveDir, "*.json");
+                string legacyGlobal7z = Path.Combine(archiveDir, "global_assets.7z");
+                if (File.Exists(legacyGlobal7z))
+                {
+                    try { File.Delete(legacyGlobal7z); } catch { }
+                }
+                string legacyPckCache = Path.Combine(archiveDir, "pck_cache.json");
+                if (File.Exists(legacyPckCache))
+                {
+                    try { File.Delete(legacyPckCache); } catch { }
+                }
+                try
+                {
+                    var legacyPcks = Directory.GetFiles(archiveDir, "*.pck", SearchOption.AllDirectories);
+                    foreach (var pck in legacyPcks)
+                    {
+                        try { File.Delete(pck); } catch { }
+                    }
+                }
+                catch { }
+
+                var manifestFiles = Directory.GetFiles(archiveDir, "manifest.json", SearchOption.AllDirectories);
                 var referencedHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var file in manifestFiles)
                 {
-                    if (Path.GetFileName(file) == "pck_cache.json" || Path.GetFileName(file) == "servers.json") continue;
-
                     try
                     {
                         string content = File.ReadAllText(file);
@@ -700,65 +758,7 @@ public static class MapAssetManager
                     }
                 }
 
-                if (!File.Exists(archiveFile))
-                {
-                    MapAssetManager.Log("[MapAssetManager] CAS pruning completed. Global 7z archive does not exist, skipping 7z pruning.");
-                    return;
-                }
-
-                bool needsPruning = false;
-                using (var archive = ArchiveFactory.OpenArchive(archiveFile, null))
-                {
-                    foreach (var entry in archive.Entries)
-                    {
-                        if (entry.IsDirectory) continue;
-                        if (!referencedHashes.Contains(entry.Key))
-                        {
-                            needsPruning = true;
-                            MapAssetManager.Log($"[MapAssetManager] Unreferenced hash found in global archive: {entry.Key}");
-                        }
-                    }
-                }
-
-                if (needsPruning)
-                {
-                    MapAssetManager.Log("[MapAssetManager] Rebuilding global archive to prune unreferenced hashes...");
-                    string tempFile = Path.Combine(archiveDir, Guid.NewGuid().ToString() + ".7z");
-                    
-                    using (var newFs = File.Create(tempFile))
-                    using (var writer = new SevenZipWriter(newFs, new SevenZipWriterOptions() { CompressionType = CompressionType.LZMA }))
-                    {
-                        using (var oldArchive = ArchiveFactory.OpenArchive(archiveFile, null))
-                        {
-                            foreach (var entry in oldArchive.Entries)
-                            {
-                                if (entry.IsDirectory) continue;
-                                if (referencedHashes.Contains(entry.Key))
-                                {
-                                    using (var oldStream = entry.OpenEntryStream())
-                                    {
-                                        writer.Write(entry.Key, oldStream, entry.LastModifiedTime ?? DateTime.UtcNow);
-                                    }
-                                }
-                                else
-                                {
-                                    MapAssetManager.Log($"[MapAssetManager] Pruned entry: {entry.Key}");
-                                }
-                            }
-                        }
-                    }
-
-                    if (File.Exists(archiveFile))
-                    {
-                        File.Delete(archiveFile);
-                    }
-                    File.Move(tempFile, archiveFile);
-                    MapAssetManager.Log("[MapAssetManager] Pruning complete.");
-                }
-                else
-                {
-                    MapAssetManager.Log("[MapAssetManager] No pruning needed.");
-                }
+                MapAssetManager.Log("[MapAssetManager] Pruning complete.");
             }
             catch (Exception ex)
             {
@@ -771,10 +771,56 @@ public static class MapAssetManager
     {
         var manifest = new MapManifest();
         manifest.MapName = Path.GetFileNameWithoutExtension(mapPath);
+        manifest.Version = "1.0.0";
 
         var newFiles = new Dictionary<string, byte[]>();
 
-        string? mapDir = Path.GetDirectoryName(mapPath);
+        string? mapDir = null;
+        if (Directory.Exists(mapPath))
+        {
+            mapDir = mapPath;
+        }
+        else if (File.Exists(mapPath))
+        {
+            if (mapPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            {
+                mapDir = Path.GetDirectoryName(mapPath);
+            }
+        }
+        else
+        {
+            string? foundManifest = FindManifestPath(mapPath);
+            if (foundManifest != null)
+            {
+                mapDir = Path.GetDirectoryName(foundManifest);
+            }
+            else
+            {
+                try
+                {
+                    string globalUser = ProjectSettings.GlobalizePath($"user://maps/{mapPath}");
+                    if (Directory.Exists(globalUser)) mapDir = globalUser;
+                }
+                catch { }
+
+                if (string.IsNullOrEmpty(mapDir))
+                {
+                    try
+                    {
+                        string globalRes = ProjectSettings.GlobalizePath($"res://Maps/{mapPath}");
+                        if (Directory.Exists(globalRes)) mapDir = globalRes;
+                    }
+                    catch { }
+                }
+
+                if (string.IsNullOrEmpty(mapDir))
+                {
+                    string combined = Path.Combine(GlobalArchiveDirectory, mapPath);
+                    if (Directory.Exists(combined)) mapDir = combined;
+                }
+            }
+        }
+
         if (string.IsNullOrEmpty(mapDir)) mapDir = "Realm.MapScript";
         
         if (Directory.Exists(mapDir))
@@ -811,6 +857,13 @@ public static class MapAssetManager
                         {
                             manifest.Assets = existing.Assets.DeepClone() as JsonObject;
                         }
+                        if (existing.Files != null && existing.Files.Count > 0)
+                        {
+                            foreach (var kvp in existing.Files)
+                            {
+                                manifest.Files[kvp.Key] = kvp.Value;
+                            }
+                        }
                     }
                 }
                 catch
@@ -822,8 +875,14 @@ public static class MapAssetManager
             foreach (var file in files)
             {
                 string relativePath = Path.GetRelativePath(mapDir, file).Replace("\\", "/");
-                if (relativePath.StartsWith("bin/") || relativePath.StartsWith("obj/") || 
-                    relativePath.EndsWith(".cs") || relativePath.EndsWith(".csproj"))
+                if (relativePath.StartsWith("bin/", StringComparison.OrdinalIgnoreCase) || 
+                    relativePath.StartsWith("obj/", StringComparison.OrdinalIgnoreCase) || 
+                    relativePath.StartsWith(".git/", StringComparison.OrdinalIgnoreCase) ||
+                    relativePath.StartsWith(".vscode/", StringComparison.OrdinalIgnoreCase) ||
+                    relativePath.StartsWith(".godot/", StringComparison.OrdinalIgnoreCase) ||
+                    relativePath.StartsWith(".sidecarcache/", StringComparison.OrdinalIgnoreCase) ||
+                    relativePath.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase) ||
+                    relativePath.Equals("manifest.json", StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
@@ -834,9 +893,11 @@ public static class MapAssetManager
                 string assetKey = string.IsNullOrEmpty(ext) ? blake3 : $"{blake3}{ext}";
                 newFiles[assetKey] = bytes;
 
-                string virtualPath = "res://" + relativePath;
+                string virtualPath = relativePath;
                 manifest.Files[virtualPath] = assetKey;
             }
+
+            manifest.Assets = MapManifest.UnflattenFilesToAssets(manifest.Files);
         }
         else if (File.Exists(mapPath))
         {
@@ -859,9 +920,14 @@ public static class MapAssetManager
 
         try
         {
-            string manifestPath = Path.Combine(GlobalArchiveDirectory, $"{manifest.MapName}_manifest.json");
-            File.WriteAllText(manifestPath, JsonSerializer.Serialize(manifest));
-            MapAssetManager.Log($"[MapAssetManager] Saved host manifest to: {manifestPath}");
+            string version = !string.IsNullOrWhiteSpace(manifest.Version) ? manifest.Version.Trim() : "1.0.0";
+            string manifestBlake3 = ComputeManifestBlake3(manifest);
+            string manifestDir = GetMapDirectory(manifest.MapName, version, manifestBlake3, false);
+            Directory.CreateDirectory(manifestDir);
+            string manifestPath = Path.Combine(manifestDir, "manifest.json");
+            File.WriteAllText(manifestPath, manifest.ToJson());
+            ExtractManifestFiles(manifest, manifestDir, isP2P: false);
+            MapAssetManager.Log($"[MapAssetManager] Saved host manifest and hardlinks to: {manifestPath}");
             AssetIndexService.Instance.RegisterManifest(manifest, manifestPath, isP2P: false);
         }
         catch (Exception ex)
@@ -871,272 +937,4 @@ public static class MapAssetManager
 
         return manifest;
     }
-
-    public static void CompileAndLoadPck(string mapName)
-    {
-        lock (ArchiveLock)
-        {
-            try
-            {
-                MapAssetManager.Log($"[MapAssetManager] Compiling PCK file for map: {mapName}");
-
-                string manifestPath = Path.Combine(GlobalArchiveDirectory, $"{mapName}_manifest.json");
-                if (!File.Exists(manifestPath))
-                {
-                    manifestPath = Path.Combine(P2PArchiveDirectory, $"{mapName}_manifest.json");
-                    if (!File.Exists(manifestPath))
-                    {
-                        manifestPath = Path.Combine(GlobalArchiveDirectory, "downloaded_map_manifest.json");
-                        if (!File.Exists(manifestPath))
-                        {
-                            manifestPath = Path.Combine(P2PArchiveDirectory, "downloaded_map_manifest.json");
-                            if (!File.Exists(manifestPath))
-                            {
-                                MapAssetManager.LogErr($"[MapAssetManager] Manifest for {mapName} not found at {manifestPath}");
-                                return;
-                            }
-                        }
-                    }
-                }
-
-                string manifestJson = File.ReadAllText(manifestPath);
-                var manifest = JsonSerializer.Deserialize<MapManifest>(manifestJson);
-                if (manifest == null || manifest.Files == null)
-                {
-                    MapAssetManager.LogErr("[MapAssetManager] Failed to parse map manifest.");
-                    return;
-                }
-
-                string tempDir = Path.Combine(GlobalArchiveDirectory, "temp_pck");
-                if (Directory.Exists(tempDir))
-                {
-                    Directory.Delete(tempDir, true);
-                }
-                Directory.CreateDirectory(tempDir);
-
-                var entryMap = new Dictionary<string, IArchiveEntry>();
-                IArchive? globalArchive = null;
-                if (File.Exists(GlobalArchiveFile))
-                {
-                    globalArchive = ArchiveFactory.OpenArchive(GlobalArchiveFile, null);
-                    foreach (var entry in globalArchive.Entries)
-                    {
-                        if (!entry.IsDirectory)
-                        {
-                            entryMap[entry.Key] = entry;
-                        }
-                    }
-                }
-
-                var p2pEntryMap = new Dictionary<string, IArchiveEntry>();
-                IArchive? p2pArchive = null;
-                if (File.Exists(P2PArchiveFile))
-                {
-                    p2pArchive = ArchiveFactory.OpenArchive(P2PArchiveFile, null);
-                    foreach (var entry in p2pArchive.Entries)
-                    {
-                        if (!entry.IsDirectory)
-                        {
-                            p2pEntryMap[entry.Key] = entry;
-                        }
-                    }
-                }
-
-                try
-                {
-                    foreach (var kvp in manifest.Files)
-                    {
-                        string virtualPath = kvp.Key;
-                        string hash = kvp.Value;
-                        string norm = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(hash);
-                        string tempFilePath = Path.Combine(tempDir, hash);
-
-                        byte[]? casBytes = Storage.GetAssetBytes(norm) ?? P2PStorage.GetAssetBytes(norm);
-                        if (casBytes != null)
-                        {
-                            File.WriteAllBytes(tempFilePath, casBytes);
-                        }
-                        else if (entryMap.TryGetValue(hash, out var entry))
-                        {
-                            using (var entryStream = entry.OpenEntryStream())
-                            using (var fs = File.Create(tempFilePath))
-                            {
-                                entryStream.CopyTo(fs);
-                            }
-                        }
-                        else if (p2pEntryMap.TryGetValue(hash, out var p2pEntry))
-                        {
-                            using (var entryStream = p2pEntry.OpenEntryStream())
-                            using (var fs = File.Create(tempFilePath))
-                            {
-                                entryStream.CopyTo(fs);
-                            }
-                        }
-                        else
-                        {
-                            MapAssetManager.LogErr($"[MapAssetManager] Required hash {hash} not found in global/p2p storage or archives for file {virtualPath}");
-                        }
-                    }
-                }
-                finally
-                {
-                    globalArchive?.Dispose();
-                    p2pArchive?.Dispose();
-                }
-
-                string pckPath = Path.Combine(GlobalArchiveDirectory, $"{mapName}.pck");
-                if (File.Exists(pckPath))
-                {
-                    try { File.Delete(pckPath); } catch { }
-                }
-
-                if (IsGodotEngineRunning)
-                {
-                    CompilePckInternal(pckPath, tempDir, manifest);
-                }
-                else
-                {
-                    File.WriteAllText(pckPath, "MOCK PCK CONTENT");
-                    MapAssetManager.Log($"[MapAssetManager] [MOCK] Compiled mock PCK at: {pckPath}");
-                }
-
-                if (Directory.Exists(tempDir))
-                {
-                    Directory.Delete(tempDir, true);
-                }
-
-                if (File.Exists(pckPath))
-                {
-                    if (IsGodotEngineRunning)
-                    {
-                        bool loaded = LoadResourcePackInternal(pckPath);
-                        if (loaded)
-                        {
-                            MapAssetManager.Log($"[MapAssetManager] PCK for map {mapName} loaded into virtual filesystem successfully.");
-                        }
-                        else
-                        {
-                            MapAssetManager.LogErr($"[MapAssetManager] Failed to load PCK for map {mapName}.");
-                        }
-                    }
-                    else
-                    {
-                        MapAssetManager.Log($"[MapAssetManager] [MOCK] Loaded mock PCK for map {mapName}.");
-                    }
-                }
-
-                UpdatePckLastPlayed(mapName);
-            }
-            catch (Exception ex)
-            {
-                MapAssetManager.LogErr($"[MapAssetManager] Error compiling or loading PCK: {ex.Message}");
-            }
-        }
-    }
-
-    private static void UpdatePckLastPlayed(string mapName)
-    {
-        try
-        {
-            string cachePath = Path.Combine(GlobalArchiveDirectory, "pck_cache.json");
-            Dictionary<string, long> cache = new();
-            if (File.Exists(cachePath))
-            {
-                try
-                {
-                    string content = File.ReadAllText(cachePath);
-                    var deserialized = JsonSerializer.Deserialize<Dictionary<string, long>>(content);
-                    if (deserialized != null)
-                    {
-                        cache = deserialized;
-                    }
-                }
-                catch { }
-            }
-
-            cache[mapName] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            File.WriteAllText(cachePath, JsonSerializer.Serialize(cache));
-
-            var pckFiles = Directory.GetFiles(GlobalArchiveDirectory, "*.pck");
-            var pckInfoList = new List<(string path, string name, long lastPlayed)>();
-
-            foreach (var pckFile in pckFiles)
-            {
-                string name = Path.GetFileNameWithoutExtension(pckFile);
-                long lastPlayed = 0;
-                if (!cache.TryGetValue(name, out lastPlayed))
-                {
-                    lastPlayed = new DateTimeOffset(File.GetLastWriteTimeUtc(pckFile)).ToUnixTimeSeconds();
-                }
-                pckInfoList.Add((pckFile, name, lastPlayed));
-            }
-
-            pckInfoList.Sort((a, b) => b.lastPlayed.CompareTo(a.lastPlayed));
-
-            long sevenDaysAgo = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - (7 * 24 * 3600);
-
-            for (int i = 0; i < pckInfoList.Count; i++)
-            {
-                var pck = pckInfoList[i];
-                bool keep = (i < 5) && (pck.lastPlayed >= sevenDaysAgo);
-                if (pck.name == mapName) keep = true;
-
-                if (!keep)
-                {
-                    try
-                    {
-                        File.Delete(pck.path);
-                        MapAssetManager.Log($"[MapAssetManager] Pruned old PCK file: {pck.path}");
-                        cache.Remove(pck.name);
-                    }
-                    catch (Exception ex)
-                    {
-                        MapAssetManager.LogErr($"[MapAssetManager] Failed to delete old PCK {pck.path}: {ex.Message}");
-                    }
-                }
-            }
-
-            File.WriteAllText(cachePath, JsonSerializer.Serialize(cache));
-        }
-        catch (Exception ex)
-        {
-            MapAssetManager.LogErr($"[MapAssetManager] Error pruning old PCK files: {ex.Message}");
-        }
-    }
-
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-    private static void CompilePckInternal(string pckPath, string tempDir, MapManifest manifest)
-    {
-        var packer = new PckPacker();
-        Error err = packer.PckStart(pckPath);
-        if (err == Error.Ok)
-        {
-            foreach (var kvp in manifest.Files)
-            {
-                string virtualPath = kvp.Key;
-                string hash = kvp.Value;
-                string tempFilePath = Path.Combine(tempDir, hash);
-                if (File.Exists(tempFilePath))
-                {
-                    string pckVirtualPath = virtualPath.StartsWith("res://", StringComparison.OrdinalIgnoreCase)
-                        ? virtualPath
-                        : $"res://{virtualPath.TrimStart('/')}";
-                    packer.AddFile(pckVirtualPath, tempFilePath);
-                }
-            }
-            packer.Flush();
-            MapAssetManager.Log($"[MapAssetManager] Successfully compiled PCK at: {pckPath}");
-        }
-        else
-        {
-            MapAssetManager.LogErr($"[MapAssetManager] PckPacker failed to start: {err}");
-        }
-    }
-
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-    private static bool LoadResourcePackInternal(string pckPath)
-    {
-        return ProjectSettings.LoadResourcePack(pckPath);
-    }
 }
-

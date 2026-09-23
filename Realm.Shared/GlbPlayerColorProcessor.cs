@@ -83,6 +83,7 @@ public static class GlbPlayerColorProcessor
 
             using var ormImg = Image.Load<Rgba32>(ormRaw);
             int maskCount = 0;
+            int unmaskCount = 0;
             for (int y = 0; y < ormImg.Height; y += 2)
             {
                 for (int x = 0; x < ormImg.Width; x += 2)
@@ -90,12 +91,15 @@ public static class GlbPlayerColorProcessor
                     if (ormImg[x, y].R > 32)
                     {
                         maskCount++;
-                        if (maskCount > 5) return true;
+                    }
+                    else
+                    {
+                        unmaskCount++;
                     }
                 }
             }
 
-            return maskCount > 0;
+            return maskCount > 5 && unmaskCount > 5;
         }
         catch
         {

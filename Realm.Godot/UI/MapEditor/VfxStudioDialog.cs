@@ -1110,6 +1110,29 @@ public partial class VfxStudioDialog : FloatingDialogBase
 		CollectFromDir("decals");
 		CollectFromDir("textures");
 		CollectFromDir("vfx");
+		CollectFromDir("noise");
+
+		try
+		{
+			var assetsObj = MapAssetHelper.LoadUnionedAssets(wsPath);
+			if (assetsObj != null)
+			{
+				foreach (var catName in new[] { "ribbons", "decals", "textures", "vfx_spritesheets", "vfx", "noise_textures", "noise" })
+				{
+					if (assetsObj[catName] is JsonObject catObj)
+					{
+						foreach (var kvp in catObj)
+						{
+							if (!string.IsNullOrEmpty(kvp.Key))
+							{
+								results.Add(Path.GetFileName(kvp.Key));
+							}
+						}
+					}
+				}
+			}
+		}
+		catch { }
 
 		return results.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
 	}
@@ -1125,12 +1148,35 @@ public partial class VfxStudioDialog : FloatingDialogBase
 			foreach (var file in Directory.GetFiles(dir, "*.*"))
 			{
 				if (file.EndsWith(".rtex", StringComparison.OrdinalIgnoreCase) ||
-				    file.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+				    file.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+				    file.EndsWith(".webp", StringComparison.OrdinalIgnoreCase))
 				{
 					results.Add(Path.GetFileName(file));
 				}
 			}
 		}
+
+		try
+		{
+			var assetsObj = MapAssetHelper.LoadUnionedAssets(wsPath);
+			if (assetsObj != null)
+			{
+				foreach (var catName in new[] { "noise_textures", "noise" })
+				{
+					if (assetsObj[catName] is JsonObject catObj)
+					{
+						foreach (var kvp in catObj)
+						{
+							if (!string.IsNullOrEmpty(kvp.Key))
+							{
+								results.Add(Path.GetFileName(kvp.Key));
+							}
+						}
+					}
+				}
+			}
+		}
+		catch { }
 
 		return results.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
 	}

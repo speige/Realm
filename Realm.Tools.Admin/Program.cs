@@ -12,14 +12,11 @@ using Realm.Shared.Distribution;
 
 namespace Realm.Tools.Admin;
 
-[Verb("greenlight", HelpText = "Cryptographically sign and greenlight a map on the registry server using an admin private key.")]
+[Verb("greenlight", HelpText = "Greenlight override for a map to be published without required metrics")]
 public class AdminGreenlightOptions
 {
-	[Option('m', "map", Required = true, HelpText = "Map title or package name to greenlight.")]
+	[Option('m', "map", Required = true, HelpText = "Map title or package name")]
 	public string Map { get; set; } = string.Empty;
-
-	[Option('v', "version", Required = false, Default = "1.0", HelpText = "Map version to greenlight (default: 1.0).")]
-	public string Version { get; set; } = "1.0";
 
 	[Option('k', "key", Required = true, HelpText = "Path to admin private key file (PEM or raw 32-byte binary) or Base64 private key string.")]
 	public string Key { get; set; } = string.Empty;
@@ -28,59 +25,43 @@ public class AdminGreenlightOptions
 	public string? Server { get; set; }
 }
 
-[Verb("status", HelpText = "Check the greenlight status and community metrics of a map on the registry server.")]
+[Verb("status", HelpText = "Check the greenlight status and community metrics of a map")]
 public class AdminStatusOptions
 {
-	[Option('m', "map", Required = true, HelpText = "Map title or package name to inspect.")]
+	[Option('m', "map", Required = true, HelpText = "Map title or package name")]
 	public string Map { get; set; } = string.Empty;
 
-	[Option('v', "version", Required = false, Default = "1.0", HelpText = "Map version to inspect (default: 1.0).")]
-	public string Version { get; set; } = "1.0";
+	[Option('v', "version", Required = false, Default = null, HelpText = "Map version to inspect")]
+	public string? Version { get; set; }
 
 	[Option('s', "server", Required = false, HelpText = "Registry server URL.")]
 	public string? Server { get; set; }
 }
 
-[Verb("unlock-name", HelpText = "Override or unlock a reserved creator username on the registry server using an admin private key.")]
+[Verb("unlock-name", HelpText = "Override the public key tied to a creator's username")]
 public class AdminUnlockNameOptions
 {
-	[Option('u', "username", Required = true, HelpText = "Username to unlock or re-register.")]
+	[Option('u', "username", Required = true, HelpText = "Creator's Username")]
 	public string Username { get; set; } = string.Empty;
 
-	[Option('k', "key", Required = true, HelpText = "Path to admin private key file or Base64 private key string.")]
+	[Option('k', "key", Required = true, HelpText = "Path to admin private key file (PEM or raw 32-byte binary) or Base64 private key string.")]
 	public string Key { get; set; } = string.Empty;
 
-	[Option("target-key", Required = false, HelpText = "New public key to assign the username to (defaults to admin public key).")]
-	public string? TargetKey { get; set; }
+	[Option("target-key", Required = true, HelpText = "New public key to assign the username to.")]
+	public string TargetKey { get; set; } = string.Empty;
 
 	[Option('s', "server", Required = false, HelpText = "Registry server URL.")]
 	public string? Server { get; set; }
 }
 
-[Verb("info", HelpText = "Display server admin information and public key configuration.")]
+[Verb("info", HelpText = "Display server information")]
 public class AdminInfoOptions
 {
 	[Option('s', "server", Required = false, HelpText = "Registry server URL.")]
 	public string? Server { get; set; }
 }
 
-[Verb("sync-cluster", HelpText = "Cryptographically authorize and synchronize cluster metrics, maps, or creators between authoritative cluster nodes.")]
-public class AdminSyncClusterOptions
-{
-	[Option('t', "type", Required = true, HelpText = "Sync type: 'metrics', 'maps', or 'creators'.")]
-	public string Type { get; set; } = "metrics";
-
-	[Option('k', "key", Required = true, HelpText = "Path to admin private key file or Base64 private key string.")]
-	public string Key { get; set; } = string.Empty;
-
-	[Option('d', "dest", Required = false, HelpText = "Destination registry server URL.")]
-	public string? Destination { get; set; }
-
-	[Option('p', "payload-file", Required = false, HelpText = "Path to JSON payload file containing items to synchronize.")]
-	public string? PayloadFile { get; set; }
-}
-
-[Verb("export-events", HelpText = "Export cluster events from a seed node to a local JSON file.")]
+[Verb("export-events", HelpText = "Export cluster events from the node to a local JSON file.")]
 public class AdminExportEventsOptions
 {
 	[Option('s', "server", Required = false, HelpText = "Registry server URL.")]
@@ -96,34 +77,24 @@ public class AdminExportEventsOptions
 	public int Limit { get; set; } = 500;
 }
 
-[Verb("replay-events", HelpText = "Replay cluster events from a local JSON file to a destination seed node.")]
-public class AdminReplayEventsOptions
-{
-	[Option('i', "in", Required = true, HelpText = "Input JSON file path containing exported cluster events.")]
-	public string InputFile { get; set; } = string.Empty;
-
-	[Option('s', "server", Required = false, HelpText = "Destination registry server URL.")]
-	public string? Server { get; set; }
-}
-
 [Verb("prune-cas", HelpText = "Trigger server-side CAS integrity verification and orphan asset pruning.")]
 public class AdminPruneCasOptions
 {
-	[Option('k', "key", Required = true, HelpText = "Path to admin private key file or Base64 private key string.")]
+	[Option('k', "key", Required = true, HelpText = "Path to admin private key file (PEM or raw 32-byte binary) or Base64 private key string.")]
 	public string Key { get; set; } = string.Empty;
 
 	[Option('s', "server", Required = false, HelpText = "Registry server URL.")]
 	public string? Server { get; set; }
 }
 
-[Verb("digest", HelpText = "Query and verify BLAKE3 database state digest across one or more seed nodes.")]
+[Verb("digest", HelpText = "Query and verify BLAKE3 database state digest across one or more nodes.")]
 public class AdminDigestOptions
 {
 	[Option('s', "server", Required = false, HelpText = "Registry server URL.")]
 	public string? Server { get; set; }
 }
 
-[Verb("snapshot", HelpText = "Download a complete database state snapshot from a seed node to a local JSON file.")]
+[Verb("snapshot", HelpText = "Download a complete database state snapshot from a node to a local JSON file.")]
 public class AdminSnapshotOptions
 {
 	[Option('s', "server", Required = false, HelpText = "Registry server URL.")]
@@ -133,36 +104,55 @@ public class AdminSnapshotOptions
 	public string OutputFile { get; set; } = "cluster_snapshot.json";
 }
 
-[Verb("restore-snapshot", HelpText = "Restore a database state snapshot file to a target seed node using an admin private key.")]
+[Verb("restore-snapshot", HelpText = "Restore a database state snapshot file to a target node")]
 public class AdminRestoreSnapshotOptions
 {
 	[Option('i', "in", Required = true, HelpText = "Input JSON snapshot file path.")]
 	public string InputFile { get; set; } = string.Empty;
 
-	[Option('k', "key", Required = true, HelpText = "Path to admin private key file or Base64 private key string.")]
+	[Option('k', "key", Required = true, HelpText = "Path to admin private key file (PEM or raw 32-byte binary) or Base64 private key string.")]
 	public string Key { get; set; } = string.Empty;
 
-	[Option('s', "server", Required = false, HelpText = "Destination registry server URL.")]
+	[Option('s', "server", Required = false, HelpText = "Registry server URL.")]
 	public string? Server { get; set; }
+}
+
+[Verb("remove-manifest", HelpText = "Remove a published map manifest.json from the registry server")]
+public class AdminRemoveManifestOptions
+{
+	[Option('m', "map", Required = true, HelpText = "Map title or package name")]
+	public string Map { get; set; } = string.Empty;
+
+	[Option('v', "version", Required = false, Default = null, HelpText = "Map version to remove. If omitted, all versions of the map are removed.")]
+	public string? Version { get; set; }
+
+	[Option('k', "key", Required = true, HelpText = "Path to admin private key file (PEM or raw 32-byte binary) or Base64 private key string.")]
+	public string Key { get; set; } = string.Empty;
+
+	[Option('s', "server", Required = false, HelpText = "Registry server URL.")]
+	public string? Server { get; set; }
+
+	[Option('p', "prune", Required = false, Default = true, HelpText = "Automatically trigger CAS prune after removing the manifest to clear orphaned files.")]
+	public bool Prune { get; set; }
 }
 
 public static class Program
 {
 	public static int Main(string[] args)
 	{
-		return Parser.Default.ParseArguments<AdminGreenlightOptions, AdminStatusOptions, AdminUnlockNameOptions, AdminInfoOptions, AdminSyncClusterOptions, AdminExportEventsOptions, AdminReplayEventsOptions, AdminPruneCasOptions, AdminDigestOptions, AdminSnapshotOptions, AdminRestoreSnapshotOptions>(args)
+		Console.OutputEncoding = Encoding.UTF8;
+		return Parser.Default.ParseArguments<AdminGreenlightOptions, AdminStatusOptions, AdminUnlockNameOptions, AdminInfoOptions, AdminExportEventsOptions, AdminPruneCasOptions, AdminDigestOptions, AdminSnapshotOptions, AdminRestoreSnapshotOptions, AdminRemoveManifestOptions>(args)
 			.MapResult(
 				(AdminGreenlightOptions options) => ExecuteGreenlight(options),
 				(AdminStatusOptions options) => ExecuteStatus(options),
 				(AdminUnlockNameOptions options) => ExecuteUnlockName(options),
 				(AdminInfoOptions options) => ExecuteInfo(options),
-				(AdminSyncClusterOptions options) => ExecuteSyncCluster(options),
 				(AdminExportEventsOptions options) => ExecuteExportEvents(options),
-				(AdminReplayEventsOptions options) => ExecuteReplayEvents(options),
 				(AdminPruneCasOptions options) => ExecutePruneCas(options),
 				(AdminDigestOptions options) => ExecuteDigest(options),
 				(AdminSnapshotOptions options) => ExecuteSnapshot(options),
 				(AdminRestoreSnapshotOptions options) => ExecuteRestoreSnapshot(options),
+				(AdminRemoveManifestOptions options) => ExecuteRemoveManifest(options),
 				errors => 1);
 	}
 
@@ -173,17 +163,7 @@ public static class Program
 			return explicitServer.Trim();
 		}
 
-		var config = ServersConfigHelper.Load();
-		if (config.RegistryServers.Count > 0 && !string.IsNullOrWhiteSpace(config.RegistryServers[0]))
-		{
-			return config.RegistryServers[0];
-		}
-		if (config.Servers.Count > 0 && !string.IsNullOrWhiteSpace(config.Servers[0].Url))
-		{
-			return config.Servers[0].Url;
-		}
-
-		return "http://localhost:5000";
+		return ServersConfigHelper.GetDefaultServerUrl();
 	}
 
 	private static (string privateKeyBase64, string publicKeyBase64)? ParseAdminKey(string keyInput)
@@ -229,6 +209,33 @@ public static class Program
 		}
 	}
 
+	private static int CompareVersions(string? versionA, string? versionB)
+	{
+		if (string.IsNullOrWhiteSpace(versionA) && string.IsNullOrWhiteSpace(versionB)) return 0;
+		if (string.IsNullOrWhiteSpace(versionA)) return -1;
+		if (string.IsNullOrWhiteSpace(versionB)) return 1;
+
+		string cleanA = versionA.Trim().TrimStart('v', 'V');
+		string cleanB = versionB.Trim().TrimStart('v', 'V');
+
+		if (Version.TryParse(cleanA, out var parsedA) && Version.TryParse(cleanB, out var parsedB))
+		{
+			return parsedA.CompareTo(parsedB);
+		}
+
+		var partsA = cleanA.Split('.');
+		var partsB = cleanB.Split('.');
+		int maxLength = Math.Max(partsA.Length, partsB.Length);
+		for (int index = 0; index < maxLength; index++)
+		{
+			int numA = (index < partsA.Length && int.TryParse(partsA[index], out int parsedNumA)) ? parsedNumA : 0;
+			int numB = (index < partsB.Length && int.TryParse(partsB[index], out int parsedNumB)) ? parsedNumB : 0;
+			if (numA != numB) return numA.CompareTo(numB);
+		}
+
+		return string.Compare(versionA, versionB, StringComparison.OrdinalIgnoreCase);
+	}
+
 	private static int ExecuteGreenlight(AdminGreenlightOptions options)
 	{
 		string serverUrl = ResolveServerUrl(options.Server);
@@ -236,8 +243,7 @@ public static class Program
 		if (keyPair == null) return 1;
 
 		string mapTitle = options.Map.Trim();
-		string mapVersion = string.IsNullOrWhiteSpace(options.Version) ? "1.0" : options.Version.Trim();
-		string payload = $"greenlight:{mapTitle.ToLowerInvariant()}:{mapVersion.ToLowerInvariant()}";
+		string payload = $"greenlight:{mapTitle.ToLowerInvariant()}";
 		string signature = AuthorSignatureHelper.SignMessage(keyPair.Value.privateKeyBase64, payload);
 
 		Console.WriteLine("=================================================");
@@ -245,7 +251,6 @@ public static class Program
 		Console.WriteLine("=================================================");
 		Console.WriteLine($"Server:     {serverUrl}");
 		Console.WriteLine($"Map Title:  {mapTitle}");
-		Console.WriteLine($"Version:    {mapVersion}");
 		Console.WriteLine($"Admin Key:  {keyPair.Value.publicKeyBase64}");
 		Console.WriteLine();
 
@@ -255,7 +260,6 @@ public static class Program
 			var requestBody = new
 			{
 				MapTitle = mapTitle,
-				MapVersion = mapVersion,
 				AdminPublicKey = keyPair.Value.publicKeyBase64,
 				Signature = signature
 			};
@@ -266,8 +270,8 @@ public static class Program
 
 			if (response.IsSuccessStatusCode)
 			{
-				Console.WriteLine($"[SUCCESS] Map '{mapTitle}' v{mapVersion} has been greenlit!");
-				Console.WriteLine("The map creator may now publish this map directly through the Map Editor.");
+				Console.WriteLine($"[SUCCESS] Map '{mapTitle}' has been greenlit!");
+				Console.WriteLine("The map creator may now publish new versions of this map directly through the Map Editor.");
 				return 0;
 			}
 			else
@@ -287,8 +291,39 @@ public static class Program
 	{
 		string serverUrl = ResolveServerUrl(options.Server);
 		string mapTitle = options.Map.Trim();
-		string mapVersion = string.IsNullOrWhiteSpace(options.Version) ? "1.0" : options.Version.Trim();
-		string endpoint = $"{serverUrl.TrimEnd('/')}/api/maps/greenlight_status/{Uri.EscapeDataString(mapTitle)}_{Uri.EscapeDataString(mapVersion)}";
+		string? mapVersion = string.IsNullOrWhiteSpace(options.Version) ? null : options.Version.Trim();
+
+		if (string.IsNullOrWhiteSpace(mapVersion))
+		{
+			try
+			{
+				var client = new DistributionClient(serverUrl);
+				var discoveryMaps = client.GetDiscoveryMapsAsync().GetAwaiter().GetResult();
+				var matchingMaps = discoveryMaps
+					.Where(m => string.Equals(m.Title, mapTitle, StringComparison.OrdinalIgnoreCase) ||
+								m.MapId.StartsWith(mapTitle + "_", StringComparison.OrdinalIgnoreCase) ||
+								string.Equals(m.MapId, mapTitle, StringComparison.OrdinalIgnoreCase))
+					.ToList();
+
+				if (matchingMaps.Count > 0)
+				{
+					var latest = matchingMaps
+						.OrderByDescending(m => m.Version, Comparer<string>.Create(CompareVersions))
+						.FirstOrDefault();
+					if (latest != null && !string.IsNullOrWhiteSpace(latest.Version))
+					{
+						mapVersion = latest.Version;
+					}
+				}
+			}
+			catch
+			{
+			}
+		}
+
+		string endpoint = !string.IsNullOrWhiteSpace(mapVersion)
+			? $"{serverUrl.TrimEnd('/')}/api/maps/greenlight_status/{Uri.EscapeDataString(mapTitle)}_{Uri.EscapeDataString(mapVersion)}"
+			: $"{serverUrl.TrimEnd('/')}/api/maps/greenlight_status/{Uri.EscapeDataString(mapTitle)}";
 
 		try
 		{
@@ -315,18 +350,22 @@ public static class Program
 			int totalReviews = node["totalReviewsCount"]?.GetValue<int>() ?? 0;
 			double avgRating = node["averageRating"]?.GetValue<double>() ?? 0.0;
 
+			string titleHeader = !string.IsNullOrWhiteSpace(mapVersion)
+				? $"Greenlight Status for '{mapTitle}' v{mapVersion}"
+				: $"Greenlight Status for '{mapTitle}'";
+
 			Console.WriteLine("=================================================");
-			Console.WriteLine($"Greenlight Status for '{mapTitle}' v{mapVersion}");
+			Console.WriteLine(titleHeader);
 			Console.WriteLine("=================================================");
 			Console.WriteLine($"Overall Greenlit:             {(isGreenlit ? "YES (Approved for Discovery)" : "NO (In Beta-Testing)")}");
 			Console.WriteLine($"Admin Override:               {(adminOverride ? "ACTIVE" : "None")}");
 			Console.WriteLine();
 			Console.WriteLine("Greenlight Criteria:");
-			Console.WriteLine($"• Total Verified Good Reviews: {verifiedGoodReviews} / 100 (Required: >= 100)");
+			Console.WriteLine($"  - Total Verified Good Reviews: {verifiedGoodReviews} / 100 (Required: >= 100)");
 			Console.WriteLine();
 			Console.WriteLine("Public Discovery Statistics:");
-			Console.WriteLine($"• Public Total Reviews:        {totalReviews}");
-			Console.WriteLine($"• Public Average Rating:       {avgRating:F1} / 5.0");
+			Console.WriteLine($"  - Public Total Reviews:        {totalReviews}");
+			Console.WriteLine($"  - Public Average Rating:       {avgRating:F1} / 5.0");
 			Console.WriteLine("=================================================");
 			return 0;
 		}
@@ -344,7 +383,13 @@ public static class Program
 		if (keyPair == null) return 1;
 
 		string username = options.Username.Trim();
-		string targetKey = !string.IsNullOrWhiteSpace(options.TargetKey) ? options.TargetKey.Trim() : keyPair.Value.publicKeyBase64;
+		if (string.IsNullOrWhiteSpace(options.TargetKey))
+		{
+			Console.Error.WriteLine("Error: --target-key is required.");
+			return 1;
+		}
+
+		string targetKey = options.TargetKey.Trim();
 		string signature = AuthorSignatureHelper.SignMessage(keyPair.Value.privateKeyBase64, $"{username}:{targetKey}");
 
 		Console.WriteLine("=================================================");
@@ -424,75 +469,6 @@ public static class Program
 		}
 	}
 
-	private static int ExecuteSyncCluster(AdminSyncClusterOptions options)
-	{
-		string destUrl = ResolveServerUrl(options.Destination);
-		var keyPair = ParseAdminKey(options.Key);
-		if (keyPair == null) return 1;
-
-		string syncType = options.Type.Trim().ToLowerInvariant();
-		string endpoint = syncType switch
-		{
-			"metrics" => "/api/cluster/sync_metrics",
-			"maps" or "published_maps" => "/api/cluster/sync_published_maps",
-			"creators" => "/api/cluster/sync_creators",
-			_ => ""
-		};
-
-		if (string.IsNullOrEmpty(endpoint))
-		{
-			Console.Error.WriteLine($"[ERROR] Unknown sync type '{options.Type}'. Expected 'metrics', 'maps', or 'creators'.");
-			return 1;
-		}
-
-		string jsonPayload = "[]";
-		if (!string.IsNullOrWhiteSpace(options.PayloadFile) && File.Exists(options.PayloadFile))
-		{
-			jsonPayload = File.ReadAllText(options.PayloadFile);
-		}
-
-		string sigPayload = $"sync_{syncType}";
-		string signature = AuthorSignatureHelper.SignMessage(keyPair.Value.privateKeyBase64, sigPayload);
-		string bypassToken = AdminBypassAuth.CreateBypassToken(keyPair.Value.privateKeyBase64, "cluster", "sync");
-
-		Console.WriteLine("=================================================");
-		Console.WriteLine("Realm Admin Tool - Cluster Authorization Sync");
-		Console.WriteLine("=================================================");
-		Console.WriteLine($"Destination Server: {destUrl}");
-		Console.WriteLine($"Sync Type:          {syncType}");
-		Console.WriteLine($"Admin Key:          {keyPair.Value.publicKeyBase64}");
-		Console.WriteLine();
-
-		try
-		{
-			using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-			httpClient.DefaultRequestHeaders.Add("X-Cluster-Signature", signature);
-			httpClient.DefaultRequestHeaders.Add("X-Admin-PublicKey", keyPair.Value.publicKeyBase64);
-			httpClient.DefaultRequestHeaders.Add("X-Admin-Bypass", bypassToken);
-
-			var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
-			var response = httpClient.PostAsync($"{destUrl.TrimEnd('/')}{endpoint}", content).GetAwaiter().GetResult();
-			string responseText = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-
-			if (response.IsSuccessStatusCode)
-			{
-				Console.WriteLine($"[SUCCESS] Cluster {syncType} synchronization accepted by destination node.");
-				Console.WriteLine($"Response: {responseText}");
-				return 0;
-			}
-			else
-			{
-				Console.Error.WriteLine($"[FAILED] HTTP {(int)response.StatusCode}: {responseText}");
-				return 1;
-			}
-		}
-		catch (Exception ex)
-		{
-			Console.Error.WriteLine($"[ERROR] Connection failed: {ex.Message}");
-			return 1;
-		}
-	}
-
 	private static int ExecuteExportEvents(AdminExportEventsOptions options)
 	{
 		string serverUrl = ResolveServerUrl(options.Server);
@@ -525,62 +501,6 @@ public static class Program
 		catch (Exception ex)
 		{
 			Console.Error.WriteLine($"[ERROR] Failed to export events: {ex.Message}");
-			return 1;
-		}
-	}
-
-	private static int ExecuteReplayEvents(AdminReplayEventsOptions options)
-	{
-		string serverUrl = ResolveServerUrl(options.Server);
-		if (!File.Exists(options.InputFile))
-		{
-			Console.Error.WriteLine($"[ERROR] File '{options.InputFile}' not found.");
-			return 1;
-		}
-
-		Console.WriteLine("=================================================");
-		Console.WriteLine("Realm Admin Tool - Replay Cluster Events");
-		Console.WriteLine("=================================================");
-		Console.WriteLine($"Server:    {serverUrl}");
-		Console.WriteLine($"Input:     {options.InputFile}");
-		Console.WriteLine();
-
-		try
-		{
-			string json = File.ReadAllText(options.InputFile);
-			var events = JsonSerializer.Deserialize<List<ClusterEventDto>>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-			if (events == null || events.Count == 0)
-			{
-				Console.WriteLine("No events found in file.");
-				return 0;
-			}
-
-			var client = new DistributionClient(serverUrl);
-			int successCount = 0;
-			int failureCount = 0;
-
-			foreach (var evt in events)
-			{
-				bool success = client.PostClusterEventAsync(evt).GetAwaiter().GetResult();
-				if (success)
-				{
-					successCount++;
-					Console.WriteLine($"[REPLAYED] Event '{evt.EventType}' ({evt.EventId})");
-				}
-				else
-				{
-					failureCount++;
-					Console.Error.WriteLine($"[REJECTED] Event '{evt.EventType}' ({evt.EventId})");
-				}
-			}
-
-			Console.WriteLine();
-			Console.WriteLine($"[SUMMARY] Replayed {successCount}/{events.Count} events successfully ({failureCount} failed).");
-			return failureCount == 0 ? 0 : 1;
-		}
-		catch (Exception ex)
-		{
-			Console.Error.WriteLine($"[ERROR] Failed to replay events: {ex.Message}");
 			return 1;
 		}
 	}
@@ -649,7 +569,7 @@ public static class Program
 				foreach (var col in digest.CollectionHashes.Keys.OrderBy(k => k))
 				{
 					int count = digest.CollectionCounts.TryGetValue(col, out var c) ? c : 0;
-					Console.WriteLine($"• {col,-20} [{count,4} items] Hash: {digest.CollectionHashes[col]}");
+					Console.WriteLine($"  {col,-20} [{count,4} items] Hash: {digest.CollectionHashes[col]}");
 				}
 				Console.WriteLine("=================================================");
 				return 0;
@@ -760,6 +680,77 @@ public static class Program
 		catch (Exception ex)
 		{
 			Console.Error.WriteLine($"[ERROR] Restore failed: {ex.Message}");
+			return 1;
+		}
+	}
+
+	private static int ExecuteRemoveManifest(AdminRemoveManifestOptions options)
+	{
+		string serverUrl = ResolveServerUrl(options.Server);
+		var keyPair = ParseAdminKey(options.Key);
+		if (keyPair == null) return 1;
+
+		string mapTitle = options.Map.Trim();
+		string? mapVersion = string.IsNullOrWhiteSpace(options.Version) ? null : options.Version.Trim();
+		bool isAllVersions = mapVersion == null;
+
+		Console.WriteLine("=================================================");
+		Console.WriteLine("Realm Admin Tool - Remove Published Map Manifest");
+		Console.WriteLine("=================================================");
+		Console.WriteLine($"Server:     {serverUrl}");
+		Console.WriteLine($"Map Title:  {mapTitle}");
+		Console.WriteLine($"Version:    {(isAllVersions ? "[ALL VERSIONS]" : mapVersion)}");
+		Console.WriteLine($"Admin Key:  {keyPair.Value.publicKeyBase64}");
+		Console.WriteLine();
+
+		try
+		{
+			var client = new DistributionClient(serverUrl);
+			var result = isAllVersions
+				? client.RemoveAllManifestVersionsAsync(mapTitle, keyPair.Value.privateKeyBase64).GetAwaiter().GetResult()
+				: client.RemoveManifestVersionAsync(mapTitle, mapVersion!, keyPair.Value.privateKeyBase64).GetAwaiter().GetResult();
+
+			if (result.Success)
+			{
+				Console.WriteLine($"[SUCCESS] {result.Message}");
+				Console.WriteLine($"Manifests Deleted:   {result.ManifestsDeleted}");
+				Console.WriteLine($"DB Records Removed:  {result.DbRecordsRemoved}");
+				if (result.DeletedManifestFiles.Count > 0)
+				{
+					Console.WriteLine($"Deleted Files:       {string.Join(", ", result.DeletedManifestFiles)}");
+				}
+
+				if (options.Prune)
+				{
+					Console.WriteLine();
+					Console.WriteLine("Running subsequent CAS prune...");
+					var pruneResult = client.PruneServerCasAsync(keyPair.Value.privateKeyBase64).GetAwaiter().GetResult();
+					if (pruneResult.Success)
+					{
+						Console.WriteLine("[SUCCESS] CAS prune completed.");
+						Console.WriteLine($"Total Scanned:   {pruneResult.TotalScanned}");
+						Console.WriteLine($"Orphans Pruned:  {pruneResult.OrphansPruned}");
+						Console.WriteLine($"Corrupt Pruned:  {pruneResult.CorruptPruned}");
+						Console.WriteLine($"Bytes Freed:     {pruneResult.BytesFreed} bytes");
+					}
+					else
+					{
+						Console.Error.WriteLine($"[WARNING] Subsequent CAS prune failed: {pruneResult.Message}");
+					}
+				}
+
+				Console.WriteLine("=================================================");
+				return 0;
+			}
+			else
+			{
+				Console.Error.WriteLine($"[FAILED] {result.Message}");
+				return 1;
+			}
+		}
+		catch (Exception ex)
+		{
+			Console.Error.WriteLine($"[ERROR] Remove manifest failed: {ex.Message}");
 			return 1;
 		}
 	}

@@ -6,24 +6,18 @@ using System.Text.Json;
 
 namespace Realm.Shared.Distribution;
 
-public class ServerEntry
-{
-    public string Id { get; set; } = string.Empty;
-    public string Name { get; set; } = string.Empty;
-    public string Url { get; set; } = string.Empty;
-    public string Region { get; set; } = string.Empty;
-}
-
 public class ServersConfig
 {
     public List<string> AdminPublicKeys { get; set; } = new();
-    public List<string> RegistryServers { get; set; } = new();
-    public List<ServerEntry> Servers { get; set; } = new();
+    public List<string> AdminPublicKey { get => AdminPublicKeys; set => AdminPublicKeys = value; }
+    public List<string> Servers { get; set; } = new();
 }
 
 public static class ServersConfigHelper
 {
     private static readonly JsonSerializerOptions Options = new() { PropertyNameCaseInsensitive = true };
+    public const string DefaultServerUrl = "http://127.0.0.1:5000";
+    public const string DefaultAdminPublicKey = "";
 
     public static ServersConfig Load(string? explicitPath = null)
     {
@@ -36,22 +30,50 @@ public static class ServersConfigHelper
 
         string baseDir = AppDomain.CurrentDomain.BaseDirectory;
         string currentDir = Directory.GetCurrentDirectory();
+        string? processDir = !string.IsNullOrEmpty(Environment.ProcessPath) ? Path.GetDirectoryName(Environment.ProcessPath) : null;
+        string appContextDir = AppContext.BaseDirectory;
 
-        candidates.Add(Path.Combine(currentDir, "servers.json"));
-        candidates.Add(Path.Combine(baseDir, "servers.json"));
-        candidates.Add(Path.Combine(currentDir, "Realm.Godot", "servers.json"));
-        candidates.Add(Path.Combine(currentDir, "..", "Realm.Godot", "servers.json"));
-        candidates.Add(Path.Combine(baseDir, "..", "..", "..", "Realm.Godot", "servers.json"));
-        candidates.Add(Path.Combine(baseDir, "..", "..", "..", "..", "Realm.Godot", "servers.json"));
-        candidates.Add(Path.Combine(currentDir, "servers.template.json"));
-        candidates.Add(Path.Combine(baseDir, "servers.template.json"));
-        candidates.Add(Path.Combine(currentDir, "Realm.Godot", "servers.template.json"));
-        candidates.Add(Path.Combine(currentDir, "..", "Realm.Godot", "servers.template.json"));
-        candidates.Add(Path.Combine(baseDir, "..", "..", "..", "Realm.Godot", "servers.template.json"));
-        candidates.Add(Path.Combine(baseDir, "..", "..", "..", "..", "Realm.Godot", "servers.template.json"));
+        var baseDirectories = new List<string> { currentDir, baseDir, appContextDir };
+        if (!string.IsNullOrEmpty(processDir) && !baseDirectories.Contains(processDir))
+        {
+            baseDirectories.Add(processDir);
+        }
+
+        foreach (var dir in baseDirectories)
+        {
+            candidates.Add(Path.Combine(dir, "servers.json"));
+            candidates.Add(Path.Combine(dir, "Realm.Godot", "servers.json"));
+            candidates.Add(Path.Combine(dir, "..", "Realm.Godot", "servers.json"));
+            candidates.Add(Path.Combine(dir, "..", "servers.json"));
+            candidates.Add(Path.Combine(dir, "..", "..", "servers.json"));
+            candidates.Add(Path.Combine(dir, "..", "..", "..", "servers.json"));
+            candidates.Add(Path.Combine(dir, "..", "..", "..", "..", "servers.json"));
+            candidates.Add(Path.Combine(dir, "..", "..", "..", "Realm.Godot", "servers.json"));
+            candidates.Add(Path.Combine(dir, "..", "..", "..", "..", "Realm.Godot", "servers.json"));
+        }
+
+        foreach (var dir in baseDirectories)
+        {
+            candidates.Add(Path.Combine(dir, "servers.template.json"));
+            candidates.Add(Path.Combine(dir, "Realm.Godot", "servers.template.json"));
+            candidates.Add(Path.Combine(dir, "..", "Realm.Godot", "servers.template.json"));
+            candidates.Add(Path.Combine(dir, "..", "servers.template.json"));
+            candidates.Add(Path.Combine(dir, "..", "..", "servers.template.json"));
+            candidates.Add(Path.Combine(dir, "..", "..", "..", "servers.template.json"));
+            candidates.Add(Path.Combine(dir, "..", "..", "..", "..", "servers.template.json"));
+            candidates.Add(Path.Combine(dir, "..", "..", "..", "Realm.Godot", "servers.template.json"));
+            candidates.Add(Path.Combine(dir, "..", "..", "..", "..", "Realm.Godot", "servers.template.json"));
+        }
+
+        var triedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var path in candidates)
         {
+            if (string.IsNullOrWhiteSpace(path) || !triedPaths.Add(path))
+            {
+                continue;
+            }
+
             try
             {
                 if (File.Exists(path))
@@ -71,51 +93,61 @@ public static class ServersConfigHelper
         }
 
         var fallback = new ServersConfig();
-        fallback.RegistryServers.Add("http://127.0.0.1:5000");
-        fallback.Servers.Add(new ServerEntry
+        fallback.Servers.Add(DefaultServerUrl);
+        if (!string.IsNullOrWhiteSpace(DefaultAdminPublicKey))
         {
-            Id = "official_primary",
-            Name = "Official Primary Cluster",
-            Url = "http://127.0.0.1:5000",
-            Region = "global"
-        });
+            fallback.AdminPublicKeys.Add(DefaultAdminPublicKey);
+        }
         return fallback;
+    }
+
+    public static string GetDefaultServerUrl(string? explicitPath = null)
+    {
+        var config = Load(explicitPath);
+        if (config.Servers.Count > 0 && !string.IsNullOrWhiteSpace(config.Servers[0]))
+        {
+            return config.Servers[0];
+        }
+        return DefaultServerUrl;
+    }
+
+    public static List<string> GetRegistryServers(string? explicitPath = null)
+    {
+        return Load(explicitPath).Servers
+            .Where(u => !string.IsNullOrWhiteSpace(u))
+            .ToList();
+    }
+
+    public static List<string> GetAdminPublicKeys(string? explicitPath = null)
+    {
+        return Load(explicitPath).AdminPublicKeys
+            .Where(u => !string.IsNullOrWhiteSpace(u))
+            .ToList();
     }
 
     public static void NormalizeConfig(ServersConfig config)
     {
         if (config.AdminPublicKeys == null) config.AdminPublicKeys = new();
-        if (config.RegistryServers == null) config.RegistryServers = new();
         if (config.Servers == null) config.Servers = new();
 
-        if (config.RegistryServers.Count == 0 && config.Servers.Count > 0)
+        config.AdminPublicKeys = config.AdminPublicKeys
+            .Where(k => !string.IsNullOrWhiteSpace(k))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (config.AdminPublicKeys.Count == 0 && !string.IsNullOrWhiteSpace(DefaultAdminPublicKey))
         {
-            config.RegistryServers = config.Servers
-                .Select(s => s.Url)
-                .Where(u => !string.IsNullOrWhiteSpace(u))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            config.AdminPublicKeys.Add(DefaultAdminPublicKey);
         }
 
-        if (config.Servers.Count == 0 && config.RegistryServers.Count > 0)
-        {
-            int index = 1;
-            foreach (var url in config.RegistryServers)
-            {
-                config.Servers.Add(new ServerEntry
-                {
-                    Id = $"server_{index}",
-                    Name = $"Server {index}",
-                    Url = url,
-                    Region = "global"
-                });
-                index++;
-            }
-        }
+        config.Servers = config.Servers
+            .Where(u => !string.IsNullOrWhiteSpace(u))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
-        if (config.RegistryServers.Count == 0)
+        if (config.Servers.Count == 0)
         {
-            config.RegistryServers.Add("http://127.0.0.1:5000");
+            config.Servers.Add(DefaultServerUrl);
         }
     }
 }

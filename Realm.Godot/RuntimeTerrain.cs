@@ -1719,7 +1719,7 @@ void fragment() {
 							if (string.Equals(baseName, cleanName, StringComparison.OrdinalIgnoreCase) && kvp.Value is System.Text.Json.Nodes.JsonObject sObj)
 							{
 								string scaleStr = sObj["Scale_Factor"]?.ToString() ?? sObj["scale_factor"]?.ToString() ?? sObj["ScaleFactor"]?.ToString();
-								if (!string.IsNullOrEmpty(scaleStr) && float.TryParse(scaleStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedScale))
+								if (!string.IsNullOrEmpty(scaleStr) && float.TryParse(scaleStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedScale) && parsedScale > 0.0001f)
 								{
 									currentScaleFactor = Math.Clamp(parsedScale, 0.10f, 4.0f);
 								}
@@ -1730,14 +1730,34 @@ void fragment() {
 			}
 			catch { }
 
-			if (currentScaleFactor == 1.0f)
+			if (currentScaleFactor <= 0.0001f || MathF.Abs(currentScaleFactor - 1.0f) < 0.0001f)
 			{
 				string rtexPath = System.IO.Path.Combine(mapDir, "Assets", "textures", cleanName + ".rtex");
 				if (!System.IO.File.Exists(rtexPath)) rtexPath = System.IO.Path.Combine(mapDir, cleanName + ".rtex");
-				currentScaleFactor = ExtractRtexScaleFactor(rtexPath);
+				if (!System.IO.File.Exists(rtexPath)) rtexPath = PathUtils.FindPath($"Assets/textures/{cleanName}.rtex");
+				if (!System.IO.File.Exists(rtexPath)) rtexPath = PathUtils.FindPath($"MapTemplate/Assets/textures/{cleanName}.rtex");
+
+				float rtexSf = ExtractRtexScaleFactor(rtexPath);
+				if (rtexSf > 0.0001f && MathF.Abs(rtexSf - 1.0f) > 0.001f)
+				{
+					currentScaleFactor = rtexSf;
+				}
+				else if (System.IO.File.Exists(rtexPath))
+				{
+					float calc = Realm.Shared.Textures.TextureConverter.CalculateLuminanceScaleFactor(rtexPath);
+					currentScaleFactor = calc > 0.0001f ? Math.Clamp(calc, 0.10f, 4.0f) : 1.0f;
+				}
+				else
+				{
+					currentScaleFactor = 1.0f;
+				}
 			}
 
+			if (currentScaleFactor <= 0.0001f) currentScaleFactor = 1.0f;
+			if (currentBrightness <= 0.0001f) currentBrightness = 1.0f;
+
 			float effectiveMultiplier = currentScaleFactor * currentBrightness;
+			if (effectiveMultiplier <= 0.0001f) effectiveMultiplier = 1.0f;
 			_swatchAlbedoParamsCache[targetIndex] = new Godot.Vector4(currentTint.R * effectiveMultiplier, currentTint.G * effectiveMultiplier, currentTint.B * effectiveMultiplier, rs);
 
 			_material.SetShaderParameter("swatch_params", _swatchParamsCache);
@@ -2075,7 +2095,7 @@ void fragment() {
 					}
 
 					string scaleStr = sObj["Scale_Factor"]?.ToString() ?? sObj["scale_factor"]?.ToString() ?? sObj["ScaleFactor"]?.ToString();
-					if (!string.IsNullOrEmpty(scaleStr) && float.TryParse(scaleStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedScale))
+					if (!string.IsNullOrEmpty(scaleStr) && float.TryParse(scaleStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedScale) && parsedScale > 0.0001f)
 					{
 						texScaleFactor = Math.Clamp(parsedScale, 0.10f, 4.0f);
 					}
@@ -2083,8 +2103,26 @@ void fragment() {
 					{
 						string rtexPath = System.IO.Path.Combine(mapDir, "Assets", "textures", name + ".rtex");
 						if (!System.IO.File.Exists(rtexPath)) rtexPath = System.IO.Path.Combine(mapDir, name + ".rtex");
-						texScaleFactor = ExtractRtexScaleFactor(rtexPath);
+						if (!System.IO.File.Exists(rtexPath)) rtexPath = PathUtils.FindPath($"Assets/textures/{name}.rtex");
+						if (!System.IO.File.Exists(rtexPath)) rtexPath = PathUtils.FindPath($"MapTemplate/Assets/textures/{name}.rtex");
+
+						float rtexSf = ExtractRtexScaleFactor(rtexPath);
+						if (rtexSf > 0.0001f && MathF.Abs(rtexSf - 1.0f) > 0.001f)
+						{
+							texScaleFactor = rtexSf;
+						}
+						else if (System.IO.File.Exists(rtexPath))
+						{
+							float calc = Realm.Shared.Textures.TextureConverter.CalculateLuminanceScaleFactor(rtexPath);
+							texScaleFactor = calc > 0.0001f ? Math.Clamp(calc, 0.10f, 4.0f) : 1.0f;
+						}
+						else
+						{
+							texScaleFactor = 1.0f;
+						}
 					}
+
+					if (texScaleFactor <= 0.0001f) texScaleFactor = 1.0f;
 
 					string brightStr = sObj["Brightness"]?.ToString() ?? sObj["brightness"]?.ToString();
 					if (!string.IsNullOrEmpty(brightStr) && float.TryParse(brightStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedBright))
@@ -2114,7 +2152,11 @@ void fragment() {
 					if (liveOver.Tint.HasValue) texTint = liveOver.Tint.Value;
 				}
 
+				if (texScaleFactor <= 0.0001f) texScaleFactor = 1.0f;
+				if (texBrightness <= 0.0001f) texBrightness = 1.0f;
+
 				float effectiveMultiplier = texScaleFactor * texBrightness;
+				if (effectiveMultiplier <= 0.0001f) effectiveMultiplier = 1.0f;
 				swatchParams[i] = new Godot.Vector4(tileMode, uvScale, stochasticTileSize, crossFade);
 				swatchHeightParams[i] = new Godot.Vector4(heightScale, heightOffset, crevicePower, normalScale);
 				swatchAlbedoParams[i] = new Godot.Vector4(texTint.R * effectiveMultiplier, texTint.G * effectiveMultiplier, texTint.B * effectiveMultiplier, roughnessScale);
