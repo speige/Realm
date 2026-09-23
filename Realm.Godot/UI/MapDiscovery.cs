@@ -77,7 +77,7 @@ public partial class MapDiscovery : Control
 		_btnMelee = GetNode<Button>("FilterPanel/VBoxContainer/CatMelee");
 		_btnCampaign = GetNode<Button>("FilterPanel/VBoxContainer/CatCampaign");
 
-		_allMaps = MapData.GetDummyMaps();
+		_allMaps = [];
 
 		ApplyStyles();
 		RegisterEvents();
@@ -127,11 +127,7 @@ public partial class MapDiscovery : Control
 			GD.PrintErr($"[MapDiscovery] Failed to load maps from server: {ex.Message}");
 		}
 
-		if (_allMaps == null || _allMaps.Length == 0)
-		{
-			_allMaps = MapData.GetDummyMaps();
-			RenderMapGrid();
-		}
+		RenderMapGrid();
 	}
 
 	private void ApplyStyles()

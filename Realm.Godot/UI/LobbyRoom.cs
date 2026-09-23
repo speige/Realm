@@ -451,6 +451,22 @@ public partial class LobbyRoom : Control
 		UIManager.Instance.PlayClickSound();
 		string mapName = LobbyManager.Instance.ActiveMapName ?? "melee";
 
+		bool anyDownloading = false;
+		foreach (var player in LobbyManager.Instance.PlayerList)
+		{
+			if (player.PeerId > 1 && !player.IsMapReady)
+			{
+				anyDownloading = true;
+				break;
+			}
+		}
+
+		if (anyDownloading)
+		{
+			ShowDownloadingClientsPopup();
+			return;
+		}
+
 		bool anyNotReady = false;
 		foreach (var player in LobbyManager.Instance.PlayerList)
 		{
@@ -606,6 +622,62 @@ public partial class LobbyRoom : Control
 			warningPopup.QueueFree();
 		};
 		hbox.AddChild(cancelBtn);
+	}
+
+	private void ShowDownloadingClientsPopup()
+	{
+		var warningPopup = new Panel();
+		warningPopup.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		warningPopup.AddThemeStyleboxOverride("panel", UIStyle.CreateBgGradient());
+		AddChild(warningPopup);
+
+		var cardPanel = new Panel();
+		cardPanel.CustomMinimumSize = new Vector2(480, 220);
+		cardPanel.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
+		cardPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		warningPopup.AddChild(cardPanel);
+
+		var vbox = new VBoxContainer();
+		vbox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		vbox.CustomMinimumSize = new Vector2(440, 180);
+		vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		vbox.SizeFlagsVertical = SizeFlags.ExpandFill;
+		cardPanel.AddChild(vbox);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 20) });
+
+		var titleLabel = new Label();
+		UIStyle.ApplyTitle(titleLabel, Tr("CLIENTS DOWNLOADING MAP"), 20);
+		titleLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.6f, 0.1f));
+		vbox.AddChild(titleLabel);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 10) });
+
+		var descLabel = new Label();
+		descLabel.Text = Tr("Some players are still downloading the map.\nWait for them or Kick them before starting the game.");
+		descLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		descLabel.AddThemeFontSizeOverride("font_size", 14);
+		descLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
+		vbox.AddChild(descLabel);
+
+		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 20) });
+
+		var okBtn = new Button();
+		okBtn.Flat = false;
+		okBtn.AddThemeConstantOverride("icon_max_width", 0);
+		okBtn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		okBtn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		okBtn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		okBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		UIStyle.ApplyButtonText(okBtn, Tr("OK"), 14);
+		okBtn.CustomMinimumSize = new Vector2(160, 40);
+		okBtn.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+		okBtn.Pressed += () =>
+		{
+			UIManager.Instance.PlayClickSound();
+			warningPopup.QueueFree();
+		};
+		vbox.AddChild(okBtn);
 	}
 
 	private void OnActiveMapChanged(string mapName)
@@ -1210,7 +1282,14 @@ private void UpdateSelectedMapUI()
 		string jitterColor = GetJitterColorCode(p.Jitter);
 		string lossColor = GetLossColorCode(p.PacketLoss);
 
-		diagLabel.Text = $"  {Tr("Ping")}: [color={pingColor}]{latencyText}[/color] | {Tr("Jitter")}: [color={jitterColor}]{jitterText}[/color] | {Tr("Loss")}: [color={lossColor}]{lossText}[/color]";
+		if (!isLocalPlayer && !p.IsHost && !p.IsMapReady)
+		{
+			diagLabel.Text = $"  [color=#ffa040]{Tr("downloading...")}[/color]";
+		}
+		else
+		{
+			diagLabel.Text = $"  {Tr("Ping")}: [color={pingColor}]{latencyText}[/color] | {Tr("Jitter")}: [color={jitterColor}]{jitterText}[/color] | {Tr("Loss")}: [color={lossColor}]{lossText}[/color]";
+		}
 		hBox.AddChild(diagLabel);
 
 
@@ -1336,7 +1415,15 @@ private void UpdateSelectedMapUI()
 			string jitterColor = GetJitterColorCode(p.Jitter);
 			string lossColor = GetLossColorCode(p.PacketLoss);
 
-			string newText = $"  Ping: [color={pingColor}]{latencyText}[/color] | Jitter: [color={jitterColor}]{jitterText}[/color] | Loss: [color={lossColor}]{lossText}[/color]";
+			string newText;
+			if (!isLocalPlayer && !p.IsHost && !p.IsMapReady)
+			{
+				newText = $"  [color=#ffa040]{Tr("downloading...")}[/color]";
+			}
+			else
+			{
+				newText = $"  Ping: [color={pingColor}]{latencyText}[/color] | Jitter: [color={jitterColor}]{jitterText}[/color] | Loss: [color={lossColor}]{lossText}[/color]";
+			}
 			if (diagLabel.Text != newText)
 			{
 				diagLabel.Text = newText;

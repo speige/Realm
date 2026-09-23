@@ -9,7 +9,7 @@ namespace Realm.Shared.Distribution;
 
 public static class MapArchiveHelper
 {
-    public static void Create7zArchive(string sourceDirectory, string destination7zPath, Action<float, string>? progressCallback = null)
+    public static void Create7zArchive(string sourceDirectory, string destination7zPath, Action<float, string>? progressCallback = null, int compressionLevel = 1)
     {
         if (string.IsNullOrWhiteSpace(sourceDirectory) || !Directory.Exists(sourceDirectory))
         {
@@ -28,7 +28,11 @@ public static class MapArchiveHelper
         }
 
         using var outputStream = File.Create(destination7zPath);
-        using var writer = new SevenZipWriter(outputStream, new SevenZipWriterOptions(CompressionType.LZMA2));
+        var options = new SevenZipWriterOptions(CompressionType.LZMA2)
+        {
+            CompressionLevel = compressionLevel
+        };
+        using var writer = new SevenZipWriter(outputStream, options);
         var allFiles = Directory.GetFiles(sourceDirectory, "*.*", SearchOption.AllDirectories);
         var filesToArchive = new List<string>();
         foreach (var file in allFiles)

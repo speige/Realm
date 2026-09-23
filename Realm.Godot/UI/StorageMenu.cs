@@ -544,6 +544,26 @@ public partial class StorageMenu : Control
 		detailsLabel.MouseFilter = MouseFilterEnum.Ignore;
 		infoVBox.AddChild(detailsLabel);
 
+		var openInEditorBtn = new Button();
+		openInEditorBtn.AddThemeConstantOverride("icon_max_width", 20);
+		openInEditorBtn.CustomMinimumSize = new Vector2(140, 36);
+		openInEditorBtn.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+		UIStyle.ApplyButtonText(openInEditorBtn, "✏️ " + TranslationServer.Translate("OPEN IN EDITOR"), 12);
+		openInEditorBtn.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		openInEditorBtn.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		openInEditorBtn.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		openInEditorBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		openInEditorBtn.TooltipText = TranslationServer.Translate("Copy map to editor workspace. Saves will go to Documents/MapName.");
+		openInEditorBtn.FocusMode = FocusModeEnum.None;
+		openInEditorBtn.MouseFilter = MouseFilterEnum.Stop;
+		openInEditorBtn.MouseEntered += () => UIManager.Instance?.PlayHoverSound();
+		openInEditorBtn.Pressed += () =>
+		{
+			UIManager.Instance?.PlayClickSound();
+			OnOpenInEditorPressed(map.Title, version.DirectoryPath);
+		};
+		hbox.AddChild(openInEditorBtn);
+
 		var deleteBtn = new Button();
 		deleteBtn.AddThemeConstantOverride("icon_max_width", 24);
 		deleteBtn.CustomMinimumSize = new Vector2(36, 36);
@@ -584,6 +604,20 @@ public partial class StorageMenu : Control
 
 		hbox.AddChild(deleteBtn);
 		return panel;
+	}
+
+	private void OnOpenInEditorPressed(string mapTitle, string casVersionDirectory)
+	{
+		if (string.IsNullOrEmpty(casVersionDirectory) || !Directory.Exists(casVersionDirectory))
+		{
+			return;
+		}
+
+		string sanitizedTitle = string.IsNullOrWhiteSpace(mapTitle) ? "MyMap" : mapTitle.Trim();
+		string defaultSaveFolder = Path.Combine(OS.GetSystemDir(OS.SystemDir.Documents), sanitizedTitle);
+
+		MapEditorHUD.RequestOpenFromCas(casVersionDirectory, defaultSaveFolder);
+		UIManager.Instance?.TransitionTo(GameScreen.MapEditorHUD);
 	}
 
 	private async void CheckForServerUpdatesAsync(DownloadedMapInfo map)
@@ -677,7 +711,7 @@ public partial class StorageMenu : Control
 		_exportMapButton.Disabled = true;
 		UIStyle.ApplyButtonText(_exportMapButton, "Exporting...", 14);
 
-		bool success = await _mapStorageService.ExportMapAsync(sourceDir, destinationPath);
+		bool success = await _mapStorageService.ExportMapAsync(sourceDir, destinationPath, compressionLevel: 1);
 
 		_exportMapButton.Disabled = false;
 		UIStyle.ApplyButtonText(_exportMapButton, "📦 " + TranslationServer.Translate("EXPORT MAP"), 14);

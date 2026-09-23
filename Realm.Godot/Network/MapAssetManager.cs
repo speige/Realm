@@ -12,6 +12,10 @@ using System.Threading.Tasks;
 
 public static class MapAssetManager
 {
+    static MapAssetManager() {
+        EnsureUgcLicense();
+    }
+
     private static readonly object ArchiveLock = new object();
 
     public static bool IsGodotEngineRunning { get; set; } = true;
@@ -767,6 +771,42 @@ public static class MapAssetManager
         }
     }
 
+    public static void EnsureUgcLicense()
+    {
+        try
+        {
+            string mapsDir = GlobalArchiveDirectory;
+            if (!Directory.Exists(mapsDir))
+            {
+                Directory.CreateDirectory(mapsDir);
+            }
+
+            string targetPath = Path.Combine(mapsDir, "RealmPlatform_UGC_License.txt");
+
+            string[] candidateSourcePaths = new[]
+            {
+                PathUtils.FindPath("Terms/RealmPlatform_UGC_License.txt"),
+                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Terms", "RealmPlatform_UGC_License.txt"),
+                Path.Combine(OS.GetExecutablePath().GetBaseDir(), "Terms", "RealmPlatform_UGC_License.txt"),
+                Path.GetFullPath(Path.Combine(PathUtils.GetProjectRoot(), "..", "Terms", "RealmPlatform_UGC_License.txt")),
+                Path.Combine(PathUtils.GetProjectRoot(), "Terms", "RealmPlatform_UGC_License.txt")
+            };
+
+            foreach (var candidate in candidateSourcePaths)
+            {
+                if (!string.IsNullOrEmpty(candidate) && File.Exists(candidate))
+                {
+                    File.Copy(candidate, targetPath, overwrite: true);
+                    break;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            LogErr($"[MapAssetManager] Failed to copy UGC license: {ex.Message}");
+        }
+    }
+
     public static MapManifest IngestHostMap(string mapPath)
     {
         var manifest = new MapManifest();
@@ -831,39 +871,9 @@ public static class MapAssetManager
                 try
                 {
                     var existing = MapManifest.LoadFromFile(manifestJsonPath);
-                    if (existing != null)
+                    if (existing != null && existing.Files != null && existing.Files.Count > 0)
                     {
-                        if (!string.IsNullOrEmpty(existing.MapName))
-                        {
-                            manifest.MapName = existing.MapName;
-                        }
-                        if (!string.IsNullOrEmpty(existing.Author))
-                        {
-                            manifest.Author = existing.Author;
-                        }
-                        if (!string.IsNullOrEmpty(existing.Version))
-                        {
-                            manifest.Version = existing.Version;
-                        }
-                        if (!string.IsNullOrEmpty(existing.Description))
-                        {
-                            manifest.Description = existing.Description;
-                        }
-                        if (existing.Tags != null && existing.Tags.Count > 0)
-                        {
-                            manifest.Tags = new List<string>(existing.Tags);
-                        }
-                        if (existing.Assets != null)
-                        {
-                            manifest.Assets = existing.Assets.DeepClone() as JsonObject;
-                        }
-                        if (existing.Files != null && existing.Files.Count > 0)
-                        {
-                            foreach (var kvp in existing.Files)
-                            {
-                                manifest.Files[kvp.Key] = kvp.Value;
-                            }
-                        }
+                        return existing;
                     }
                 }
                 catch

@@ -25,6 +25,7 @@ public class IndexedAsset
 	public string? AssetType { get; set; }
 	public string? MapName { get; set; }
 	public string? MapVersion { get; set; }
+	public string? Blake3 { get; set; }
 }
 
 public class IndexedMapPackage
@@ -105,6 +106,7 @@ public class AssetIndexService : IDisposable
 		_assetCollection.EnsureIndex(x => x.FileName);
 		_assetCollection.EnsureIndex(x => x.MapName);
 		_assetCollection.EnsureIndex(x => x.MapVersion);
+		_assetCollection.EnsureIndex(x => x.Blake3);
 
 		_folderCollection.EnsureIndex(x => x.DirectoryPath, true);
 
@@ -158,9 +160,12 @@ public class AssetIndexService : IDisposable
 		lock (_syncLock)
 		{
 			string legacyArchive = NormalizePath(Path.Combine(MapAssetManager.GlobalArchiveDirectory, "global_assets.7z"));
+			string casAssetsDirectory = GlobalCasAssetsDirectory;
+
 			var forbiddenFolders = _folderCollection.FindAll()
 				.Where(f => IsForbiddenPath(f.DirectoryPath) ||
 							string.Equals(f.DirectoryPath, legacyArchive, StringComparison.OrdinalIgnoreCase) ||
+							string.Equals(f.DirectoryPath, casAssetsDirectory, StringComparison.OrdinalIgnoreCase) ||
 							f.DirectoryPath.EndsWith(".7z", StringComparison.OrdinalIgnoreCase))
 				.Select(f => (BsonValue)f.Id)
 				.ToArray();
@@ -169,20 +174,9 @@ public class AssetIndexService : IDisposable
 				_folderCollection.DeleteMany(Query.In("_id", forbiddenFolders));
 			}
 
-			string casAssetsDirectory = GlobalCasAssetsDirectory;
 			if (!Directory.Exists(casAssetsDirectory))
 			{
 				Directory.CreateDirectory(casAssetsDirectory);
-			}
-
-			var existingCasFolder = _folderCollection.FindOne(x => x.DirectoryPath == casAssetsDirectory);
-			if (existingCasFolder == null)
-			{
-				_folderCollection.Insert(new IndexedFolder
-				{
-					DirectoryPath = casAssetsDirectory,
-					LastScannedUtc = DateTime.MinValue
-				});
 			}
 
 			var validFolders = _folderCollection.FindAll()
@@ -190,7 +184,7 @@ public class AssetIndexService : IDisposable
 				.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
 			var orphanedAssets = _assetCollection.FindAll()
-				.Where(a => !validFolders.Contains(a.DirectoryPath) ||
+				.Where(a => (!validFolders.Contains(a.DirectoryPath) && !string.Equals(a.DirectoryPath, casAssetsDirectory, StringComparison.OrdinalIgnoreCase)) ||
 							IsForbiddenPath(a.DirectoryPath) ||
 							IsForbiddenPath(a.FilePath) ||
 							a.DirectoryPath.EndsWith(".7z", StringComparison.OrdinalIgnoreCase) ||
@@ -212,6 +206,18 @@ public class AssetIndexService : IDisposable
 				_mapPackageCollection.DeleteMany(Query.In("_id", orphanedPackages));
 			}
 
+			_database.Checkpoint();
+		}
+
+		ScanAllCasManifests();
+	}
+
+	public void ScanAllCasManifests()
+	{
+		lock (_syncLock)
+		{
+			var referencedCasPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
 			if (Directory.Exists(MapAssetManager.GlobalArchiveDirectory))
 			{
 				var manifestFiles = Directory.GetFiles(MapAssetManager.GlobalArchiveDirectory, "manifest.json", SearchOption.AllDirectories);
@@ -222,81 +228,86 @@ public class AssetIndexService : IDisposable
 						var manifest = MapManifest.LoadFromFile(file);
 						if (manifest != null && manifest.Files != null && manifest.Files.Count > 0)
 						{
-							RegisterManifest(manifest, file, isP2P: false);
+							var paths = RegisterManifestInternal(manifest, file, isP2P: false);
+							foreach (var p in paths)
+							{
+								referencedCasPaths.Add(p);
+							}
 						}
 					}
 					catch { }
 				}
 			}
 
+			var orphanedCasAssets = _assetCollection.Find(Query.EQ("DirectoryPath", GlobalCasAssetsDirectory))
+				.Where(a => !referencedCasPaths.Contains(a.FilePath) || !File.Exists(a.FilePath))
+				.Select(a => (BsonValue)a.Id)
+				.ToArray();
+			if (orphanedCasAssets.Length > 0)
+			{
+				_assetCollection.DeleteMany(Query.In("_id", orphanedCasAssets));
+			}
+
+			var orphanedPackages = _mapPackageCollection.FindAll()
+				.Where(p => !p.IsP2P && (string.IsNullOrWhiteSpace(p.ManifestPath) || !File.Exists(p.ManifestPath)))
+				.Select(p => (BsonValue)p.Id)
+				.ToArray();
+			if (orphanedPackages.Length > 0)
+			{
+				_mapPackageCollection.DeleteMany(Query.In("_id", orphanedPackages));
+			}
+
 			_database.Checkpoint();
+		}
+
+		if (Directory.Exists(MapAssetManager.P2PArchiveDirectory))
+		{
+			var p2pManifestFiles = Directory.GetFiles(MapAssetManager.P2PArchiveDirectory, "manifest.json", SearchOption.AllDirectories);
+			foreach (var file in p2pManifestFiles)
+			{
+				try
+				{
+					var manifest = MapManifest.LoadFromFile(file);
+					if (manifest != null && manifest.Files != null && manifest.Files.Count > 0)
+					{
+						RegisterManifest(manifest, file, isP2P: true);
+					}
+				}
+				catch { }
+			}
 		}
 	}
 
 	public void RegisterManifest(Realm.Shared.Distribution.MapManifest manifest, string manifestPath, bool isP2P = false)
 	{
 		if (manifest == null) return;
+		lock (isP2P ? _p2pSyncLock : _syncLock)
+		{
+			RegisterManifestInternal(manifest, manifestPath, isP2P);
+		}
+	}
+
+	private List<string> RegisterManifestInternal(Realm.Shared.Distribution.MapManifest manifest, string manifestPath, bool isP2P)
+	{
+		var indexedPaths = new List<string>();
+		if (manifest == null) return indexedPaths;
 		string mapName = !string.IsNullOrWhiteSpace(manifest.MapName) ? manifest.MapName.Trim() : Path.GetFileNameWithoutExtension(manifestPath).Replace("_manifest", "");
 		string mapVersion = !string.IsNullOrWhiteSpace(manifest.Version) ? manifest.Version.Trim() : "1.0.0";
 
 		if (isP2P)
 		{
-			lock (_p2pSyncLock)
-			{
-				var p2pDb = GetP2PDatabase();
-				var p2pMapCol = p2pDb.GetCollection<IndexedMapPackage>("map_packages");
-				var p2pAssetCol = p2pDb.GetCollection<IndexedAsset>("assets");
+			var p2pDb = GetP2PDatabase();
+			var p2pMapCol = p2pDb.GetCollection<IndexedMapPackage>("map_packages");
+			var p2pAssetCol = p2pDb.GetCollection<IndexedAsset>("assets");
 
-				var package = p2pMapCol.FindOne(p => p.MapName == mapName && p.MapVersion == mapVersion) ?? new IndexedMapPackage();
-				package.MapName = mapName;
-				package.MapVersion = mapVersion;
-				package.ManifestPath = manifestPath;
-				package.DownloadedUtc = DateTime.UtcNow;
-				package.IsP2P = true;
-				package.AssetHashes = manifest.Files != null ? manifest.Files.Values.ToList() : new List<string>();
-				p2pMapCol.Upsert(package);
-
-				if (manifest.Files != null)
-				{
-					foreach (var kvp in manifest.Files)
-					{
-						string virtualPath = kvp.Key;
-						string hash = kvp.Value;
-						string norm = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(hash);
-						string? casPath = MapAssetManager.P2PStorage.FindAssetFilePath(norm);
-						if (casPath != null && File.Exists(casPath))
-						{
-							string normPath = NormalizePath(casPath);
-							var asset = p2pAssetCol.FindOne(x => x.FilePath == normPath) ?? new IndexedAsset();
-							var fi = new FileInfo(normPath);
-							asset.FilePath = normPath;
-							asset.FileName = Path.GetFileName(virtualPath);
-							asset.Extension = Path.GetExtension(normPath).ToLowerInvariant();
-							asset.DirectoryPath = MapAssetManager.P2PArchiveDirectory;
-							asset.FileSizeBytes = fi.Length;
-							asset.LastModifiedUtc = fi.LastWriteTimeUtc;
-							asset.MapName = mapName;
-							asset.MapVersion = mapVersion;
-							p2pAssetCol.Upsert(asset);
-						}
-					}
-				}
-
-				p2pDb.Checkpoint();
-			}
-			return;
-		}
-
-		lock (_syncLock)
-		{
-			var package = _mapPackageCollection.FindOne(p => p.MapName == mapName && p.MapVersion == mapVersion) ?? new IndexedMapPackage();
+			var package = p2pMapCol.FindOne(p => p.MapName == mapName && p.MapVersion == mapVersion) ?? new IndexedMapPackage();
 			package.MapName = mapName;
 			package.MapVersion = mapVersion;
 			package.ManifestPath = manifestPath;
 			package.DownloadedUtc = DateTime.UtcNow;
-			package.IsP2P = false;
+			package.IsP2P = true;
 			package.AssetHashes = manifest.Files != null ? manifest.Files.Values.ToList() : new List<string>();
-			_mapPackageCollection.Upsert(package);
+			p2pMapCol.Upsert(package);
 
 			if (manifest.Files != null)
 			{
@@ -305,38 +316,141 @@ public class AssetIndexService : IDisposable
 					string virtualPath = kvp.Key;
 					string hash = kvp.Value;
 					string norm = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(hash);
-					string? casPath = MapAssetManager.Storage.FindAssetFilePath(norm);
+					string? casPath = MapAssetManager.P2PStorage.FindAssetFilePath(norm);
 					if (casPath != null && File.Exists(casPath))
 					{
 						string normPath = NormalizePath(casPath);
-						var asset = _assetCollection.FindOne(x => x.FilePath == normPath) ?? new IndexedAsset();
+						indexedPaths.Add(normPath);
+						var asset = p2pAssetCol.FindOne(x => x.FilePath == normPath) ?? new IndexedAsset();
 						var fi = new FileInfo(normPath);
 						asset.FilePath = normPath;
 						asset.FileName = Path.GetFileName(virtualPath);
 						asset.Extension = Path.GetExtension(normPath).ToLowerInvariant();
-						asset.DirectoryPath = GlobalCasAssetsDirectory;
+						asset.DirectoryPath = MapAssetManager.P2PArchiveDirectory;
 						asset.FileSizeBytes = fi.Length;
 						asset.LastModifiedUtc = fi.LastWriteTimeUtc;
 						asset.MapName = mapName;
 						asset.MapVersion = mapVersion;
-
-						string? metaJson = MapAssetManager.Storage.GetAssetMetadata(norm);
-						var tags = ExtractTagsFromMetadataJson(metaJson);
-						if (tags.Count > 0)
-						{
-							asset.Tags = tags;
-							asset.MetadataJson = JsonSerializer.Serialize(new AssetMetadataModel { Tags = tags });
-						}
-						asset.HasRealmMetadata = Realm.Shared.Metadata.RealmMetadataHelper.HasRealmMetadata(normPath);
-						asset.AssetType = Realm.Shared.Metadata.RealmMetadataHelper.ExtractAssetType(normPath);
-
-						_assetCollection.Upsert(asset);
+						asset.Blake3 = norm;
+						p2pAssetCol.Upsert(asset);
 					}
 				}
 			}
 
-			_database.Checkpoint();
+			p2pDb.Checkpoint();
+			return indexedPaths;
 		}
+
+		var pkg = _mapPackageCollection.FindOne(p => p.MapName == mapName && p.MapVersion == mapVersion) ?? new IndexedMapPackage();
+		pkg.MapName = mapName;
+		pkg.MapVersion = mapVersion;
+		pkg.ManifestPath = manifestPath;
+		pkg.DownloadedUtc = DateTime.UtcNow;
+		pkg.IsP2P = false;
+		pkg.AssetHashes = manifest.Files != null ? manifest.Files.Values.ToList() : new List<string>();
+		_mapPackageCollection.Upsert(pkg);
+
+		if (manifest.Files != null)
+		{
+			foreach (var kvp in manifest.Files)
+			{
+				string virtualPath = kvp.Key;
+				string hash = kvp.Value;
+				string norm = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(hash);
+				string? casPath = MapAssetManager.Storage.FindAssetFilePath(norm);
+				if (casPath != null && File.Exists(casPath))
+				{
+					string normPath = NormalizePath(casPath);
+					indexedPaths.Add(normPath);
+					var asset = _assetCollection.FindOne(x => x.FilePath == normPath) ?? new IndexedAsset();
+					var fi = new FileInfo(normPath);
+					asset.FilePath = normPath;
+					asset.FileName = Path.GetFileName(virtualPath);
+					asset.Extension = Path.GetExtension(normPath).ToLowerInvariant();
+					asset.DirectoryPath = GlobalCasAssetsDirectory;
+					asset.FileSizeBytes = fi.Length;
+					asset.LastModifiedUtc = fi.LastWriteTimeUtc;
+					asset.MapName = mapName;
+					asset.MapVersion = mapVersion;
+					asset.Blake3 = norm;
+
+					string? metaJson = MapAssetManager.Storage.GetAssetMetadata(norm);
+					var tags = ExtractTagsFromMetadataJson(metaJson);
+					if (tags.Count == 0)
+					{
+						tags = LoadTagsForFile(normPath, GlobalCasAssetsDirectory);
+					}
+					string preferredNameNoExt = Path.GetFileNameWithoutExtension(asset.FileName);
+					var nameTokens = preferredNameNoExt.Split(new[] { '_', '-', ' ', '.', '@' }, StringSplitOptions.RemoveEmptyEntries);
+					foreach (var token in nameTokens)
+					{
+						if (token.Length > 1 && !char.IsDigit(token[0]) && !tags.Contains(token, StringComparer.OrdinalIgnoreCase))
+						{
+							tags.Add(token.ToLowerInvariant());
+						}
+					}
+					if (manifest.Tags != null)
+					{
+						foreach (var tag in manifest.Tags)
+						{
+							if (!string.IsNullOrWhiteSpace(tag) && !tags.Contains(tag.Trim(), StringComparer.OrdinalIgnoreCase))
+							{
+								tags.Add(tag.Trim().ToLowerInvariant());
+							}
+						}
+					}
+					asset.Tags = tags;
+					asset.MetadataJson = JsonSerializer.Serialize(new AssetMetadataModel { Tags = tags });
+
+					string? assetType = null;
+					if (!string.IsNullOrWhiteSpace(metaJson))
+					{
+						try
+						{
+							var node = JsonNode.Parse(metaJson);
+							if (node is JsonObject obj)
+							{
+								string? typeVal = obj["asset_type"]?.ToString()
+									?? obj["AssetType"]?.ToString()
+									?? obj["type"]?.ToString()
+									?? obj["default_asset_type"]?.ToString();
+								if (!string.IsNullOrEmpty(typeVal) && Realm.Shared.Metadata.RealmMetadataHelper.IsValidAssetTypeForExtension(normPath, typeVal, out string canonical, out _))
+								{
+									assetType = canonical;
+								}
+							}
+						}
+						catch { }
+					}
+
+					if (string.IsNullOrEmpty(assetType))
+					{
+						assetType = Realm.Shared.Metadata.RealmMetadataHelper.ExtractAssetType(normPath);
+					}
+
+					if (string.IsNullOrEmpty(assetType))
+					{
+						string[] vParts = virtualPath.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries);
+						foreach (var part in vParts)
+						{
+							if (Realm.Shared.Metadata.RealmMetadataHelper.IsValidAssetTypeForExtension(normPath, part, out string canonical, out _))
+							{
+								assetType = canonical;
+								break;
+							}
+						}
+					}
+
+					asset.AssetType = assetType;
+					asset.HasRealmMetadata = Realm.Shared.Metadata.RealmMetadataHelper.HasRealmMetadata(normPath) || !string.IsNullOrEmpty(assetType);
+
+					_assetCollection.Upsert(asset);
+				}
+			}
+		}
+
+		_database.Checkpoint();
+		return indexedPaths;
 	}
 
 	public IReadOnlyList<IndexedMapPackage> GetDownloadedMapPackages()
@@ -559,7 +673,7 @@ public class AssetIndexService : IDisposable
 				.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
 			var orphanedAssets = _assetCollection.FindAll()
-				.Where(a => !validFolders.Contains(a.DirectoryPath) || IsForbiddenPath(a.DirectoryPath))
+				.Where(a => (!validFolders.Contains(a.DirectoryPath) && !string.Equals(a.DirectoryPath, GlobalCasAssetsDirectory, StringComparison.OrdinalIgnoreCase)) || IsForbiddenPath(a.DirectoryPath))
 				.Select(a => (BsonValue)a.Id)
 				.ToArray();
 			if (orphanedAssets.Length > 0)
@@ -569,7 +683,7 @@ public class AssetIndexService : IDisposable
 
 			dirsToScan = _folderCollection.FindAll()
 				.Select(f => f.DirectoryPath)
-				.Where(p => Directory.Exists(p) && !_indexingDirectories.Contains(p))
+				.Where(p => Directory.Exists(p) && !_indexingDirectories.Contains(p) && !string.Equals(p, GlobalCasAssetsDirectory, StringComparison.OrdinalIgnoreCase))
 				.ToList();
 
 			foreach (var dir in dirsToScan)
@@ -587,6 +701,15 @@ public class AssetIndexService : IDisposable
 
 		Task.Run(() =>
 		{
+			try
+			{
+				ScanAllCasManifests();
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"[AssetIndexService] RescanAll CAS manifest scan error: {ex.Message}");
+			}
+
 			foreach (var dir in dirsToScan)
 			{
 				try
@@ -617,7 +740,12 @@ public class AssetIndexService : IDisposable
 			return;
 		}
 
-		bool isCasDirectory = string.Equals(normalizedDirectoryPath, GlobalCasAssetsDirectory, StringComparison.OrdinalIgnoreCase);
+		if (string.Equals(normalizedDirectoryPath, GlobalCasAssetsDirectory, StringComparison.OrdinalIgnoreCase))
+		{
+			ScanAllCasManifests();
+			return;
+		}
+
 		var discoveredFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		var files = Directory.EnumerateFiles(normalizedDirectoryPath, "*.*", SearchOption.AllDirectories);
 
@@ -654,69 +782,38 @@ public class AssetIndexService : IDisposable
 
 				if (existingAssets.TryGetValue(normalizedFilePath, out var existingAsset) &&
 					existingAsset.FileSizeBytes == fileInfo.Length &&
-					existingAsset.LastModifiedUtc == fileInfo.LastWriteTimeUtc)
+					existingAsset.LastModifiedUtc == fileInfo.LastWriteTimeUtc &&
+					!string.IsNullOrEmpty(existingAsset.Blake3))
 				{
 					continue;
 				}
 
-				List<string> tags;
-				string? assetType = null;
+				var tags = LoadTagsForFile(normalizedFilePath, normalizedDirectoryPath);
+				bool hasRealmMetadata = Realm.Shared.Metadata.RealmMetadataHelper.HasRealmMetadata(normalizedFilePath);
+				string? assetType = Realm.Shared.Metadata.RealmMetadataHelper.ExtractAssetType(normalizedFilePath);
 				string fileName = Path.GetFileName(normalizedFilePath);
-				bool hasRealmMetadata = false;
 
-				if (isCasDirectory)
+				string normBlake3 = string.Empty;
+				if (hasRealmMetadata)
 				{
-					string blake3Hash = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(fileName);
-					string? metaJson = MapAssetManager.Storage.GetAssetMetadata(blake3Hash);
-					tags = ExtractTagsFromMetadataJson(metaJson);
-					if (tags.Count == 0)
+					string? meta = Realm.Shared.Metadata.RealmMetadataHelper.ExtractMetadata(normalizedFilePath);
+					if (!string.IsNullOrEmpty(meta))
 					{
-						tags = LoadTagsForFile(normalizedFilePath, normalizedDirectoryPath);
-					}
-
-					if (!string.IsNullOrWhiteSpace(metaJson))
-					{
-						hasRealmMetadata = true;
 						try
 						{
-							var node = JsonNode.Parse(metaJson);
-							if (node is JsonObject obj)
-							{
-								string? typeVal = obj["asset_type"]?.ToString()
-									?? obj["AssetType"]?.ToString()
-									?? obj["type"]?.ToString()
-									?? obj["default_asset_type"]?.ToString();
-								if (!string.IsNullOrEmpty(typeVal) && Realm.Shared.Metadata.RealmMetadataHelper.IsValidAssetTypeForExtension(normalizedFilePath, typeVal, out string canonical, out _))
-								{
-									assetType = canonical;
-								}
-
-								string? friendlyName = obj["asset_name"]?.ToString()
-									?? obj["name"]?.ToString()
-									?? obj["original_filename"]?.ToString()
-									?? obj["FileName"]?.ToString();
-								if (!string.IsNullOrWhiteSpace(friendlyName))
-								{
-									string fName = Path.GetFileName(friendlyName.Trim());
-									fileName = fName.EndsWith(extension, StringComparison.OrdinalIgnoreCase)
-										? fName
-										: $"{fName}{extension}";
-								}
-							}
+							var node = JsonNode.Parse(meta);
+							normBlake3 = node?["blake3"]?.ToString() ?? string.Empty;
 						}
 						catch { }
 					}
-					else
-					{
-						hasRealmMetadata = Realm.Shared.Metadata.RealmMetadataHelper.HasRealmMetadata(normalizedFilePath);
-						assetType = Realm.Shared.Metadata.RealmMetadataHelper.ExtractAssetType(normalizedFilePath);
-					}
 				}
-				else
+				if (string.IsNullOrEmpty(normBlake3))
 				{
-					tags = LoadTagsForFile(normalizedFilePath, normalizedDirectoryPath);
-					hasRealmMetadata = Realm.Shared.Metadata.RealmMetadataHelper.HasRealmMetadata(normalizedFilePath);
-					assetType = Realm.Shared.Metadata.RealmMetadataHelper.ExtractAssetType(normalizedFilePath);
+					try
+					{
+						normBlake3 = Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(normalizedFilePath);
+					}
+					catch { }
 				}
 
 				var asset = existingAsset ?? new IndexedAsset();
@@ -732,6 +829,7 @@ public class AssetIndexService : IDisposable
 				asset.AssetType = assetType;
 				asset.MapName = existingAsset?.MapName ?? asset.MapName;
 				asset.MapVersion = existingAsset?.MapVersion ?? asset.MapVersion;
+				asset.Blake3 = !string.IsNullOrEmpty(normBlake3) ? Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(normBlake3) : string.Empty;
 
 				batchToUpsert.Add(asset);
 
@@ -982,6 +1080,45 @@ public class AssetIndexService : IDisposable
 		}
 	}
 
+	public static string GetCanonicalBlake3(IndexedAsset asset)
+	{
+		if (!string.IsNullOrEmpty(asset.Blake3))
+		{
+			return asset.Blake3;
+		}
+
+		if (asset.FilePath.StartsWith(GlobalCasAssetsDirectory + "/", StringComparison.OrdinalIgnoreCase) ||
+			asset.FilePath.StartsWith(GlobalCasAssetsDirectory + "\\", StringComparison.OrdinalIgnoreCase))
+		{
+			return Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(Path.GetFileName(asset.FilePath));
+		}
+
+		try
+		{
+			if (File.Exists(asset.FilePath))
+			{
+				string? metaJson = Realm.Shared.Metadata.RealmMetadataHelper.ExtractMetadata(asset.FilePath);
+				if (!string.IsNullOrEmpty(metaJson))
+				{
+					try
+					{
+						var node = JsonNode.Parse(metaJson);
+						string? b3 = node?["blake3"]?.ToString();
+						if (!string.IsNullOrEmpty(b3))
+						{
+							return Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(b3);
+						}
+					}
+					catch { }
+				}
+				return Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(asset.FilePath));
+			}
+		}
+		catch { }
+
+		return Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(asset.FileName);
+	}
+
 	public IndexedAsset? GetAssetByPath(string filePath)
 	{
 		if (string.IsNullOrWhiteSpace(filePath))
@@ -1067,20 +1204,36 @@ public class AssetIndexService : IDisposable
 				}).ToList();
 			}
 
+			List<IndexedAsset> filtered;
 			if (string.IsNullOrWhiteSpace(searchTerm))
 			{
-				return candidateList.OrderBy(x => x.FileName, StringComparer.OrdinalIgnoreCase).ToList();
+				filtered = candidateList.OrderBy(x => x.FileName, StringComparer.OrdinalIgnoreCase).ToList();
+			}
+			else
+			{
+				string queryTerm = searchTerm.Trim().ToLowerInvariant();
+				filtered = candidateList
+					.Where(asset =>
+						(asset.Tags != null && asset.Tags.Any(t => t.IndexOf(queryTerm, StringComparison.OrdinalIgnoreCase) >= 0)) ||
+						asset.FileName.IndexOf(queryTerm, StringComparison.OrdinalIgnoreCase) >= 0 ||
+						asset.FilePath.IndexOf(queryTerm, StringComparison.OrdinalIgnoreCase) >= 0 ||
+						(!string.IsNullOrEmpty(asset.MapName) && asset.MapName.IndexOf(queryTerm, StringComparison.OrdinalIgnoreCase) >= 0))
+					.OrderBy(x => x.FileName, StringComparer.OrdinalIgnoreCase)
+					.ToList();
 			}
 
-			string queryTerm = searchTerm.Trim().ToLowerInvariant();
-			return candidateList
-				.Where(asset =>
-					(asset.Tags != null && asset.Tags.Any(t => t.IndexOf(queryTerm, StringComparison.OrdinalIgnoreCase) >= 0)) ||
-					asset.FileName.IndexOf(queryTerm, StringComparison.OrdinalIgnoreCase) >= 0 ||
-					asset.FilePath.IndexOf(queryTerm, StringComparison.OrdinalIgnoreCase) >= 0 ||
-					(!string.IsNullOrEmpty(asset.MapName) && asset.MapName.IndexOf(queryTerm, StringComparison.OrdinalIgnoreCase) >= 0))
-				.OrderBy(x => x.FileName, StringComparer.OrdinalIgnoreCase)
-				.ToList();
+			var seenBlake3 = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			var deduplicated = new List<IndexedAsset>();
+			foreach (var item in filtered)
+			{
+				string blake3 = GetCanonicalBlake3(item);
+				if (string.IsNullOrEmpty(blake3) || seenBlake3.Add(blake3))
+				{
+					deduplicated.Add(item);
+				}
+			}
+
+			return deduplicated;
 		}
 	}
 

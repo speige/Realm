@@ -554,21 +554,24 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             }
         }
 
-        const scriptUri = webview.asWebviewUri(vscode.Uri.file(
-            path.join(this.context.extensionPath, 'media', 'editor.js')
-        ));
-        const styleUri = webview.asWebviewUri(vscode.Uri.file(
-            path.join(this.context.extensionPath, 'media', 'editor.css')
-        ));
         const nonce = this.getNonce();
+
+        let scriptContent = '';
+        let styleContent = '';
+        try {
+            scriptContent = fs.readFileSync(path.join(this.context.extensionPath, 'media', 'editor.js'), 'utf8');
+        } catch {}
+        try {
+            styleContent = fs.readFileSync(path.join(this.context.extensionPath, 'media', 'editor.css'), 'utf8');
+        } catch {}
 
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src http://127.0.0.1:* http://localhost:*; img-src ${webview.cspSource} data: https:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src http://127.0.0.1:* http://localhost:*; img-src ${webview.cspSource} data: https:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link href="${styleUri}" rel="stylesheet" />
+    <style>${styleContent}</style>
     <title>Realm Map Editor</title>
 </head>
 <body>
@@ -1193,7 +1196,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
         window.REALM_I18N = ${JSON.stringify(activeDict)};
         window.REALM_EN_FALLBACK = ${JSON.stringify(enDict)};
     </script>
-    <script nonce="${nonce}" src="${scriptUri}"></script>
+    <script nonce="${nonce}">${scriptContent}</script>
 </body>
 </html>`;
     }

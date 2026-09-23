@@ -32,13 +32,14 @@ public class VSCodeManager
 
 	private static readonly string[] RequiredExtensions = new[]
 	{
-		"ms-dotnettools.csdevkit",
+		"muhammad-sammy.csharp",
 		"OHZIInteractiveStudio.ohzi-vscode-glb-viewer",
 		"Gruntfuggly.todo-tree",
-		"mechatroner.rainbow-json",
+		// "mechatroner.rainbow-json",
 		"patcx.vscode-nuget-gallery",
 		"AykutSarac.jsoncrack-vscode",
-		"akondratiuk1-dev.texture-viewer"
+		// "akondratiuk1-dev.texture-viewer",
+		"Google.google-antigravity"
 	};
 
 	public bool IsInstalling
@@ -92,12 +93,6 @@ public class VSCodeManager
 		}
 		catch
 		{
-		}
-
-		string legacy = PathUtils.FindPath("vscode_embedded");
-		if (!string.IsNullOrEmpty(legacy) && Directory.Exists(legacy))
-		{
-			return legacy;
 		}
 
 		try
@@ -161,9 +156,7 @@ public class VSCodeManager
 	public bool IsInstalled()
 	{
 		string embedDir = GetVSCodeDirectory();
-		string binPath = Path.Combine(embedDir, "bin");
-		string exePath = Path.Combine(binPath, "code.exe");
-		string editorExe = Path.Combine(embedDir, "editor", "code.exe");
+		string exePath = Path.Combine(embedDir, "editor", "bin", "codium.exe");
 		string completedMarkerPath = Path.Combine(embedDir, "install_completed.marker");
 		string bypassMarkerPath = Path.Combine(embedDir, "bypass_completed.marker");
 		string wasiPath = WasiSdkResolver.ResolveWasiSdkPath();
@@ -174,8 +167,8 @@ public class VSCodeManager
 
 		if (!File.Exists(exePath)
 			|| new FileInfo(exePath).Length == 0
-			|| !File.Exists(editorExe)
-			|| new FileInfo(editorExe).Length == 0
+			|| !File.Exists(exePath)
+			|| new FileInfo(exePath).Length == 0
 			|| (!File.Exists(completedMarkerPath) && !File.Exists(bypassMarkerPath))
 			|| string.IsNullOrEmpty(wasiClangPath)
 			|| !File.Exists(wasiClangPath)
@@ -216,8 +209,7 @@ public class VSCodeManager
 			}
 
 			string embedDir = GetVSCodeDirectory();
-			string binPath = Path.Combine(embedDir, "bin");
-			string exePath = Path.Combine(binPath, "code.exe");
+			string exePath = Path.Combine(embedDir, "editor", "bin", "codium.exe");
 
 			if (!force && IsInstalled())
 			{
@@ -273,8 +265,7 @@ public class VSCodeManager
 					}
 
 					embedDir = GetVSCodeDirectory();
-					binPath = Path.Combine(embedDir, "bin");
-					exePath = Path.Combine(binPath, "code.exe");
+					exePath = Path.Combine(embedDir, "editor", "bin", "codium.exe");
 
 					if (File.Exists(exePath))
 					{
@@ -638,8 +629,7 @@ public class VSCodeManager
 		{
 			string projectRoot = PathUtils.GetProjectRoot();
 			string embedDir = GetVSCodeDirectory();
-			string binPath = Path.Combine(embedDir, "bin");
-			string exePath = Path.Combine(binPath, "code.exe");
+			string exePath = Path.Combine(embedDir, "editor", "bin", "codium.exe");
 
 			if (!File.Exists(exePath))
 			{
@@ -663,7 +653,7 @@ public class VSCodeManager
 			l.Stop();
 
 			_vscodeProcess = new Process();
-			_vscodeProcess.StartInfo.FileName = exePath;
+			_vscodeProcess.StartInfo.FileName = Path.ChangeExtension(exePath, ".cmd");
 			_vscodeProcess.StartInfo.Arguments = $"--extensions-dir \"{extensionsDir}\" serve-web --port {_vscodePort} --server-data-dir \"{serverDataDir}\" --accept-server-license-terms --without-connection-token";
 			_vscodeProcess.StartInfo.CreateNoWindow = true;
 			_vscodeProcess.StartInfo.UseShellExecute = false;
@@ -1707,7 +1697,7 @@ public class VSCodeManager
 		string extensionsDir = Path.Combine(serverDataDir, "extensions");
 
 		Process tempProcess = new Process();
-		tempProcess.StartInfo.FileName = exePath;
+		tempProcess.StartInfo.FileName = Path.ChangeExtension(exePath, ".cmd");
 		tempProcess.StartInfo.Arguments = $"--extensions-dir \"{extensionsDir}\" serve-web --port 8089 --server-data-dir \"{serverDataDir}\" --accept-server-license-terms --without-connection-token";
 		tempProcess.StartInfo.CreateNoWindow = true;
 		tempProcess.StartInfo.UseShellExecute = false;
@@ -1997,8 +1987,8 @@ public class VSCodeManager
 					GD.Print("VS Code: Installing missing extension " + extensionId);
 					using (var process = new Process())
 					{
-						process.StartInfo.FileName = exePath;
-						process.StartInfo.Arguments = $"--extensions-dir \"{extensionsDir}\" --user-data-dir \"{serverDataDir}\" ext install {extensionId}";
+						process.StartInfo.FileName = Path.ChangeExtension(exePath, ".cmd");
+						process.StartInfo.Arguments = $"--extensions-dir \"{extensionsDir}\" --user-data-dir \"{serverDataDir}\" --install-extension {extensionId}";
 						process.StartInfo.CreateNoWindow = true;
 						process.StartInfo.UseShellExecute = false;
 						process.StartInfo.RedirectStandardOutput = true;

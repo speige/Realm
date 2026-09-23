@@ -69,6 +69,7 @@ public partial class LobbyManager : Node
         public string PacketLoss { get; set; } = "--";
         public bool IsReady { get; set; }
         public string BinaryVersion { get; set; } = "";
+        public bool IsMapReady { get; set; } = true;
     }
 
     public List<string> AdminPublicKeys { get; private set; } = new();
@@ -480,7 +481,7 @@ public partial class LobbyManager : Node
         {
             _mapServer?.Stop();
             _mapServer = new MapDistributionServer();
-            _mapServer.Start(ENetPort + 10, mapPathName);
+            _mapServer.Start(ENetPort + 10, mapPathName, ActiveMapVersion);
         }
         catch (Exception ex)
         {
@@ -979,7 +980,8 @@ public partial class LobbyManager : Node
                 Team = "Team 1",
                 Color = GetNextColor(),
                 IsHost = false,
-                BinaryVersion = RealmVersion.GameBinaryVersion
+                BinaryVersion = RealmVersion.GameBinaryVersion,
+                IsMapReady = false
             };
             PlayerList.Add(newPlayer);
             SendChatMessage("System", string.Format(Tr("{0} joined the lobby."), newPlayer.Name));
@@ -1439,11 +1441,16 @@ public partial class LobbyManager : Node
 
     private void EmitDownloadProgress(float progress)
     {
+        if (progress == 0.0f)
+        {
+            ReportLocalMapReadyState(false);
+        }
         MapDownloadProgressChanged?.Invoke(progress);
     }
 
     private void EmitDownloadCompleted()
     {
+        ReportLocalMapReadyState(true);
         MapDownloadCompleted?.Invoke();
     }
 
@@ -1618,6 +1625,29 @@ public partial class LobbyManager : Node
                 p.IsReady = isReady;
                 BroadcastPlayerList();
             }
+        }
+    }
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
+    private void ReportMapReadyOnHost(int peerId, bool isMapReady)
+    {
+        if (IsHost)
+        {
+            var p = PlayerList.Find(x => x.PeerId == peerId);
+            if (p != null)
+            {
+                p.IsMapReady = isMapReady;
+                BroadcastPlayerList();
+            }
+        }
+    }
+
+    public void ReportLocalMapReadyState(bool isMapReady)
+    {
+        if (!IsHost && LocalPlayer != null)
+        {
+            LocalPlayer.IsMapReady = isMapReady;
+            RpcId(1, nameof(ReportMapReadyOnHost), LocalPlayer.PeerId, isMapReady);
         }
     }
 

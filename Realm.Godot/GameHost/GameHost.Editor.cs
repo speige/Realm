@@ -1180,6 +1180,14 @@ public partial class GameHost
 				ModelBrightness[NormalizeModelAssetKey(kvp.Key)] = kvp.Value;
 			}
 
+			foreach (var kvp in metadata.ModelColorTint)
+			{
+				if (!string.IsNullOrWhiteSpace(kvp.Value) && Color.HtmlIsValid(kvp.Value))
+				{
+					ModelColorTint[NormalizeModelAssetKey(kvp.Key)] = Color.FromHtml(kvp.Value);
+				}
+			}
+
 			foreach (var kvp in metadata.ModelDespillPlayerColor)
 			{
 				ModelDespillPlayerColor[NormalizeModelAssetKey(kvp.Key)] = kvp.Value;
@@ -1289,6 +1297,18 @@ public partial class GameHost
 								{
 									ModelBrightness[NormalizeModelAssetKey(itemKvp.Key)] = brightVal;
 								}
+								if (itemObj.ContainsKey("tint") && itemObj["tint"] != null && Color.HtmlIsValid(itemObj["tint"]?.ToString()))
+								{
+									ModelColorTint[NormalizeModelAssetKey(itemKvp.Key)] = Color.FromHtml(itemObj["tint"]!.ToString());
+								}
+								else if (itemObj.ContainsKey("color_tint") && itemObj["color_tint"] != null && Color.HtmlIsValid(itemObj["color_tint"]?.ToString()))
+								{
+									ModelColorTint[NormalizeModelAssetKey(itemKvp.Key)] = Color.FromHtml(itemObj["color_tint"]!.ToString());
+								}
+								else if (itemObj.ContainsKey("ColorTint") && itemObj["ColorTint"] != null && Color.HtmlIsValid(itemObj["ColorTint"]?.ToString()))
+								{
+									ModelColorTint[NormalizeModelAssetKey(itemKvp.Key)] = Color.FromHtml(itemObj["ColorTint"]!.ToString());
+								}
 								string normKey = NormalizeModelAssetKey(itemKvp.Key);
 								if (itemObj.ContainsKey("despill_player_color") && bool.TryParse(itemObj["despill_player_color"]?.ToString(), out bool dpcVal))
 								{
@@ -1346,6 +1366,7 @@ public partial class GameHost
 			}
 
 			foreach (var key in ModelBrightness.Keys
+				.Concat(ModelColorTint.Keys)
 				.Concat(ModelDespillPlayerColor.Keys)
 				.Concat(ModelNormalizeLuminance.Keys)
 				.Concat(ModelIgnorePlayerColor.Keys)
@@ -1455,6 +1476,7 @@ public partial class GameHost
 				foreach (var kvp in ModelCollisionCircleRatios) meta.ModelCollisionCircleRatios[kvp.Key] = kvp.Value;
 				foreach (var kvp in ModelObstacleRadii) meta.ModelObstacleRadii[kvp.Key] = kvp.Value;
 				foreach (var kvp in ModelBrightness) meta.ModelBrightness[kvp.Key] = kvp.Value;
+				foreach (var kvp in ModelColorTint) meta.ModelColorTint[kvp.Key] = $"#{kvp.Value.ToHtml(false)}";
 				foreach (var kvp in ModelDespillPlayerColor) meta.ModelDespillPlayerColor[kvp.Key] = kvp.Value;
 				foreach (var kvp in ModelNormalizeLuminance) meta.ModelNormalizeLuminance[kvp.Key] = kvp.Value;
 				foreach (var kvp in ModelIgnorePlayerColor) meta.ModelIgnorePlayerColor[kvp.Key] = kvp.Value;

@@ -14,19 +14,22 @@ public class MapDistributionServer
     private string _mapPath = "";
     private MapManifest? _currentManifest;
 
-    public void Start(int port, string mapPath)
+    public void Start(int port, string mapPath, string? mapVersion = null)
     {
         _mapPath = mapPath;
         
-        try
+        _ = Task.Run(() =>
         {
-            _currentManifest = MapAssetManager.IngestHostMap(mapPath);
-            MapAssetManager.Log($"[MapDistributionServer] Ingested host map at {mapPath}. Manifest has {_currentManifest.Files.Count} files.");
-        }
-        catch (Exception ex)
-        {
-            MapAssetManager.LogErr($"[MapDistributionServer] Failed to ingest host map: {ex.Message}");
-        }
+            try
+            {
+                _currentManifest = MapAssetManager.FindHostManifest(mapPath, mapVersion) ?? MapAssetManager.IngestHostMap(mapPath);
+                MapAssetManager.Log($"[MapDistributionServer] Ingested host map at {mapPath}. Manifest has {_currentManifest?.Files?.Count ?? 0} files.");
+            }
+            catch (Exception ex)
+            {
+                MapAssetManager.LogErr($"[MapDistributionServer] Failed to ingest host map: {ex.Message}");
+            }
+        });
 
         try
         {
@@ -126,7 +129,7 @@ public class MapDistributionServer
                 {
                     if (_currentManifest == null)
                     {
-                        _currentManifest = MapAssetManager.IngestHostMap(_mapPath);
+                        _currentManifest = MapAssetManager.FindHostManifest(_mapPath) ?? MapAssetManager.IngestHostMap(_mapPath);
                     }
 
                     string manifestJson = _currentManifest.ToJson();

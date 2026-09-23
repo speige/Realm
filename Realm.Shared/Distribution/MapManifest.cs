@@ -107,6 +107,7 @@ public class MapManifest
                         {
                             "animations" => ".ranim",
                             "sfx" or "music" => ".raud",
+                            "units" or "buildings" or "props" or "items" or "attachments" or "doodads" or "projectiles" or "decorations" => ".rmesh",
                             _ => ".rtex"
                         };
                     }
@@ -440,9 +441,45 @@ public class MapManifest
     public static MapManifest? LoadFromJson(string json)
     {
         var manifest = JsonSerializer.Deserialize<MapManifest>(json);
-        if (manifest != null && manifest.Assets != null && manifest._files.Count == 0)
+        if (manifest != null)
         {
-            manifest.EnsureFilesFromAssets();
+            if (manifest.Assets != null && manifest._files.Count == 0)
+            {
+                manifest.EnsureFilesFromAssets();
+            }
+            else if (manifest._files.Count == 0)
+            {
+                try
+                {
+                    var node = JsonNode.Parse(json);
+                    if (node is JsonObject rootObj)
+                    {
+                        var assetsObj = new JsonObject();
+                        foreach (var kvp in rootObj)
+                        {
+                            if (kvp.Value is JsonObject catObj &&
+                                !string.Equals(kvp.Key, "MapName", StringComparison.OrdinalIgnoreCase) &&
+                                !string.Equals(kvp.Key, "Author", StringComparison.OrdinalIgnoreCase) &&
+                                !string.Equals(kvp.Key, "Version", StringComparison.OrdinalIgnoreCase) &&
+                                !string.Equals(kvp.Key, "Description", StringComparison.OrdinalIgnoreCase) &&
+                                !string.Equals(kvp.Key, "Tags", StringComparison.OrdinalIgnoreCase) &&
+                                !string.Equals(kvp.Key, "GameBuildNumber", StringComparison.OrdinalIgnoreCase) &&
+                                !string.Equals(kvp.Key, "Assets", StringComparison.OrdinalIgnoreCase) &&
+                                !string.Equals(kvp.Key, "Files", StringComparison.OrdinalIgnoreCase) &&
+                                !string.Equals(kvp.Key, "FileSizes", StringComparison.OrdinalIgnoreCase))
+                            {
+                                assetsObj[kvp.Key] = catObj.DeepClone();
+                            }
+                        }
+                        if (assetsObj.Count > 0)
+                        {
+                            manifest.Assets = assetsObj;
+                            manifest.EnsureFilesFromAssets();
+                        }
+                    }
+                }
+                catch { }
+            }
         }
         return manifest;
     }

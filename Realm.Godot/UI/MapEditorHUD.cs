@@ -50,6 +50,15 @@ public partial class MapEditorHUD : Control
 	private static string _lastUsedFolder = "";
 	private static string _currentSourceFolder = "";
 
+	private static string _pendingCasSourceDirectory = "";
+	private static string _pendingDefaultSaveFolder = "";
+
+	public static void RequestOpenFromCas(string casSourceDirectory, string defaultSaveFolder)
+	{
+		_pendingCasSourceDirectory = casSourceDirectory;
+		_pendingDefaultSaveFolder = defaultSaveFolder;
+	}
+
 	private static bool _agreementShownThisSession = false;
 
 	public enum EditorModule
@@ -118,7 +127,6 @@ public partial class MapEditorHUD : Control
 	private Control _contentFile;
 
 	private MapSettingsDialog? _mapSettingsDialog;
-	private Button _btnMapSettings;
 	
 	private VBoxContainer _accordionInspector;
 	private Button _btnHeaderInspector;
@@ -698,12 +706,6 @@ public partial class MapEditorHUD : Control
 		_btnObjectManager.Name = "BtnObjectManager";
 		SetupOptionButton(_btnObjectManager, "\uf0cb OBJECT MANAGER", () => OpenObjectManagerDialog(), 13, "Open Object Manager dialog to list and locate all placed objects");
 		_contentFile.AddChild(_btnObjectManager);
-
-		_btnMapSettings = new Button();
-		_btnMapSettings.Name = "BtnMapSettings";
-		_btnMapSettings.Set("icon_max_width", 0);
-		SetupOptionButton(_btnMapSettings, "\uf303 MAP SETTINGS", () => _mapSettingsDialog?.OpenDialog(), 13, "Open Map Settings dialog");
-		_contentFile.AddChild(_btnMapSettings);
 
 		_btnEditorSettings = new Button();
 		_btnEditorSettings.Name = "BtnEditorSettings";
@@ -1559,7 +1561,6 @@ public partial class MapEditorHUD : Control
 		StyleRowButton(_btnResetMap);
 		StyleRowButton(_btnGenerateMap);
 		StyleRowButton(_btnImportMinimap);
-		StyleRowButton(_btnMapSettings);
 		StyleRowButton(_btnEditorSettings);
 
 		StyleRowButton(_btnRaise);
@@ -2790,6 +2791,26 @@ public partial class MapEditorHUD : Control
 			}
 		}
 
+		if (!string.IsNullOrEmpty(_pendingCasSourceDirectory) && System.IO.Directory.Exists(_pendingCasSourceDirectory))
+		{
+			string casDir = _pendingCasSourceDirectory;
+			string defaultSave = _pendingDefaultSaveFolder;
+			_pendingCasSourceDirectory = "";
+			_pendingDefaultSaveFolder = "";
+
+			_ = OpenFromCasAsync(casDir, defaultSave);
+		}
+
+	}
+
+	private async System.Threading.Tasks.Task OpenFromCasAsync(string casSourceDirectory, string defaultSaveFolder)
+	{
+		bool loaded = await LoadMapFolderAsync(casSourceDirectory);
+		if (loaded && !string.IsNullOrEmpty(defaultSaveFolder))
+		{
+			_lastUsedFolder = defaultSaveFolder;
+			_currentSourceFolder = defaultSaveFolder;
+		}
 	}
 
 	private void CheckPostLaunchPrompts()
@@ -2895,6 +2916,12 @@ public partial class MapEditorHUD : Control
 	private void CheckUnsavedSessionOnLaunch(Action onCompleted = null)
 	{
 		if (ReturningFromTest)
+		{
+			onCompleted?.Invoke();
+			return;
+		}
+
+		if (!string.IsNullOrEmpty(_pendingCasSourceDirectory))
 		{
 			onCompleted?.Invoke();
 			return;
@@ -6170,7 +6197,6 @@ public partial class MapEditorHUD : Control
 
 			SafeReparent(_btnGenerateMap, fileGrid2);
 			SafeReparent(_btnImportMinimap, fileGrid2);
-			SafeReparent(_btnMapSettings, fileGrid2);
 			SafeReparent(_btnResetMap, fileGrid2);
 
 			var fileBox1 = new VBoxContainer();
@@ -7948,7 +7974,7 @@ public partial class MapEditorHUD : Control
 			252, 338, 235, 135);
 
 		AddRuleTextBox("Going Solo", 
-			"Want to turn your map into a standalone game? Go for it! However, you can only take your original work with you. You must remove and re-create any official Realm assets as well as content you imported from other Realm users, unless you obtain their explicit written permission.",
+			"Want to turn your map into a standalone game? Go for it! However, you can only take your original work with you. You must replace any content created by other Realm users, unless you obtain their explicit written permission.",
 			655, 338, 240, 135);
 
 		// Row 3
@@ -9258,7 +9284,7 @@ public partial class MapEditorHUD : Control
 							statusLabel.Text = string.Format(TranslationServer.Translate("Compressing {0} ({1}%)..."), System.IO.Path.GetFileName(file), (int)(pct * 100));
 						}
 					}).CallDeferred();
-				});
+				}, compressionLevel: 1);
 			});
 
 			progressBar.Value = 100;

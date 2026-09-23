@@ -152,10 +152,8 @@ public partial class MainMenu : Control
 		{
 			if (_playButton != null) _playButton.Visible = false;
 			if (_singlePlayerButton != null) _singlePlayerButton.Visible = false;
-			if (_mapDiscoveryButton != null) _mapDiscoveryButton.Visible = false;
 			if (_creatorDiscoveryButton != null) _creatorDiscoveryButton.Visible = false;
 			if (_replaysButton != null) _replaysButton.Visible = false;
-			if (_storageButton != null) _storageButton.Visible = false;
 			if (_profileButton != null) _profileButton.Visible = false;
 		}
 	}

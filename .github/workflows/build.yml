@@ -88,6 +88,16 @@ jobs:
           }
           Copy-Item -Path $cliPath -Destination "$PWD\publish\Realm.Tools.Cli.exe" -Force
 
+      - name: Copy Terms and LICENSE to Publish Directory
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        run: |
+          if (Test-Path "Terms") {
+            Copy-Item -Path "Terms" -Destination "$PWD\publish\Terms" -Recurse -Force
+          }
+          if (Test-Path "LICENSE") {
+            Copy-Item -Path "LICENSE" -Destination "$PWD\publish\LICENSE" -Force
+          }
+
       - name: Copy servers.json to Publish Directory
         if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
         run: |

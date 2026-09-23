@@ -449,34 +449,6 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 				currentItemIndex++;
 				isFirst = false;
 			}
-
-			var mapChip = new PanelContainer();
-			var mapChipStyle = new StyleBoxFlat();
-			mapChipStyle.BgColor = new Color(0.15f, 0.16f, 0.19f, 0.9f);
-			mapChipStyle.BorderColor = UIStyle.ColorGold;
-			mapChipStyle.SetBorderWidthAll(1);
-			mapChipStyle.CornerRadiusTopLeft = 3;
-			mapChipStyle.CornerRadiusTopRight = 3;
-			mapChipStyle.CornerRadiusBottomLeft = 3;
-			mapChipStyle.CornerRadiusBottomRight = 3;
-			mapChipStyle.ContentMarginLeft = 6;
-			mapChipStyle.ContentMarginRight = 6;
-			mapChipStyle.ContentMarginTop = 2;
-			mapChipStyle.ContentMarginBottom = 2;
-			mapChip.AddThemeStyleboxOverride("panel", mapChipStyle);
-			mapChip.TooltipText = $"{TranslationServer.Translate("Filter by map package")}: {mapName}";
-
-			var mapChipHBox = new HBoxContainer();
-			mapChipHBox.AddThemeConstantOverride("separation", 4);
-			mapChip.AddChild(mapChipHBox);
-
-			var lblMapName = new Label();
-			lblMapName.Text = $"📦 {mapName}";
-			lblMapName.AddThemeFontSizeOverride("font_size", 10);
-			lblMapName.AddThemeColorOverride("font_color", UIStyle.ColorGold);
-			mapChipHBox.AddChild(lblMapName);
-
-			_folderChipsContainer.AddChild(mapChip);
 		}
 
 		var indexedDirs = AssetIndexService.Instance.GetIndexedDirectories();
@@ -485,9 +457,12 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 		{
 			string dirPath = indexedDirs[i];
 			bool isGlobalCas = string.Equals(dirPath, AssetIndexService.GlobalCasAssetsDirectory, StringComparison.OrdinalIgnoreCase);
-			string folderName = isGlobalCas
-				? TranslationServer.Translate("Global Assets (CAS)")
-				: Path.GetFileName(dirPath.TrimEnd('/', '\\'));
+			if (isGlobalCas)
+			{
+				continue;
+			}
+
+			string folderName = Path.GetFileName(dirPath.TrimEnd('/', '\\'));
 			if (string.IsNullOrEmpty(folderName))
 			{
 				folderName = dirPath;
@@ -533,23 +508,20 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 			lblName.AddThemeColorOverride("font_color", isIndexing ? UIStyle.ColorCyanGlow : UIStyle.ColorGold);
 			chipHBox.AddChild(lblName);
 
-			if (!isGlobalCas)
+			var btnRemove = new Button();
+			btnRemove.Set("icon_max_width", 0);
+			btnRemove.Text = "✕";
+			btnRemove.AddThemeFontSizeOverride("font_size", 9);
+			btnRemove.CustomMinimumSize = new Vector2(16, 16);
+			btnRemove.FocusMode = FocusModeEnum.None;
+			btnRemove.TooltipText = $"{TranslationServer.Translate("Remove folder from index")}: {dirPath}";
+			btnRemove.Pressed += () =>
 			{
-				var btnRemove = new Button();
-				btnRemove.Set("icon_max_width", 0);
-				btnRemove.Text = "✕";
-				btnRemove.AddThemeFontSizeOverride("font_size", 9);
-				btnRemove.CustomMinimumSize = new Vector2(16, 16);
-				btnRemove.FocusMode = FocusModeEnum.None;
-				btnRemove.TooltipText = $"{TranslationServer.Translate("Remove folder from index")}: {dirPath}";
-				btnRemove.Pressed += () =>
-				{
-					AssetIndexService.Instance.RemoveDirectory(dirPath);
-					RefreshFolderChips();
-					RefreshSearchResults();
-				};
-				chipHBox.AddChild(btnRemove);
-			}
+				AssetIndexService.Instance.RemoveDirectory(dirPath);
+				RefreshFolderChips();
+				RefreshSearchResults();
+			};
+			chipHBox.AddChild(btnRemove);
 
 			_folderChipsContainer.AddChild(chip);
 		}
@@ -699,14 +671,24 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 	{
 		string searchTerm = _txtSearch.Text?.Trim() ?? string.Empty;
 		_matchingAssets.Clear();
-		_matchingAssets.AddRange(AssetIndexService.Instance.SearchAssets(
+		var searchResults = AssetIndexService.Instance.SearchAssets(
 			searchTerm,
 			_allowedExtensions,
 			_selectedDirectoryFilter,
 			_requireRealmMetadata,
 			_selectedAssetTypeFilter,
 			_selectedMapNameFilter,
-			_selectedMapVersionFilter));
+			_selectedMapVersionFilter);
+
+		var seenBlake3 = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (var asset in searchResults)
+		{
+			string blake3 = AssetIndexService.GetCanonicalBlake3(asset);
+			if (string.IsNullOrEmpty(blake3) || seenBlake3.Add(blake3))
+			{
+				_matchingAssets.Add(asset);
+			}
+		}
 
 		_lblResultsCount.Text = $"{_matchingAssets.Count} {TranslationServer.Translate("items found")}";
 		_lblEmptyState.Visible = _matchingAssets.Count == 0;

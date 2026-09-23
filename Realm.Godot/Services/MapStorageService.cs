@@ -484,7 +484,7 @@ public class MapStorageService
         return await distClient.DownloadMapPackageFromRegistryAsync(mapId, serverUrl, progressCallback, cancellationToken);
     }
 
-    public Task<bool> ExportMapAsync(string sourceDirectory, string destination7zPath)
+    public Task<bool> ExportMapAsync(string sourceDirectory, string destination7zPath, int compressionLevel = 1)
     {
         if (string.IsNullOrWhiteSpace(sourceDirectory) || !Directory.Exists(sourceDirectory))
         {
@@ -493,7 +493,7 @@ public class MapStorageService
 
         try
         {
-            MapArchiveHelper.Create7zArchive(sourceDirectory, destination7zPath);
+            MapArchiveHelper.Create7zArchive(sourceDirectory, destination7zPath, compressionLevel: compressionLevel);
             return Task.FromResult(true);
         }
         catch (Exception ex)
