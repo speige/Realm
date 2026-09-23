@@ -2,6 +2,7 @@ using Godot;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Realm.Shared.Distribution;
 
 public partial class MapDiscovery : Control
 {
@@ -76,10 +77,56 @@ public partial class MapDiscovery : Control
 		_btnMelee = GetNode<Button>("FilterPanel/VBoxContainer/CatMelee");
 		_btnCampaign = GetNode<Button>("FilterPanel/VBoxContainer/CatCampaign");
 
-		_allMaps = MapData.GetDummyMaps();
+		_allMaps = [];
 
 		ApplyStyles();
 		RegisterEvents();
+		RenderMapGrid();
+
+		LoadDiscoveryMapsAsync();
+	}
+
+	private async void LoadDiscoveryMapsAsync()
+	{
+		string seedServerUrl = GodotObject.IsInstanceValid(LobbyManager.Instance)
+			? LobbyManager.Instance.RegistryServerUrl
+			: ServersConfigHelper.GetDefaultServerUrl();
+
+		try
+		{
+			var distClient = new Realm.Shared.Distribution.DistributionClient(seedServerUrl);
+			var discoveryDtos = await distClient.GetDiscoveryMapsAsync();
+			if (discoveryDtos != null && discoveryDtos.Count > 0)
+			{
+				var liveMaps = discoveryDtos
+					.Select(dto => MapData.FromDto(dto, seedServerUrl))
+					.ToList();
+
+				var groupedMaps = liveMaps
+					.GroupBy(m => string.IsNullOrWhiteSpace(m.Title) ? m.MapId : m.Title.Trim(), StringComparer.OrdinalIgnoreCase)
+					.Select(group =>
+					{
+						var versions = group.OrderByDescending(v => ParseVersion(v.Version)).ToList();
+						var primary = versions[0];
+						primary.AvailableVersions = versions;
+						foreach (var v in versions)
+						{
+							v.AvailableVersions = versions;
+						}
+						return primary;
+					})
+					.ToArray();
+
+				_allMaps = groupedMaps;
+				RenderMapGrid();
+				return;
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapDiscovery] Failed to load maps from server: {ex.Message}");
+		}
+
 		RenderMapGrid();
 	}
 
@@ -428,14 +475,8 @@ public partial class MapDiscovery : Control
 		thumbnail.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 		thumbnail.StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered;
 		thumbnail.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
-		if (FileAccess.FileExists(map.ThumbnailPath))
-		{
-			thumbnail.Texture = GD.Load<Texture2D>(map.ThumbnailPath);
-		}
-		else
-		{
-			thumbnail.Texture = GD.Load<Texture2D>("res://icon.svg");
-		}
+		var loadedTex = LoadTextureSafe(map.ThumbnailPath);
+		thumbnail.Texture = loadedTex ?? GD.Load<Texture2D>("res://icon.svg");
 		imgContainer.AddChild(thumbnail);
 
 		var frameOverlay = new TextureRect();
@@ -523,5 +564,56 @@ public partial class MapDiscovery : Control
 		footer.AddChild(btnDetails);
 
 		return card;
+	}
+
+	private static Texture2D LoadTextureSafe(string resPath)
+	{
+		if (string.IsNullOrEmpty(resPath)) return null;
+
+		try
+		{
+			if (ResourceLoader.Exists(resPath))
+			{
+				var tex = GD.Load<Texture2D>(resPath);
+				if (tex != null) return tex;
+			}
+		}
+		catch { }
+
+		try
+		{
+			string globalPath = ProjectSettings.GlobalizePath(resPath);
+			if (System.IO.File.Exists(globalPath))
+			{
+				var image = Image.LoadFromFile(globalPath);
+				if (image != null)
+				{
+					return ImageTexture.CreateFromImage(image);
+				}
+			}
+		}
+		catch { }
+
+		return null;
+	}
+
+	private static Version ParseVersion(string versionStr)
+	{
+		if (string.IsNullOrWhiteSpace(versionStr)) return new Version(1, 0, 0);
+		string cleaned = versionStr.TrimStart('v', 'V').Trim();
+		if (Version.TryParse(cleaned, out var v))
+		{
+			return v;
+		}
+		var parts = cleaned.Split('.');
+		if (parts.Length == 1 && int.TryParse(parts[0], out int major))
+		{
+			return new Version(major, 0, 0);
+		}
+		if (parts.Length == 2 && int.TryParse(parts[0], out int maj) && int.TryParse(parts[1], out int min))
+		{
+			return new Version(maj, min, 0);
+		}
+		return new Version(0, 0, 0);
 	}
 }

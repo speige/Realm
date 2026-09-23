@@ -1,0 +1,31 @@
+REALM PLATFORM
+ONLINE SERVICES & API TERMS OF USE
+
+1. SCOPE OF SERVICES
+"ONLINE SERVICES & API" refers to the centralized coordination layer operated by the 
+Realm Platform Operator, including: databases, UGC registry, and player data.
+
+The underlying "Realm Engine" code is licensed under the MIT License, which governs 
+local compilation and execution only. The MIT License does not convey any right or 
+license to access, query, coordinate with, or authenticate against Official Services 
+or databases. Official Services are reserved exclusively for authorized official client builds.
+
+2. ACCESS LIMITATIONS & NODE PARTICIPATION
+- Community Node Hosting: Operators hosting community nodes do so as participant 
+  relays within the federated network under license from the Platform Operator. 
+  Hosting a node conveys no ownership over the UGC catalog, account registry, or 
+  central platform metadata.
+- Unauthorized Ingress: Third-party client binaries, unauthorized forks, or 
+  independent forks of Realm Engine may not authenticate against, query, or 
+  route traffic through Official Services or federated community nodes connected 
+  to the official database.
+
+3. REVERSE ENGINEERING & CREDENTIAL ABUSE
+Users and third-party developers may not:
+- Impersonate official network endpoints or bypass API authentication.
+- Scrape data from official endpoints.
+- Route third-party builds or forks through Official Services.
+
+4. INDEPENDENT HOSTING
+Third-party forks or standalone distributions must route through their own independently hosted
+backend infrastructure, databases, and endpoints.

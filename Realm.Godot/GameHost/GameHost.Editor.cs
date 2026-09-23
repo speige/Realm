@@ -22,12 +22,11 @@ public partial class GameHost
 	public readonly Dictionary<string, float> ModelObstacleRadii = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, float> ModelBrightness = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, Color> ModelColorTint = new(StringComparer.OrdinalIgnoreCase);
-	public readonly Dictionary<string, ModelNormalMode> ModelNormalModes = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, bool> ModelIgnorePlayerColor = new(StringComparer.OrdinalIgnoreCase);
+	public readonly Dictionary<string, bool> ModelDespillPlayerColor = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, bool> ModelNormalizeLuminance = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, string> ModelSpawnShaders = new(StringComparer.OrdinalIgnoreCase);
 	public readonly Dictionary<string, string> ModelDeathShaders = new(StringComparer.OrdinalIgnoreCase);
-	public readonly Dictionary<string, bool> ModelGenerateNormals = new(StringComparer.OrdinalIgnoreCase);
 	private bool _modelYOffsetSavePending = false;
 	private bool _modelCollisionCircleSavePending = false;
 
@@ -42,9 +41,13 @@ public partial class GameHost
 		}
 
 		string filename = System.IO.Path.GetFileName(pathOrId);
-		if (!filename.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) && !filename.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
+		if (filename.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) || filename.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
 		{
-			filename += ".glb";
+			filename = System.IO.Path.GetFileNameWithoutExtension(filename) + ".rmesh";
+		}
+		else if (!filename.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
+		{
+			filename += ".rmesh";
 		}
 		string result = filename.ToLowerInvariant();
 		_normalizedAssetKeyCache[pathOrId] = result;
@@ -140,19 +143,21 @@ public partial class GameHost
 		{
 			if (!string.IsNullOrEmpty(prop.PropId) && NormalizeModelAssetKey(prop.PropId) == normTarget)
 				return true;
-			if (PropRegistry.TryGetValue(prop.PropId, out var propMeta) && !string.IsNullOrEmpty(propMeta.ModelPath) && NormalizeModelAssetKey(propMeta.ModelPath) == normTarget)
+			string cleanPropId = System.IO.Path.GetFileNameWithoutExtension(prop.PropId);
+			if ((PropRegistry.TryGetValue(prop.PropId, out var propMeta) || (!string.IsNullOrEmpty(cleanPropId) && PropRegistry.TryGetValue(cleanPropId, out propMeta))) && !string.IsNullOrEmpty(propMeta.ModelPath) && NormalizeModelAssetKey(propMeta.ModelPath) == normTarget)
 				return true;
-			if (ResourceRegistry.TryGetValue(prop.PropId, out var resMeta) && !string.IsNullOrEmpty(resMeta.ModelPath) && NormalizeModelAssetKey(resMeta.ModelPath) == normTarget)
+			if ((ResourceRegistry.TryGetValue(prop.PropId, out var resMeta) || (!string.IsNullOrEmpty(cleanPropId) && ResourceRegistry.TryGetValue(cleanPropId, out resMeta))) && !string.IsNullOrEmpty(resMeta.ModelPath) && NormalizeModelAssetKey(resMeta.ModelPath) == normTarget)
 				return true;
 		}
 		else if (objOrId is string str)
 		{
 			if (NormalizeModelAssetKey(str) == normTarget) return true;
-			if (UnitRegistry.TryGetValue(str, out var meta) && !string.IsNullOrEmpty(meta.ModelPath) && NormalizeModelAssetKey(meta.ModelPath) == normTarget)
+			string cleanStr = System.IO.Path.GetFileNameWithoutExtension(str);
+			if ((UnitRegistry.TryGetValue(str, out var meta) || (!string.IsNullOrEmpty(cleanStr) && UnitRegistry.TryGetValue(cleanStr, out meta))) && !string.IsNullOrEmpty(meta.ModelPath) && NormalizeModelAssetKey(meta.ModelPath) == normTarget)
 				return true;
-			if (PropRegistry.TryGetValue(str, out var propMeta) && !string.IsNullOrEmpty(propMeta.ModelPath) && NormalizeModelAssetKey(propMeta.ModelPath) == normTarget)
+			if ((PropRegistry.TryGetValue(str, out var propMeta) || (!string.IsNullOrEmpty(cleanStr) && PropRegistry.TryGetValue(cleanStr, out propMeta))) && !string.IsNullOrEmpty(propMeta.ModelPath) && NormalizeModelAssetKey(propMeta.ModelPath) == normTarget)
 				return true;
-			if (ResourceRegistry.TryGetValue(str, out var resMeta) && !string.IsNullOrEmpty(resMeta.ModelPath) && NormalizeModelAssetKey(resMeta.ModelPath) == normTarget)
+			if ((ResourceRegistry.TryGetValue(str, out var resMeta) || (!string.IsNullOrEmpty(cleanStr) && ResourceRegistry.TryGetValue(cleanStr, out resMeta))) && !string.IsNullOrEmpty(resMeta.ModelPath) && NormalizeModelAssetKey(resMeta.ModelPath) == normTarget)
 				return true;
 		}
 		return GetModelAssetKey(objOrId) == normTarget;
@@ -444,35 +449,35 @@ public partial class GameHost
 		EditorHasUnsavedChanges = true;
 	}
 
-	public ModelNormalMode GetModelNormalMode(object objOrId)
+	public bool GetModelDespillPlayerColor(object objOrId)
 	{
-		if (objOrId == null) return ModelNormalMode.Flat;
+		if (objOrId == null) return true;
 		string primaryKey = GetSelectedEntityOrAssetKey(objOrId);
 		string normPrimary = NormalizeModelAssetKey(primaryKey);
-		if (!string.IsNullOrEmpty(normPrimary) && ModelNormalModes.TryGetValue(normPrimary, out var m1))
-			return m1;
+		if (!string.IsNullOrEmpty(normPrimary) && ModelDespillPlayerColor.TryGetValue(normPrimary, out bool b1))
+			return b1;
 
 		string assetKey = GetModelAssetKey(objOrId);
 		string normAsset = NormalizeModelAssetKey(assetKey);
-		if (!string.IsNullOrEmpty(normAsset) && ModelNormalModes.TryGetValue(normAsset, out var m2))
-			return m2;
+		if (!string.IsNullOrEmpty(normAsset) && ModelDespillPlayerColor.TryGetValue(normAsset, out bool b2))
+			return b2;
 
 		if (!string.IsNullOrEmpty(primaryKey))
 		{
-			if (UnitRegistry.TryGetValue(primaryKey, out var meta)) return meta.NormalMode;
-			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta)) return resMeta.NormalMode;
-			if (PropRegistry.TryGetValue(primaryKey, out var propMeta)) return propMeta.NormalMode;
+			if (UnitRegistry.TryGetValue(primaryKey, out var meta)) return meta.DespillPlayerColor;
+			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta)) return resMeta.DespillPlayerColor;
+			if (PropRegistry.TryGetValue(primaryKey, out var propMeta)) return propMeta.DespillPlayerColor;
 		}
 
-		return ModelNormalMode.Flat;
+		return true;
 	}
 
-	public void SetModelNormalMode(string assetKey, ModelNormalMode normalMode)
+	public void SetModelDespillPlayerColor(string assetKey, bool despillPlayerColor)
 	{
 		string norm = NormalizeModelAssetKey(assetKey);
 		if (string.IsNullOrEmpty(norm)) return;
 
-		ModelNormalModes[norm] = normalMode;
+		ModelDespillPlayerColor[norm] = despillPlayerColor;
 		UpdateMaterialOverridesForAsset(norm);
 
 		_modelYOffsetSavePending = true;
@@ -708,6 +713,44 @@ public partial class GameHost
 		return false;
 	}
 
+	public bool IsAttachmentKey(string key)
+	{
+		if (string.IsNullOrEmpty(key)) return false;
+		string norm = NormalizeModelAssetKey(key);
+
+		if (AttachmentRegistry.ContainsKey(key) || AttachmentRegistry.ContainsKey(norm)) return true;
+
+		foreach (var attMeta in AttachmentRegistry.Values)
+		{
+			if (!string.IsNullOrEmpty(attMeta.ModelPath) && NormalizeModelAssetKey(attMeta.ModelPath) == norm)
+				return true;
+			if (!string.IsNullOrEmpty(attMeta.AttachmentId) && NormalizeModelAssetKey(attMeta.AttachmentId) == norm)
+				return true;
+		}
+
+		if (key.Contains("/attachments/", StringComparison.OrdinalIgnoreCase) || key.Contains("\\attachments\\", StringComparison.OrdinalIgnoreCase) || key.StartsWith("attachments/", StringComparison.OrdinalIgnoreCase)) return true;
+		if (key.Contains("/weapons/", StringComparison.OrdinalIgnoreCase) || key.Contains("\\weapons\\", StringComparison.OrdinalIgnoreCase) || key.StartsWith("weapons/", StringComparison.OrdinalIgnoreCase)) return true;
+		if (key.Contains("/items/", StringComparison.OrdinalIgnoreCase) || key.Contains("\\items\\", StringComparison.OrdinalIgnoreCase) || key.StartsWith("items/", StringComparison.OrdinalIgnoreCase)) return true;
+
+		string resolved = ModelCache.ResolveModelPath(key);
+		if (!string.IsNullOrEmpty(resolved))
+		{
+			if (resolved.Contains("/attachments/", StringComparison.OrdinalIgnoreCase) || resolved.Contains("\\attachments\\", StringComparison.OrdinalIgnoreCase)) return true;
+			if (resolved.Contains("/weapons/", StringComparison.OrdinalIgnoreCase) || resolved.Contains("\\weapons\\", StringComparison.OrdinalIgnoreCase)) return true;
+			if (resolved.Contains("/items/", StringComparison.OrdinalIgnoreCase) || resolved.Contains("\\items\\", StringComparison.OrdinalIgnoreCase)) return true;
+		}
+
+		string resolvedNorm = ModelCache.ResolveModelPath(norm);
+		if (!string.IsNullOrEmpty(resolvedNorm))
+		{
+			if (resolvedNorm.Contains("/attachments/", StringComparison.OrdinalIgnoreCase) || resolvedNorm.Contains("\\attachments\\", StringComparison.OrdinalIgnoreCase)) return true;
+			if (resolvedNorm.Contains("/weapons/", StringComparison.OrdinalIgnoreCase) || resolvedNorm.Contains("\\weapons\\", StringComparison.OrdinalIgnoreCase)) return true;
+			if (resolvedNorm.Contains("/items/", StringComparison.OrdinalIgnoreCase) || resolvedNorm.Contains("\\items\\", StringComparison.OrdinalIgnoreCase)) return true;
+		}
+
+		return false;
+	}
+
 	public bool GetModelIgnorePlayerColor(object objOrId)
 	{
 		if (objOrId == null) return false;
@@ -726,15 +769,18 @@ public partial class GameHost
 			if (UnitRegistry.TryGetValue(primaryKey, out var meta)) return meta.IgnorePlayerColor;
 			if (ResourceRegistry.TryGetValue(primaryKey, out var resMeta)) return resMeta.IgnorePlayerColor;
 			if (PropRegistry.TryGetValue(primaryKey, out var propMeta)) return propMeta.IgnorePlayerColor;
+			if (AttachmentRegistry.TryGetValue(primaryKey, out _)) return true;
 		}
 
 		if (!string.IsNullOrEmpty(normAsset))
 		{
 			if (ResourceRegistry.TryGetValue(normAsset, out var resMeta2)) return resMeta2.IgnorePlayerColor;
 			if (PropRegistry.TryGetValue(normAsset, out var propMeta2)) return propMeta2.IgnorePlayerColor;
+			if (AttachmentRegistry.TryGetValue(normAsset, out _)) return true;
 		}
 
-		if (objOrId is Prop3D || IsPropOrResourceKey(primaryKey) || IsPropOrResourceKey(normPrimary) || IsPropOrResourceKey(assetKey) || IsPropOrResourceKey(normAsset))
+		if (objOrId is Prop3D || IsPropOrResourceKey(primaryKey) || IsPropOrResourceKey(normPrimary) || IsPropOrResourceKey(assetKey) || IsPropOrResourceKey(normAsset)
+			|| IsAttachmentKey(primaryKey) || IsAttachmentKey(normPrimary) || IsAttachmentKey(assetKey) || IsAttachmentKey(normAsset))
 		{
 			return true;
 		}
@@ -772,7 +818,6 @@ public partial class GameHost
 
 		float brightness = GetModelBrightness(normAssetKey);
 		Color tint = GetModelColorTint(normAssetKey);
-		ModelNormalMode normalMode = GetModelNormalMode(normAssetKey);
 		bool ignorePlayerColor = GetModelIgnorePlayerColor(normAssetKey);
 		bool normalizeLuminance = GetModelNormalizeLuminance(normAssetKey);
 
@@ -780,7 +825,7 @@ public partial class GameHost
 		{
 			if (GodotObject.IsInstanceValid(prop) && MatchesEntityOrAssetKey(prop, normAssetKey))
 			{
-				ApplyMaterialOverridesToNode(prop, brightness, tint, normalMode, normalizeLuminance, ignorePlayerColor, false);
+				ApplyMaterialOverridesToNode(prop, brightness, tint, normalizeLuminance, ignorePlayerColor, false);
 			}
 		}
 
@@ -788,7 +833,7 @@ public partial class GameHost
 		{
 			if (GodotObject.IsInstanceValid(unit) && MatchesEntityOrAssetKey(unit, normAssetKey))
 			{
-				ApplyMaterialOverridesToNode(unit, brightness, tint, normalMode, normalizeLuminance, ignorePlayerColor, true);
+				ApplyMaterialOverridesToNode(unit, brightness, tint, normalizeLuminance, ignorePlayerColor, true);
 				if (!ignorePlayerColor)
 				{
 					unit.UpdatePlayerColorVisual();
@@ -825,10 +870,9 @@ public partial class GameHost
 
 			float brightness = GetModelBrightness(unit);
 			Color tint = GetModelColorTint(unit);
-			ModelNormalMode normalMode = GetModelNormalMode(unit);
 			bool ignorePlayerColor = GetModelIgnorePlayerColor(unit);
 			bool normalizeLuminance = GetModelNormalizeLuminance(unit);
-			ApplyMaterialOverridesToNode(unit, brightness, tint, normalMode, normalizeLuminance, ignorePlayerColor, true);
+			ApplyMaterialOverridesToNode(unit, brightness, tint, normalizeLuminance, ignorePlayerColor, true);
 			if (!ignorePlayerColor)
 			{
 				unit.UpdatePlayerColorVisual();
@@ -855,58 +899,16 @@ public partial class GameHost
 
 			float brightness = GetModelBrightness(prop);
 			Color tint = GetModelColorTint(prop);
-			ModelNormalMode normalMode = GetModelNormalMode(prop);
 			bool ignorePlayerColor = GetModelIgnorePlayerColor(prop);
 			bool normalizeLuminance = GetModelNormalizeLuminance(prop);
-			ApplyMaterialOverridesToNode(prop, brightness, tint, normalMode, normalizeLuminance, ignorePlayerColor, false);
+			ApplyMaterialOverridesToNode(prop, brightness, tint, normalizeLuminance, ignorePlayerColor, false);
 		}
-	}
-
-	private static readonly Dictionary<(ulong MeshId, ModelNormalMode Mode), ArrayMesh> _normalGeneratedMeshCache = new();
-
-	public static void ClearNormalGeneratedMeshCache()
-	{
-		_normalGeneratedMeshCache.Clear();
-	}
-
-	public static ArrayMesh GetOrCreateNormalMesh(ArrayMesh arrayMesh, ModelNormalMode normalMode)
-	{
-		if (arrayMesh == null) return null;
-		if (normalMode == ModelNormalMode.Original) return arrayMesh;
-
-		ulong baseId = arrayMesh.GetInstanceId();
-		var cacheKey = (baseId, normalMode);
-		if (_normalGeneratedMeshCache.TryGetValue(cacheKey, out var cachedMesh) && GodotObject.IsInstanceValid(cachedMesh))
-		{
-			return cachedMesh;
-		}
-
-		var toolMesh = new ArrayMesh();
-		for (int i = 0; i < arrayMesh.GetSurfaceCount(); i++)
-		{
-			var surfaceTool = new SurfaceTool();
-			surfaceTool.CreateFrom(arrayMesh, i);
-			if (normalMode == ModelNormalMode.Flat)
-			{
-				surfaceTool.Deindex();
-				surfaceTool.GenerateNormals();
-			}
-			else if (normalMode == ModelNormalMode.Smooth)
-			{
-				surfaceTool.Index();
-				surfaceTool.GenerateNormals();
-			}
-			toolMesh = surfaceTool.Commit(toolMesh);
-		}
-		_normalGeneratedMeshCache[cacheKey] = toolMesh;
-		return toolMesh;
 	}
 
 	public static void ApplyMaterialOverridesToNode(
 		Node node,
 		float brightness = 0.5f,
 		Color? colorTint = null,
-		ModelNormalMode normalMode = ModelNormalMode.Flat,
 		bool normalizeLuminance = true,
 		bool? ignorePlayerColor = null,
 		bool? isUnitOrBuilding = null)
@@ -927,7 +929,6 @@ public partial class GameHost
 		}
 
 		Realm.Godot.Utils.ModelShaderManager.RefreshShaderMaterialsForNode(node, normalizeLuminance);
-		Realm.Godot.Utils.ModelShaderManager.SetNormalMode(node, (float)normalMode);
 		Realm.Godot.Utils.ModelShaderManager.SetUnitReadability(node, isUnit);
 		if (ignorePlayerColor.HasValue)
 		{
@@ -947,26 +948,15 @@ public partial class GameHost
 				|| nameStr.Contains("SelectionRing", StringComparison.OrdinalIgnoreCase)
 				|| nameStr.Contains("HoverRing", StringComparison.OrdinalIgnoreCase)) continue;
 
-			if (!meshInst.HasMeta("original_mesh") && meshInst.Mesh != null)
+			if (meshInst.HasMeta("original_mesh"))
 			{
-				meshInst.SetMeta("original_mesh", meshInst.Mesh);
-			}
-
-			Mesh baseMesh = meshInst.HasMeta("original_mesh") ? meshInst.GetMeta("original_mesh").As<Mesh>() : meshInst.Mesh;
-
-			if (normalMode == ModelNormalMode.Original)
-			{
-				if (baseMesh != null)
+				Mesh baseMesh = meshInst.GetMeta("original_mesh").As<Mesh>();
+				if (baseMesh != null && meshInst.Mesh != baseMesh)
 				{
 					meshInst.Mesh = baseMesh;
 				}
 			}
-			else if (baseMesh is ArrayMesh arrayMesh)
-			{
-				meshInst.Mesh = GetOrCreateNormalMesh(arrayMesh, normalMode);
-			}
 
-			meshInst.SetInstanceShaderParameter(new StringName("normal_mode"), (float)normalMode);
 			meshInst.SetInstanceShaderParameter(new StringName("unit_ambient_boost"), isUnit ? 0.10f : 0.0f);
 			meshInst.SetInstanceShaderParameter(new StringName("unit_rim_intensity"), isUnit ? 0.25f : 0.0f);
 			if (ignorePlayerColor.HasValue)
@@ -1123,7 +1113,7 @@ public partial class GameHost
 			}
 			LoadUnitMetadata(mapDir);
 			var metaService = _metadataService ?? Realm.Godot.Services.MetadataService.Instance;
-			var metadata = metaService.LoadMetadata(mapDir, fallbackToTemplate: false);
+			var metadata = metaService.LoadMetadata(mapDir);
 
 			ModelYOffsets.Clear();
 			ModelScales.Clear();
@@ -1131,7 +1121,7 @@ public partial class GameHost
 			ModelObstacleRadii.Clear();
 			ModelBrightness.Clear();
 			ModelColorTint.Clear();
-			ModelNormalModes.Clear();
+			ModelDespillPlayerColor.Clear();
 			ModelIgnorePlayerColor.Clear();
 			ModelNormalizeLuminance.Clear();
 			ModelSpawnShaders.Clear();
@@ -1190,12 +1180,17 @@ public partial class GameHost
 				ModelBrightness[NormalizeModelAssetKey(kvp.Key)] = kvp.Value;
 			}
 
-			foreach (var kvp in metadata.ModelNormalModes)
+			foreach (var kvp in metadata.ModelColorTint)
 			{
-				if (Enum.TryParse<ModelNormalMode>(kvp.Value, true, out var modeVal))
+				if (!string.IsNullOrWhiteSpace(kvp.Value) && Color.HtmlIsValid(kvp.Value))
 				{
-					ModelNormalModes[NormalizeModelAssetKey(kvp.Key)] = modeVal;
+					ModelColorTint[NormalizeModelAssetKey(kvp.Key)] = Color.FromHtml(kvp.Value);
 				}
+			}
+
+			foreach (var kvp in metadata.ModelDespillPlayerColor)
+			{
+				ModelDespillPlayerColor[NormalizeModelAssetKey(kvp.Key)] = kvp.Value;
 			}
 
 			foreach (var kvp in metadata.ModelNormalizeLuminance)
@@ -1208,7 +1203,7 @@ public partial class GameHost
 				ModelIgnorePlayerColor[NormalizeModelAssetKey(kvp.Key)] = kvp.Value;
 			}
 
-			void ProcessEntities<T>(IEnumerable<T> items, float defaultScale, Func<T, string> getId, Func<T, string> getModelPath, Func<T, float> getYOffset, Func<T, float> getScale, Func<T, float> getCollisionCircle, Func<T, float> getBrightness, Func<T, string> getTint, Func<T, ModelNormalMode> getNormalMode, Func<T, bool> getNormalizeLuminance)
+			void ProcessEntities<T>(IEnumerable<T> items, float defaultScale, Func<T, string> getId, Func<T, string> getModelPath, Func<T, float> getYOffset, Func<T, float> getScale, Func<T, float> getCollisionCircle, Func<T, float> getBrightness, Func<T, string> getTint, Func<T, bool> getDespillPlayerColor, Func<T, bool> getNormalizeLuminance)
 			{
 				if (items == null) return;
 				foreach (var item in items)
@@ -1245,15 +1240,15 @@ public partial class GameHost
 					{
 						ModelColorTint[normKey] = Color.FromString(tintStr, new Color(1, 1, 1));
 					}
-					ModelNormalModes[normKey] = getNormalMode(item);
+					ModelDespillPlayerColor[normKey] = getDespillPlayerColor(item);
 					ModelNormalizeLuminance[normKey] = getNormalizeLuminance(item);
 				}
 			}
 
-			ProcessEntities(metadata.CustomResources, 2.75f, r => r.UnitId, r => r.ModelPath, r => r.YOffset, r => r.Scale, r => r.CollisionCircle, r => r.Brightness, r => r.Tint, r => r.NormalMode, r => r.NormalizeLuminance);
-			ProcessEntities(metadata.CustomBuildings, 1.2f, b => b.UnitId, b => b.ModelPath, b => b.YOffset, b => b.Scale, b => b.CollisionCircle, b => b.Brightness, b => b.Tint, b => b.NormalMode, b => b.NormalizeLuminance);
-			ProcessEntities(metadata.CustomProps, 1.0f, p => p.UnitId, p => p.ModelPath, p => p.YOffset, p => p.Scale, p => p.CollisionCircle, p => p.Brightness, p => p.Tint, p => p.NormalMode, p => p.NormalizeLuminance);
-			ProcessEntities(metadata.CustomUnits, 1.5f, u => u.UnitId, u => u.ModelPath, u => u.YOffset, u => u.Scale, u => u.CollisionCircle, u => u.Brightness, u => u.Tint, u => u.NormalMode, u => u.NormalizeLuminance);
+			ProcessEntities(metadata.CustomResources, 2.75f, r => r.UnitId, r => r.ModelPath, r => r.YOffset, r => r.Scale, r => r.CollisionCircle, r => r.Brightness, r => r.Tint, r => r.DespillPlayerColor, r => r.NormalizeLuminance);
+			ProcessEntities(metadata.CustomBuildings, 1.2f, b => b.UnitId, b => b.ModelPath, b => b.YOffset, b => b.Scale, b => b.CollisionCircle, b => b.Brightness, b => b.Tint, b => b.DespillPlayerColor, b => b.NormalizeLuminance);
+			ProcessEntities(metadata.CustomProps, 1.0f, p => p.UnitId, p => p.ModelPath, p => p.YOffset, p => p.Scale, p => p.CollisionCircle, p => p.Brightness, p => p.Tint, p => p.DespillPlayerColor, p => p.NormalizeLuminance);
+			ProcessEntities(metadata.CustomUnits, 1.5f, u => u.UnitId, u => u.ModelPath, u => u.YOffset, u => u.Scale, u => u.CollisionCircle, u => u.Brightness, u => u.Tint, u => u.DespillPlayerColor, u => u.NormalizeLuminance);
 
 			var assetsObj = Realm.Godot.Utils.MapAssetHelper.LoadUnionedAssets(mapDir);
 			if (assetsObj != null && assetsObj.ContainsKey("glb") && assetsObj["glb"] is System.Text.Json.Nodes.JsonObject glbObj)
@@ -1302,14 +1297,30 @@ public partial class GameHost
 								{
 									ModelBrightness[NormalizeModelAssetKey(itemKvp.Key)] = brightVal;
 								}
-								string normKey = NormalizeModelAssetKey(itemKvp.Key);
-								if (itemObj.ContainsKey("normal_mode") && Enum.TryParse<ModelNormalMode>(itemObj["normal_mode"]?.ToString(), true, out var nmVal))
+								if (itemObj.ContainsKey("tint") && itemObj["tint"] != null && Color.HtmlIsValid(itemObj["tint"]?.ToString()))
 								{
-									ModelNormalModes[normKey] = nmVal;
+									ModelColorTint[NormalizeModelAssetKey(itemKvp.Key)] = Color.FromHtml(itemObj["tint"]!.ToString());
 								}
-								else if (!ModelNormalModes.ContainsKey(normKey))
+								else if (itemObj.ContainsKey("color_tint") && itemObj["color_tint"] != null && Color.HtmlIsValid(itemObj["color_tint"]?.ToString()))
 								{
-									ModelNormalModes[normKey] = ModelNormalMode.Flat;
+									ModelColorTint[NormalizeModelAssetKey(itemKvp.Key)] = Color.FromHtml(itemObj["color_tint"]!.ToString());
+								}
+								else if (itemObj.ContainsKey("ColorTint") && itemObj["ColorTint"] != null && Color.HtmlIsValid(itemObj["ColorTint"]?.ToString()))
+								{
+									ModelColorTint[NormalizeModelAssetKey(itemKvp.Key)] = Color.FromHtml(itemObj["ColorTint"]!.ToString());
+								}
+								string normKey = NormalizeModelAssetKey(itemKvp.Key);
+								if (itemObj.ContainsKey("despill_player_color") && bool.TryParse(itemObj["despill_player_color"]?.ToString(), out bool dpcVal))
+								{
+									ModelDespillPlayerColor[normKey] = dpcVal;
+								}
+								else if (itemObj.ContainsKey("DespillPlayerColor") && bool.TryParse(itemObj["DespillPlayerColor"]?.ToString(), out bool dpcVal2))
+								{
+									ModelDespillPlayerColor[normKey] = dpcVal2;
+								}
+								else if (!ModelDespillPlayerColor.ContainsKey(normKey))
+								{
+									ModelDespillPlayerColor[normKey] = true;
 								}
 								if (itemObj.ContainsKey("normalize_luminance") && bool.TryParse(itemObj["normalize_luminance"]?.ToString(), out bool nlVal))
 								{
@@ -1323,7 +1334,7 @@ public partial class GameHost
 								{
 									ModelIgnorePlayerColor[normKey] = ipcVal2;
 								}
-								else if (catKvp.Key == "props" || catKvp.Key == "resources" || (itemObj.ContainsKey("default_asset_type") && (itemObj["default_asset_type"]?.ToString() == "props" || itemObj["default_asset_type"]?.ToString() == "resources")))
+								else if (catKvp.Key == "props" || catKvp.Key == "resources" || catKvp.Key == "attachments" || catKvp.Key == "weapons" || catKvp.Key == "items" || (itemObj.ContainsKey("default_asset_type") && (itemObj["default_asset_type"]?.ToString() == "props" || itemObj["default_asset_type"]?.ToString() == "resources" || itemObj["default_asset_type"]?.ToString() == "attachments" || itemObj["default_asset_type"]?.ToString() == "weapons" || itemObj["default_asset_type"]?.ToString() == "items")))
 								{
 									ModelIgnorePlayerColor[normKey] = true;
 								}
@@ -1355,7 +1366,8 @@ public partial class GameHost
 			}
 
 			foreach (var key in ModelBrightness.Keys
-				.Concat(ModelNormalModes.Keys)
+				.Concat(ModelColorTint.Keys)
+				.Concat(ModelDespillPlayerColor.Keys)
 				.Concat(ModelNormalizeLuminance.Keys)
 				.Concat(ModelIgnorePlayerColor.Keys)
 				.Distinct())
@@ -1377,22 +1389,25 @@ public partial class GameHost
 		ModelObstacleRadii.Clear();
 		ModelBrightness.Clear();
 		ModelColorTint.Clear();
-		ModelNormalModes.Clear();
+		ModelDespillPlayerColor.Clear();
 		ModelNormalizeLuminance.Clear();
 		ModelIgnorePlayerColor.Clear();
 		ModelSpawnShaders.Clear();
 		ModelDeathShaders.Clear();
-		ClearNormalGeneratedMeshCache();
 	}
 
 	public void RefreshAllPlacedObjectModels(string targetId = null)
 	{
+		ModelCache.Clear();
 		Prop3D.ClearModelPathCache();
 
 		foreach (var unit in AllUnits)
 		{
 			if (!GodotObject.IsInstanceValid(unit)) continue;
-			if (string.IsNullOrEmpty(targetId) || string.Equals(unit.UnitId, targetId, StringComparison.OrdinalIgnoreCase))
+			if (string.IsNullOrEmpty(targetId) 
+				|| string.Equals(unit.UnitId, targetId, StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(System.IO.Path.GetFileNameWithoutExtension(unit.UnitId), targetId, StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(unit.UnitId, System.IO.Path.GetFileNameWithoutExtension(targetId), StringComparison.OrdinalIgnoreCase))
 			{
 				string targetModel = null;
 				bool isBuilding = unit.IsBuilding;
@@ -1429,7 +1444,10 @@ public partial class GameHost
 		foreach (var prop in AllProps)
 		{
 			if (!GodotObject.IsInstanceValid(prop)) continue;
-			if (string.IsNullOrEmpty(targetId) || string.Equals(prop.PropId, targetId, StringComparison.OrdinalIgnoreCase))
+			if (string.IsNullOrEmpty(targetId) 
+				|| string.Equals(prop.PropId, targetId, StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(System.IO.Path.GetFileNameWithoutExtension(prop.PropId), targetId, StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(prop.PropId, System.IO.Path.GetFileNameWithoutExtension(targetId), StringComparison.OrdinalIgnoreCase))
 			{
 				prop.RefreshPropVisual();
 			}
@@ -1458,7 +1476,8 @@ public partial class GameHost
 				foreach (var kvp in ModelCollisionCircleRatios) meta.ModelCollisionCircleRatios[kvp.Key] = kvp.Value;
 				foreach (var kvp in ModelObstacleRadii) meta.ModelObstacleRadii[kvp.Key] = kvp.Value;
 				foreach (var kvp in ModelBrightness) meta.ModelBrightness[kvp.Key] = kvp.Value;
-				foreach (var kvp in ModelNormalModes) meta.ModelNormalModes[kvp.Key] = kvp.Value.ToString();
+				foreach (var kvp in ModelColorTint) meta.ModelColorTint[kvp.Key] = $"#{kvp.Value.ToHtml(false)}";
+				foreach (var kvp in ModelDespillPlayerColor) meta.ModelDespillPlayerColor[kvp.Key] = kvp.Value;
 				foreach (var kvp in ModelNormalizeLuminance) meta.ModelNormalizeLuminance[kvp.Key] = kvp.Value;
 				foreach (var kvp in ModelIgnorePlayerColor) meta.ModelIgnorePlayerColor[kvp.Key] = kvp.Value;
 				foreach (var kvp in ModelSpawnShaders)
@@ -1814,6 +1833,10 @@ public partial class GameHost
 		if (string.IsNullOrEmpty(propIdOrEntityId)) return false;
 
 		if (PropRegistry.ContainsKey(propIdOrEntityId) || ResourceRegistry.ContainsKey(propIdOrEntityId))
+			return true;
+
+		string clean = System.IO.Path.GetFileNameWithoutExtension(propIdOrEntityId);
+		if (!string.IsNullOrEmpty(clean) && (PropRegistry.ContainsKey(clean) || ResourceRegistry.ContainsKey(clean)))
 			return true;
 
 		return false;
@@ -2344,12 +2367,47 @@ public partial class GameHost
 	{
 		if (string.IsNullOrEmpty(propId)) return null;
 
-		if (!PropRegistry.ContainsKey(propId) && !ResourceRegistry.ContainsKey(propId))
+		string cleanId = System.IO.Path.GetFileNameWithoutExtension(propId);
+		bool inProp = PropRegistry.ContainsKey(propId) || (!string.IsNullOrEmpty(cleanId) && PropRegistry.ContainsKey(cleanId));
+		bool inRes = ResourceRegistry.ContainsKey(propId) || (!string.IsNullOrEmpty(cleanId) && ResourceRegistry.ContainsKey(cleanId));
+
+		if (!inProp && !inRes)
 		{
 			LoadUnitMetadata(!string.IsNullOrEmpty(CurrentMapDirectory) ? CurrentMapDirectory : Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath));
+			inProp = PropRegistry.ContainsKey(propId) || (!string.IsNullOrEmpty(cleanId) && PropRegistry.ContainsKey(cleanId));
+			inRes = ResourceRegistry.ContainsKey(propId) || (!string.IsNullOrEmpty(cleanId) && ResourceRegistry.ContainsKey(cleanId));
 		}
 
-		if (!PropRegistry.ContainsKey(propId) && !ResourceRegistry.ContainsKey(propId))
+		if (!inProp && !inRes)
+		{
+			foreach (var kvp in PropRegistry)
+			{
+				if (string.Equals(kvp.Value.ModelPath, propId, StringComparison.OrdinalIgnoreCase) ||
+					(!string.IsNullOrEmpty(cleanId) && string.Equals(System.IO.Path.GetFileNameWithoutExtension(kvp.Value.ModelPath), cleanId, StringComparison.OrdinalIgnoreCase)))
+				{
+					inProp = true;
+					propId = kvp.Key;
+					cleanId = System.IO.Path.GetFileNameWithoutExtension(propId);
+					break;
+				}
+			}
+			if (!inProp)
+			{
+				foreach (var kvp in ResourceRegistry)
+				{
+					if (string.Equals(kvp.Value.ModelPath, propId, StringComparison.OrdinalIgnoreCase) ||
+						(!string.IsNullOrEmpty(cleanId) && string.Equals(System.IO.Path.GetFileNameWithoutExtension(kvp.Value.ModelPath), cleanId, StringComparison.OrdinalIgnoreCase)))
+					{
+						inRes = true;
+						propId = kvp.Key;
+						cleanId = System.IO.Path.GetFileNameWithoutExtension(propId);
+						break;
+					}
+				}
+			}
+		}
+
+		if (!inProp && !inRes)
 		{
 			return null;
 		}
@@ -2364,7 +2422,7 @@ public partial class GameHost
 
 		var entity = EcsWorld.Create();
 		EcsWorld.Add(entity, new PropIdentity(propId));
-		if (ResourceRegistry.TryGetValue(propId, out var meta) && (meta.MaxCapacity > 0f || defaultAmount > 0f))
+		if ((ResourceRegistry.TryGetValue(propId, out var meta) || (!string.IsNullOrEmpty(cleanId) && ResourceRegistry.TryGetValue(cleanId, out meta))) && (meta.MaxCapacity > 0f || defaultAmount > 0f))
 		{
 			float amount = meta.MaxCapacity > 0f ? meta.MaxCapacity : defaultAmount;
 			float harvestRate = meta.HarvestRate > 0f ? meta.HarvestRate : 10f;
@@ -3203,12 +3261,18 @@ public partial class GameHost
 			}
 			else if (ActiveEditorTool == EditorTool.PlaceProp)
 			{
-				if (!PropRegistry.ContainsKey(reqId) && !ResourceRegistry.ContainsKey(reqId))
+				string cleanReqId = System.IO.Path.GetFileNameWithoutExtension(reqId);
+				bool hasReq = PropRegistry.ContainsKey(reqId) || ResourceRegistry.ContainsKey(reqId) ||
+					(!string.IsNullOrEmpty(cleanReqId) && (PropRegistry.ContainsKey(cleanReqId) || ResourceRegistry.ContainsKey(cleanReqId)));
+
+				if (!hasReq)
 				{
 					LoadUnitMetadata(!string.IsNullOrEmpty(CurrentMapDirectory) ? CurrentMapDirectory : Godot.ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath));
+					hasReq = PropRegistry.ContainsKey(reqId) || ResourceRegistry.ContainsKey(reqId) ||
+						(!string.IsNullOrEmpty(cleanReqId) && (PropRegistry.ContainsKey(cleanReqId) || ResourceRegistry.ContainsKey(cleanReqId)));
 				}
 
-				if (PropRegistry.ContainsKey(reqId) || ResourceRegistry.ContainsKey(reqId))
+				if (hasReq)
 				{
 					var previewProp = new Prop3D();
 					previewProp.PropId = reqId;
@@ -3996,6 +4060,7 @@ public partial class GameHost
 		UpdateGridOverlayVisibility();
 		InitializeCameraBoundsOverlay();
 		UpdateDayNightVisuals(0.0f);
+		GroundTerrain?.SetShroudEnabled(false);
 	}
 
 	public void ExitMapEditorMode()
@@ -4015,6 +4080,7 @@ public partial class GameHost
 		{
 			GroundTerrain.SetGridVisible(false);
 			GroundTerrain.SetPathingVisible(false);
+			GroundTerrain.SetShroudEnabled(true);
 		}
 
 		if (_cameraBoundsOverlayMesh != null)

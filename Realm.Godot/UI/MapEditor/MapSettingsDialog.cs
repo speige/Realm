@@ -10,6 +10,7 @@ using Realm.Godot.Services;
 public partial class MapSettingsDialog : FloatingDialogBase
 {
 	private LineEdit _txtMapName;
+	private LineEdit _txtMapVersion;
 	private OptionButton _optMapType;
 	private GridContainer _tagsGrid;
 	private readonly List<CheckBox> _activeTagCheckboxes = new();
@@ -74,6 +75,15 @@ public partial class MapSettingsDialog : FloatingDialogBase
 			Hud?.UpdateMapNameHeader();
 		};
 		namePanel.AddChild(_txtMapName);
+
+		var versionPanel = CreateSectionBox(contentVBox, "🔢 " + TranslationServer.Translate("Map Version"));
+		_txtMapVersion = new LineEdit();
+		_txtMapVersion.PlaceholderText = "1.0.0";
+		_txtMapVersion.TextChanged += (_) =>
+		{
+			SaveMapProperties();
+		};
+		versionPanel.AddChild(_txtMapVersion);
 
 		var mapTypePanel = CreateSectionBox(contentVBox, TranslationServer.Translate("Map Type"));
 		_optMapType = new OptionButton();
@@ -367,81 +377,142 @@ public partial class MapSettingsDialog : FloatingDialogBase
 	}
 
 	public void LoadMapProperties()
-		{
+	{
 		string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
 		if (MetadataService.Instance.TryLoadMetadata(wsPath, out var metadata))
 		{
-			string? name = !string.IsNullOrEmpty(metadata.MapProperties?.MapName)
-				? metadata.MapProperties.MapName
-				: metadata.MapProperties?.Name;
+			string? name = metadata.MapProperties?.MapName;
 			if (!string.IsNullOrEmpty(name) && _txtMapName != null)
 			{
 				_txtMapName.Text = name.Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
 			}
+			string? ver = metadata.MapProperties?.Version;
+			if (!string.IsNullOrEmpty(ver) && _txtMapVersion != null)
+			{
+				_txtMapVersion.Text = ver;
+			}
 		}
 
-			string mapJsonPath = Path.Combine(wsPath, "map.json");
-			if (File.Exists(mapJsonPath))
+		string manifestJsonPath = Path.Combine(wsPath, "manifest.json");
+		if (File.Exists(manifestJsonPath))
+		{
+			try
 			{
-				try
+				string manifestContent = File.ReadAllText(manifestJsonPath);
+				var manifestDoc = JsonNode.Parse(manifestContent) as JsonObject;
+				if (manifestDoc != null)
 				{
-					string mapJsonContent = File.ReadAllText(mapJsonPath);
-					var mapDoc = JsonNode.Parse(mapJsonContent) as JsonObject;
-					if (mapDoc != null && mapDoc.ContainsKey("MapProperties"))
+					if (_txtMapVersion != null && manifestDoc.TryGetPropertyValue("Version", out var verNode))
 					{
-						var props = mapDoc["MapProperties"] as JsonObject;
-						if (props != null)
+						_txtMapVersion.Text = verNode?.GetValue<string>() ?? "1.0.0";
+					}
+					if (_txtMapName != null && string.IsNullOrEmpty(_txtMapName.Text) && manifestDoc.TryGetPropertyValue("MapName", out var nameNode))
+					{
+						_txtMapName.Text = (nameNode?.GetValue<string>() ?? "").Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"Failed to load manifest.json properties: {ex.Message}");
+			}
+		}
+
+		string mapJsonPath = Path.Combine(wsPath, "map.json");
+		if (File.Exists(mapJsonPath))
+		{
+			try
+			{
+				string mapJsonContent = File.ReadAllText(mapJsonPath);
+				var mapDoc = JsonNode.Parse(mapJsonContent) as JsonObject;
+				if (mapDoc != null && mapDoc.ContainsKey("MapProperties"))
+				{
+					var props = mapDoc["MapProperties"] as JsonObject;
+					if (props != null)
+					{
+						if (_txtMapName != null && string.IsNullOrEmpty(_txtMapName.Text) && props.ContainsKey("MapName"))
 						{
-						if (_txtMapName != null && string.IsNullOrEmpty(_txtMapName.Text) && props.ContainsKey("Name"))
-							{
-							_txtMapName.Text = (props["Name"]?.GetValue<string>() ?? "").Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
-							}
+							_txtMapName.Text = (props["MapName"]?.GetValue<string>() ?? "").Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
+						}
+
+						if (_txtMapVersion != null && string.IsNullOrEmpty(_txtMapVersion.Text) && props.ContainsKey("Version"))
+						{
+							_txtMapVersion.Text = props["Version"]?.GetValue<string>() ?? "1.0.0";
+						}
 
 						if (_optMapType != null && props.ContainsKey("MapType"))
-							{
+						{
 							string mapType = props["MapType"]?.GetValue<string>() ?? "";
 							_optMapType.Selected = (mapType == "Asset Pack") ? 1 : 0;
-							}
+						}
 
 						RebuildTagsUI();
 
 						if (props.ContainsKey("Tags") && props["Tags"] is JsonArray tagsArr)
-							{
+						{
 							var activeTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-								foreach (var tagNode in tagsArr)
-								{
+							foreach (var tagNode in tagsArr)
+							{
 								if (tagNode != null) activeTags.Add(tagNode.GetValue<string>());
 							}
 
 							foreach (var chk in _activeTagCheckboxes)
-									{
+							{
 								chk.ButtonPressed = activeTags.Contains(chk.Text);
-								}
 							}
 						}
 					}
 				}
-				catch (Exception ex)
-				{
-					GD.PrintErr($"Failed to load map properties: {ex.Message}");
-				}
 			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"Failed to load map properties: {ex.Message}");
+			}
+		}
+
+		if (_txtMapVersion != null && string.IsNullOrEmpty(_txtMapVersion.Text))
+		{
+			_txtMapVersion.Text = "1.0.0";
+		}
 	}
 
 	public void SaveMapProperties()
 	{
 		string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
 		string cleanMapName = (_txtMapName?.Text ?? string.Empty).Replace(MapWorkspaceService.DefaultWorkspaceFolder, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
+		string cleanVersion = (_txtMapVersion?.Text ?? "1.0.0").Trim();
+		if (string.IsNullOrEmpty(cleanVersion)) cleanVersion = "1.0.0";
+
+		string manifestJsonPath = Path.Combine(wsPath, "manifest.json");
+		if (File.Exists(manifestJsonPath))
+		{
+			try
+			{
+				string manifestContent = File.ReadAllText(manifestJsonPath);
+				var manifestDoc = JsonNode.Parse(manifestContent) as JsonObject;
+				if (manifestDoc != null)
+				{
+					manifestDoc["Version"] = cleanVersion;
+					if (!string.IsNullOrEmpty(cleanMapName)) manifestDoc["MapName"] = cleanMapName;
+					var options = new JsonSerializerOptions { WriteIndented = true };
+					File.WriteAllText(manifestJsonPath, manifestDoc.ToJsonString(options));
+				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"Failed to save manifest.json version: {ex.Message}");
+			}
+		}
 
 		string metaPath = MetadataService.ResolveMetadataPath(wsPath);
-		if (File.Exists(metaPath) && _txtMapName != null)
+		if (File.Exists(metaPath))
 		{
 			try
 			{
 				MetadataService.Instance.UpdateMetadata(wsPath, meta =>
 				{
-					meta.MapProperties.MapName = cleanMapName;
-					meta.MapProperties.Name = cleanMapName;
+					if (!string.IsNullOrEmpty(cleanMapName)) meta.MapProperties.MapName = cleanMapName;
+					meta.MapProperties.Version = cleanVersion;
 					meta.MapProperties.CameraBoundsLeft = GameHost.Instance?.EditorCameraBoundsLeft;
 					meta.MapProperties.CameraBoundsRight = GameHost.Instance?.EditorCameraBoundsRight;
 					meta.MapProperties.CameraBoundsTop = GameHost.Instance?.EditorCameraBoundsTop;
@@ -450,7 +521,7 @@ public partial class MapSettingsDialog : FloatingDialogBase
 			}
 			catch (Exception ex)
 			{
-				GD.PrintErr($"Failed to save metadata.json map name: {ex.Message}");
+				GD.PrintErr($"Failed to save metadata.json map properties: {ex.Message}");
 			}
 		}
 
@@ -469,6 +540,7 @@ public partial class MapSettingsDialog : FloatingDialogBase
 					if (props != null)
 					{
 						if (_txtMapName != null) props["Name"] = cleanMapName;
+						props["Version"] = cleanVersion;
 						if (_optMapType != null) props["MapType"] = _optMapType.Selected == 0 ? "Arcade Custom Map" : "Asset Pack";
 						var tagsArr = new JsonArray();
 						foreach (var chk in _activeTagCheckboxes)

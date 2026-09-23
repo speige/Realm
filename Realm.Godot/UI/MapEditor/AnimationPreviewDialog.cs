@@ -338,7 +338,7 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 				try
 				{
 					string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
-					var metadata = MetadataService.Instance.LoadMetadata(wsPath, fallbackToTemplate: true);
+					var metadata = MetadataService.Instance.LoadMetadata(wsPath);
 					var unit = metadata.GetUnit(unitId);
 					if (unit.HasValue && !string.IsNullOrEmpty(unit.Value.ModelPath))
 					{
@@ -394,7 +394,7 @@ public partial class AnimationPreviewDialog : FloatingDialogBase
 			try
 			{
 				string wsPath = ProjectSettings.GlobalizePath(MapEditorHUD.TempWorkspaceGodotPath);
-				var metadata = MetadataService.Instance.LoadMetadata(wsPath, fallbackToTemplate: true);
+				var metadata = MetadataService.Instance.LoadMetadata(wsPath);
 				var unit = metadata.GetUnit(_currentUnitId);
 				if (unit.HasValue && unit.Value.Animations != null)
 				{

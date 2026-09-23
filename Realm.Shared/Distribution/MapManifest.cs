@@ -60,11 +60,19 @@ public class MapManifest
                     {
                         foreach (var itemKeyValuePair in subCategoryObject)
                         {
+                            string fileName = itemKeyValuePair.Key;
+                            string extension = Path.GetExtension(fileName).ToLowerInvariant();
+                            if (string.IsNullOrEmpty(extension))
+                            {
+                                extension = ".rmesh";
+                            }
                             string hash = ExtractHashFromNode(itemKeyValuePair.Value);
                             if (!string.IsNullOrEmpty(hash))
                             {
-                                string assetKey = hash.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) ? hash : $"{hash}.glb";
-                                string relativePath = $"Assets/models/{subCategory}/{itemKeyValuePair.Key}".Replace('\\', '/');
+                                string assetKey = (!string.IsNullOrEmpty(extension) && hash.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+                                    ? hash
+                                    : $"{hash}{extension}";
+                                string relativePath = $"Assets/models/{subCategory}/{fileName}".Replace('\\', '/');
                                 destinationFiles[relativePath] = assetKey;
                             }
                         }
@@ -85,6 +93,7 @@ public class MapManifest
                     "noise" or "noise_textures" => "noise",
                     "skyboxes" => "skyboxes",
                     "textures" => "textures",
+                    "other" => "other",
                     _ => category
                 };
 
@@ -92,13 +101,23 @@ public class MapManifest
                 {
                     string fileName = itemKeyValuePair.Key;
                     string extension = Path.GetExtension(fileName).ToLowerInvariant();
+                    if (string.IsNullOrEmpty(extension))
+                    {
+                        extension = category switch
+                        {
+                            "animations" => ".ranim",
+                            "sfx" or "music" => ".raud",
+                            "units" or "buildings" or "props" or "items" or "attachments" or "doodads" or "projectiles" or "decorations" => ".rmesh",
+                            _ => ".rtex"
+                        };
+                    }
                     string hash = ExtractHashFromNode(itemKeyValuePair.Value);
                     if (!string.IsNullOrEmpty(hash))
                     {
                         string assetKey = (!string.IsNullOrEmpty(extension) && hash.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
                             ? hash
                             : $"{hash}{extension}";
-                        string relativePath = $"Assets/{subFolder}/{fileName}".Replace('\\', '/');
+                        string relativePath = subFolder == "other" ? fileName : $"Assets/{subFolder}/{fileName}".Replace('\\', '/');
                         destinationFiles[relativePath] = assetKey;
                     }
                 }
@@ -139,10 +158,11 @@ public class MapManifest
             {
                 relativePath = relativePath.Substring(6);
             }
+            relativePath = relativePath.TrimStart('/');
 
             string hash = keyValuePair.Value;
             string fileName = Path.GetFileName(relativePath);
-            string extension = Path.GetExtension(fileName).ToLowerInvariant();
+            string extension = Path.GetExtension(relativePath).ToLowerInvariant();
             if (!string.IsNullOrEmpty(extension) && hash.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
             {
                 hash = hash.Substring(0, hash.Length - extension.Length);
@@ -178,7 +198,9 @@ public class MapManifest
                     "skyboxes" => "skyboxes",
                     "audio" when parts.Length >= 4 && parts[2].Equals("music", StringComparison.OrdinalIgnoreCase) => "music",
                     "audio" when parts.Length >= 4 && parts[2].Equals("sfx", StringComparison.OrdinalIgnoreCase) => "sfx",
-                    _ => "textures"
+                    "audio" => "sfx",
+                    "textures" => "textures",
+                    _ => folder
                 };
 
                 if (!assets.ContainsKey(category) || assets[category] is not JsonObject)
@@ -187,8 +209,91 @@ public class MapManifest
                 }
                 assets[category]!.AsObject()[fileName] = hash;
             }
+            else
+            {
+                string category = "other";
+                if (!assets.ContainsKey(category) || assets[category] is not JsonObject)
+                {
+                    assets[category] = new JsonObject();
+                }
+                assets[category]!.AsObject()[relativePath] = hash;
+            }
         }
         return assets;
+    }
+
+    public static void MergeCustomPropertiesIntoAssets(JsonObject targetAssets, JsonObject sourceAssets)
+    {
+        foreach (var categoryPair in sourceAssets)
+        {
+            string category = categoryPair.Key.ToLowerInvariant();
+            if (category == "glb" && categoryPair.Value is JsonObject glbSource)
+            {
+                if (targetAssets["glb"] is JsonObject glbTarget)
+                {
+                    foreach (var subPair in glbSource)
+                    {
+                        string subCat = subPair.Key.ToLowerInvariant();
+                        if (subPair.Value is JsonObject subSource && glbTarget[subCat] is JsonObject subTarget)
+                        {
+                            foreach (var itemPair in subSource)
+                            {
+                                if (itemPair.Value is JsonObject itemObj && subTarget[itemPair.Key] != null)
+                                {
+                                    JsonObject targetItemObj;
+                                    if (subTarget[itemPair.Key] is JsonObject existingObj)
+                                    {
+                                        targetItemObj = existingObj;
+                                    }
+                                    else
+                                    {
+                                        string currentHash = subTarget[itemPair.Key]!.ToString();
+                                        targetItemObj = new JsonObject { ["hash"] = currentHash };
+                                        subTarget[itemPair.Key] = targetItemObj;
+                                    }
+
+                                    foreach (var prop in itemObj)
+                                    {
+                                        if (!string.Equals(prop.Key, "hash", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            targetItemObj[prop.Key] = prop.Value?.DeepClone();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            else if (categoryPair.Value is JsonObject catSource && targetAssets[category] is JsonObject catTarget)
+            {
+                foreach (var itemPair in catSource)
+                {
+                    if (itemPair.Value is JsonObject itemObj && catTarget[itemPair.Key] != null)
+                    {
+                        JsonObject targetItemObj;
+                        if (catTarget[itemPair.Key] is JsonObject existingObj)
+                        {
+                            targetItemObj = existingObj;
+                        }
+                        else
+                        {
+                            string currentHash = catTarget[itemPair.Key]!.ToString();
+                            targetItemObj = new JsonObject { ["hash"] = currentHash };
+                            catTarget[itemPair.Key] = targetItemObj;
+                        }
+
+                        foreach (var prop in itemObj)
+                        {
+                            if (!string.Equals(prop.Key, "hash", StringComparison.OrdinalIgnoreCase))
+                            {
+                                targetItemObj[prop.Key] = prop.Value?.DeepClone();
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     public static MapManifest CreateFromDirectory(
@@ -220,7 +325,7 @@ public class MapManifest
         {
             string relativePath = Path.GetRelativePath(fullDirectoryPath, filePath).Replace('\\', '/');
 
-            if (relativePath.StartsWith("bin/", StringComparison.OrdinalIgnoreCase) ||
+            if ((relativePath.StartsWith("bin/", StringComparison.OrdinalIgnoreCase) && !relativePath.EndsWith(".wasm", StringComparison.OrdinalIgnoreCase)) ||
                 relativePath.StartsWith("obj/", StringComparison.OrdinalIgnoreCase) ||
                 relativePath.StartsWith(".git/", StringComparison.OrdinalIgnoreCase) ||
                 relativePath.StartsWith(".vscode/", StringComparison.OrdinalIgnoreCase) ||
@@ -242,6 +347,7 @@ public class MapManifest
         }
 
         string manifestJsonPath = Path.Combine(fullDirectoryPath, "manifest.json");
+        JsonObject? existingAssets = null;
         if (File.Exists(manifestJsonPath))
         {
             try
@@ -271,7 +377,7 @@ public class MapManifest
                     }
                     if (existing.Assets != null)
                     {
-                        manifest.Assets = existing.Assets.DeepClone() as JsonObject;
+                        existingAssets = existing.Assets.DeepClone() as JsonObject;
                     }
                 }
             }
@@ -284,6 +390,7 @@ public class MapManifest
         {
             manifest.MapName = Path.GetFileName(fullDirectoryPath);
         }
+        if (string.IsNullOrEmpty(manifest.Version))
         {
             manifest.Version = "1.0.0";
         }
@@ -292,9 +399,10 @@ public class MapManifest
             manifest.Tags = new List<string>();
         }
 
-        if (manifest.Assets == null && manifest.Files.Count > 0)
+        manifest.Assets = UnflattenFilesToAssets(manifest.Files);
+        if (existingAssets != null)
         {
-            manifest.Assets = UnflattenFilesToAssets(manifest.Files);
+            MergeCustomPropertiesIntoAssets(manifest.Assets, existingAssets);
         }
 
         return manifest;
@@ -302,9 +410,14 @@ public class MapManifest
 
     public string ToJson(bool writeIndented = true)
     {
-        if (Assets == null && _files.Count > 0)
+        if (_files.Count > 0)
         {
-            Assets = UnflattenFilesToAssets(_files);
+            var unflattened = UnflattenFilesToAssets(_files);
+            if (Assets != null)
+            {
+                MergeCustomPropertiesIntoAssets(unflattened, Assets);
+            }
+            Assets = unflattened;
         }
 
         var options = new JsonSerializerOptions
@@ -328,11 +441,53 @@ public class MapManifest
     public static MapManifest? LoadFromJson(string json)
     {
         var manifest = JsonSerializer.Deserialize<MapManifest>(json);
-        if (manifest != null && manifest.Assets != null && manifest._files.Count == 0)
+        if (manifest != null)
         {
-            manifest.EnsureFilesFromAssets();
+            if (manifest.Assets != null && manifest._files.Count == 0)
+            {
+                manifest.EnsureFilesFromAssets();
+            }
+            else if (manifest._files.Count == 0)
+            {
+                try
+                {
+                    var node = JsonNode.Parse(json);
+                    if (node is JsonObject rootObj)
+                    {
+                        var assetsObj = new JsonObject();
+                        foreach (var kvp in rootObj)
+                        {
+                            if (kvp.Value is JsonObject catObj &&
+                                !string.Equals(kvp.Key, "MapName", StringComparison.OrdinalIgnoreCase) &&
+                                !string.Equals(kvp.Key, "Author", StringComparison.OrdinalIgnoreCase) &&
+                                !string.Equals(kvp.Key, "Version", StringComparison.OrdinalIgnoreCase) &&
+                                !string.Equals(kvp.Key, "Description", StringComparison.OrdinalIgnoreCase) &&
+                                !string.Equals(kvp.Key, "Tags", StringComparison.OrdinalIgnoreCase) &&
+                                !string.Equals(kvp.Key, "GameBuildNumber", StringComparison.OrdinalIgnoreCase) &&
+                                !string.Equals(kvp.Key, "Assets", StringComparison.OrdinalIgnoreCase) &&
+                                !string.Equals(kvp.Key, "Files", StringComparison.OrdinalIgnoreCase) &&
+                                !string.Equals(kvp.Key, "FileSizes", StringComparison.OrdinalIgnoreCase))
+                            {
+                                assetsObj[kvp.Key] = catObj.DeepClone();
+                            }
+                        }
+                        if (assetsObj.Count > 0)
+                        {
+                            manifest.Assets = assetsObj;
+                            manifest.EnsureFilesFromAssets();
+                        }
+                    }
+                }
+                catch { }
+            }
         }
         return manifest;
+    }
+
+    public string ComputeManifestBlake3()
+    {
+        string json = ToJson();
+        return RealmMetadataHelper.ComputeBlake3(System.Text.Encoding.UTF8.GetBytes(json), ".json");
     }
 
     public static MapManifest? LoadFromFile(string filePath)
@@ -344,5 +499,78 @@ public class MapManifest
 
         string json = File.ReadAllText(filePath);
         return LoadFromJson(json);
+    }
+
+    public bool IsCandidateFile(string relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(relativePath))
+        {
+            return false;
+        }
+
+        string norm = relativePath.Replace('\\', '/').TrimStart('/');
+
+        if (Files.ContainsKey(norm))
+        {
+            return true;
+        }
+
+        string fileName = Path.GetFileName(norm);
+        if (string.IsNullOrEmpty(fileName))
+        {
+            return false;
+        }
+
+        if (Files.Keys.Any(k => string.Equals(Path.GetFileName(k), fileName, StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        if (string.Equals(fileName, "manifest.json", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(fileName, "metadata.json", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(fileName, "terrain.json", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(fileName, "map.json", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(fileName, "Coordinates.cs", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(fileName, "MapScript.cs", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(fileName, "WasmEntryPoint.cs", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(fileName, "Directory.Build.targets", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(fileName, "Directory.Build.props", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(fileName, "global.json", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(fileName, "NuGet.config", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(fileName, "AGENTS.md", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(fileName, ".gitignore", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".sln", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".wasm", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".exr", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".ranim", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".rtex", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".wav", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase) ||
+            fileName.StartsWith("terrain_", StringComparison.OrdinalIgnoreCase) ||
+            fileName.StartsWith("thumbnail", StringComparison.OrdinalIgnoreCase) ||
+            fileName.StartsWith("preview", StringComparison.OrdinalIgnoreCase) ||
+            fileName.StartsWith("icon", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (norm.StartsWith("lib/", StringComparison.OrdinalIgnoreCase) ||
+            norm.StartsWith("wit/", StringComparison.OrdinalIgnoreCase) ||
+            norm.StartsWith("locale/", StringComparison.OrdinalIgnoreCase) ||
+            norm.StartsWith("bin/", StringComparison.OrdinalIgnoreCase) ||
+            norm.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) ||
+            norm.StartsWith(".vscode/", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return false;
     }
 }

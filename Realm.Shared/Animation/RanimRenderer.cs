@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
+using Realm.Shared.BlenderSetup;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Gif;
+using SixLabors.ImageSharp.Formats.Webp;
 using SixLabors.ImageSharp.PixelFormats;
 
 namespace Realm.Shared.Animation;
@@ -11,7 +13,8 @@ namespace Realm.Shared.Animation;
 public enum RanimOutputFormat
 {
 	Gif,
-	Spritesheet
+	Spritesheet,
+	Webp
 }
 
 public class RanimRenderOptions
@@ -24,6 +27,10 @@ public class RanimRenderOptions
 	public float Scale { get; set; } = 1.0f;
 	public bool DrawBorder { get; set; } = true;
 	public bool DrawShadow { get; set; } = true;
+	public string? ModelPath { get; set; }
+	public byte[]? ModelBytes { get; set; }
+	public int Quality { get; set; } = 95;
+	public bool Lossless { get; set; }
 }
 
 public class RanimRenderFrame
@@ -99,6 +106,11 @@ public static class RanimRenderer
 			return new RanimRenderResult();
 		}
 
+		if ((options.ModelBytes != null && options.ModelBytes.Length > 0) || !string.IsNullOrEmpty(options.ModelPath))
+		{
+			return BlenderRanimRenderer.RenderFrames(animData, options);
+		}
+
 		var trackMap = BuildTrackMap(animData);
 		float duration = animData.Duration > 0f ? animData.Duration : 1.0f;
 		float sampleFps = options.Fps > 0f ? options.Fps : 12.0f;
@@ -147,6 +159,7 @@ public static class RanimRenderer
 		foreach (float time in selectedTimes)
 		{
 			using var image = RenderSkeletonFrame(trackMap, time, options);
+
 			byte[] pixelBytes = new byte[options.Width * options.Height * 4];
 			image.CopyPixelDataTo(pixelBytes);
 
@@ -190,7 +203,12 @@ public static class RanimRenderer
 			string finalOutputPath = outputPath ?? string.Empty;
 			if (string.IsNullOrEmpty(finalOutputPath))
 			{
-				string extension = renderOptions.Format == RanimOutputFormat.Spritesheet ? ".png" : ".gif";
+				string extension = renderOptions.Format switch
+				{
+					RanimOutputFormat.Webp => ".webp",
+					RanimOutputFormat.Spritesheet => ".png",
+					_ => ".gif"
+				};
 				finalOutputPath = Path.ChangeExtension(inputPath, extension);
 			}
 
@@ -218,6 +236,11 @@ public static class RanimRenderer
 			exportResult.Success = false;
 			exportResult.ErrorMessage = "Animation data is null.";
 			return exportResult;
+		}
+
+		if ((renderOptions.ModelBytes != null && renderOptions.ModelBytes.Length > 0) || !string.IsNullOrEmpty(renderOptions.ModelPath))
+		{
+			return BlenderRanimRenderer.ExportToFile(animData, outputPath, renderOptions, inputPath);
 		}
 
 		var trackMap = BuildTrackMap(animData);
@@ -264,7 +287,8 @@ public static class RanimRenderer
 		{
 			foreach (float time in selectedTimes)
 			{
-				frameImages.Add(RenderSkeletonFrame(trackMap, time, renderOptions));
+				var img = RenderSkeletonFrame(trackMap, time, renderOptions);
+				frameImages.Add(img);
 			}
 
 			string? directory = Path.GetDirectoryName(outputPath);
@@ -273,7 +297,7 @@ public static class RanimRenderer
 				Directory.CreateDirectory(directory);
 			}
 
-			if (renderOptions.Format == RanimOutputFormat.Spritesheet)
+			if (renderOptions.Format is RanimOutputFormat.Spritesheet or RanimOutputFormat.Webp || outputPath.EndsWith(".webp", StringComparison.OrdinalIgnoreCase) || outputPath.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
 			{
 				SaveAsSpritesheet(frameImages, outputPath, renderOptions);
 			}
@@ -313,7 +337,12 @@ public static class RanimRenderer
 		foreach (string file in files)
 		{
 			string target;
-			string extension = renderOptions.Format == RanimOutputFormat.Spritesheet ? ".png" : ".gif";
+			string extension = renderOptions.Format switch
+			{
+				RanimOutputFormat.Webp => ".webp",
+				RanimOutputFormat.Spritesheet => ".png",
+				_ => ".gif"
+			};
 
 			if (string.IsNullOrEmpty(outputDirectory))
 			{
@@ -363,7 +392,19 @@ public static class RanimRenderer
 			}
 		}
 
-		spritesheet.SaveAsPng(outputPath);
+		if (options.Format == RanimOutputFormat.Webp || outputPath.EndsWith(".webp", StringComparison.OrdinalIgnoreCase))
+		{
+			var webpEncoder = new WebpEncoder
+			{
+				FileFormat = options.Lossless ? WebpFileFormatType.Lossless : WebpFileFormatType.Lossy,
+				Quality = options.Lossless ? 100 : Math.Clamp(options.Quality, 1, 100)
+			};
+			spritesheet.Save(outputPath, webpEncoder);
+		}
+		else
+		{
+			spritesheet.SaveAsPng(outputPath);
+		}
 	}
 
 	private static void SaveAsAnimatedGif(List<Image<Rgba32>> frameImages, string outputPath, float duration, RanimRenderOptions options)

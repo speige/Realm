@@ -25,6 +25,14 @@ public static class AuthorSignatureHelper
         return (Convert.ToBase64String(privateBytes), Convert.ToBase64String(publicBytes));
     }
 
+    public static string GetPublicKey(string privateKeyBase64)
+    {
+        byte[] privateBytes = Convert.FromBase64String(privateKeyBase64);
+        using var key = Key.Import(Algorithm, privateBytes, KeyBlobFormat.RawPrivateKey, new KeyCreationParameters { ExportPolicy = KeyExportPolicies.AllowPlaintextExport });
+        byte[] publicBytes = key.PublicKey.Export(KeyBlobFormat.RawPublicKey);
+        return Convert.ToBase64String(publicBytes);
+    }
+
     public static string SignMessage(string privateKeyBase64, string message)
     {
         byte[] privateBytes = Convert.FromBase64String(privateKeyBase64);
@@ -48,6 +56,24 @@ public static class AuthorSignatureHelper
         {
             return false;
         }
+    }
+
+    public static bool VerifySignatureAny(System.Collections.Generic.IEnumerable<string> publicKeys, string message, string signatureBase64)
+    {
+        if (publicKeys == null || string.IsNullOrWhiteSpace(signatureBase64))
+        {
+            return false;
+        }
+
+        foreach (var key in publicKeys)
+        {
+            if (!string.IsNullOrWhiteSpace(key) && VerifySignature(key, message, signatureBase64))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public static string MergeMetadataHeaders(string? existingMetadataJson, string incomingMetadataJson, bool isAuthorizedOverwrite)

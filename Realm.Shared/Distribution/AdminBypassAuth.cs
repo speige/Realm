@@ -60,4 +60,22 @@ public static class AdminBypassAuth
 
         return AuthorSignatureHelper.VerifySignature(adminPublicKeyBase64, payload, signature);
     }
+
+    public static bool VerifyBypassToken(System.Collections.Generic.IEnumerable<string> adminPublicKeys, string mapTitle, string mapVersion, string? token)
+    {
+        if (adminPublicKeys == null || string.IsNullOrWhiteSpace(token))
+        {
+            return false;
+        }
+
+        foreach (var adminPublicKey in adminPublicKeys)
+        {
+            if (!string.IsNullOrWhiteSpace(adminPublicKey) && VerifyBypassToken(adminPublicKey, mapTitle, mapVersion, token))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

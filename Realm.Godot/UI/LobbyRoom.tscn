@@ -123,6 +123,11 @@ horizontal_alignment = 1
 custom_minimumSize = Vector2(0, 30)
 layout_mode = 2
 
+[node name="ReadyCol" type="Label" parent="PlayersPanel/VBoxContainer/TableHeader"]
+custom_minimumSize = Vector2(95, 0)
+layout_mode = 2
+text = "READY"
+
 [node name="TeamCol" type="Label" parent="PlayersPanel/VBoxContainer/TableHeader"]
 custom_minimumSize = Vector2(100, 0)
 layout_mode = 2

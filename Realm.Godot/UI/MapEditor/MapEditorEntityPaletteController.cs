@@ -256,23 +256,103 @@ public class MapEditorEntityPaletteController
 				}
 				else
 				{
-					IEnumerable<(string UnitId, string Name)> entities = category switch
+					if (category == "Buildings")
 					{
-						"Units" or "Characters" => metadata.CustomUnits.Select(u => (u.UnitId, u.Name)),
-						"Buildings" => metadata.CustomBuildings.Select(b => (b.UnitId, b.Name)),
-						"Resources" or "Environment" => metadata.CustomResources.Select(r => (r.UnitId, r.Name)),
-						"Props" => metadata.CustomProps.Select(p => (p.UnitId, p.Name)),
-						_ => metadata.CustomUnits.Select(u => (u.UnitId, u.Name))
-					};
-
-					foreach (var (uId, name) in entities)
-					{
-						if (!string.IsNullOrEmpty(uId) && !_categoryFiles.Contains(uId))
+						if (metadata.CustomBuildings != null)
 						{
-							_categoryFiles.Add(uId);
-							if (!string.IsNullOrEmpty(name))
+							foreach (var b in metadata.CustomBuildings)
 							{
-								_idToDisplayName[uId] = name;
+								if (!string.IsNullOrEmpty(b.UnitId) && !_categoryFiles.Contains(b.UnitId))
+								{
+									_categoryFiles.Add(b.UnitId);
+									if (!string.IsNullOrEmpty(b.Name)) _idToDisplayName[b.UnitId] = b.Name;
+								}
+							}
+						}
+						if (GameHost.BuildingRegistry != null)
+						{
+							foreach (var kvp in GameHost.BuildingRegistry)
+							{
+								if (!string.IsNullOrEmpty(kvp.Key) && !_categoryFiles.Contains(kvp.Key))
+								{
+									_categoryFiles.Add(kvp.Key);
+									if (!string.IsNullOrEmpty(kvp.Value.Name)) _idToDisplayName[kvp.Key] = kvp.Value.Name;
+								}
+							}
+						}
+					}
+					else if (category == "Units" || category == "Characters")
+					{
+						if (metadata.CustomUnits != null)
+						{
+							foreach (var u in metadata.CustomUnits)
+							{
+								if (!string.IsNullOrEmpty(u.UnitId) && !_categoryFiles.Contains(u.UnitId))
+								{
+									_categoryFiles.Add(u.UnitId);
+									if (!string.IsNullOrEmpty(u.Name)) _idToDisplayName[u.UnitId] = u.Name;
+								}
+							}
+						}
+						if (GameHost.UnitRegistry != null)
+						{
+							foreach (var kvp in GameHost.UnitRegistry)
+							{
+								if (!string.IsNullOrEmpty(kvp.Key) && !_categoryFiles.Contains(kvp.Key))
+								{
+									_categoryFiles.Add(kvp.Key);
+									if (!string.IsNullOrEmpty(kvp.Value.Name)) _idToDisplayName[kvp.Key] = kvp.Value.Name;
+								}
+							}
+						}
+					}
+					else if (category == "Resources" || category == "Environment")
+					{
+						if (metadata.CustomResources != null)
+						{
+							foreach (var r in metadata.CustomResources)
+							{
+								if (!string.IsNullOrEmpty(r.UnitId) && !_categoryFiles.Contains(r.UnitId))
+								{
+									_categoryFiles.Add(r.UnitId);
+									if (!string.IsNullOrEmpty(r.Name)) _idToDisplayName[r.UnitId] = r.Name;
+								}
+							}
+						}
+						if (GameHost.ResourceRegistry != null)
+						{
+							foreach (var kvp in GameHost.ResourceRegistry)
+							{
+								if (!string.IsNullOrEmpty(kvp.Key) && !_categoryFiles.Contains(kvp.Key))
+								{
+									_categoryFiles.Add(kvp.Key);
+									if (!string.IsNullOrEmpty(kvp.Value.Name)) _idToDisplayName[kvp.Key] = kvp.Value.Name;
+								}
+							}
+						}
+					}
+					else if (category == "Props")
+					{
+						if (metadata.CustomProps != null)
+						{
+							foreach (var p in metadata.CustomProps)
+							{
+								if (!string.IsNullOrEmpty(p.UnitId) && !_categoryFiles.Contains(p.UnitId))
+								{
+									_categoryFiles.Add(p.UnitId);
+									if (!string.IsNullOrEmpty(p.Name)) _idToDisplayName[p.UnitId] = p.Name;
+								}
+							}
+						}
+						if (GameHost.PropRegistry != null)
+						{
+							foreach (var kvp in GameHost.PropRegistry)
+							{
+								if (!string.IsNullOrEmpty(kvp.Key) && !_categoryFiles.Contains(kvp.Key))
+								{
+									_categoryFiles.Add(kvp.Key);
+									if (!string.IsNullOrEmpty(kvp.Value.Name)) _idToDisplayName[kvp.Key] = kvp.Value.Name;
+								}
 							}
 						}
 					}

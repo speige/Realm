@@ -1681,10 +1681,10 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 							catName.Equals("attachments", StringComparison.OrdinalIgnoreCase) ||
 							catName.Equals("weapons", StringComparison.OrdinalIgnoreCase) ||
 							catName.Equals("projectiles", StringComparison.OrdinalIgnoreCase) ||
-							catName.Equals("glb_items", StringComparison.OrdinalIgnoreCase) ||
-							catName.Equals("glb_attachments", StringComparison.OrdinalIgnoreCase) ||
-							catName.Equals("glb_weapons", StringComparison.OrdinalIgnoreCase) ||
-							catName.Equals("glb_projectiles", StringComparison.OrdinalIgnoreCase);
+							catName.Equals("rmesh_items", StringComparison.OrdinalIgnoreCase) ||
+							catName.Equals("rmesh_attachments", StringComparison.OrdinalIgnoreCase) ||
+							catName.Equals("rmesh_weapons", StringComparison.OrdinalIgnoreCase) ||
+							catName.Equals("rmesh_projectiles", StringComparison.OrdinalIgnoreCase);
 
 						if (subCat.Value is JsonObject modelsObj)
 						{
@@ -1735,13 +1735,13 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 
 		try
 		{
-			var metadata = MetadataService.Instance.LoadMetadata(wsPath, fallbackToTemplate: true);
+			var metadata = MetadataService.Instance.LoadMetadata(wsPath);
 
 			if (metadata.CustomItems != null)
 			{
 				foreach (var it in metadata.CustomItems)
 				{
-					string val = !string.IsNullOrEmpty(it.ItemId) ? it.ItemId : (!string.IsNullOrEmpty(it.Name) ? it.Name : "");
+					string val = it.ItemId ?? "";
 					if (!string.IsNullOrEmpty(val))
 					{
 						string cleanId = System.IO.Path.GetFileNameWithoutExtension(val);
@@ -1754,7 +1754,7 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 			{
 				foreach (var wpn in metadata.CustomWeapons)
 				{
-					string val = !string.IsNullOrEmpty(wpn.WeaponId) ? wpn.WeaponId : (!string.IsNullOrEmpty(wpn.ProjectileModelPath) ? wpn.ProjectileModelPath : (!string.IsNullOrEmpty(wpn.Name) ? wpn.Name : ""));
+					string val = wpn.WeaponId ?? "";
 					if (!string.IsNullOrEmpty(val))
 					{
 						string cleanId = System.IO.Path.GetFileNameWithoutExtension(val);
@@ -1767,7 +1767,7 @@ public partial class ObjectAttachmentDialog : FloatingDialogBase
 			{
 				foreach (var att in metadata.CustomAttachments)
 				{
-					string val = !string.IsNullOrEmpty(att.AttachmentId) ? att.AttachmentId : (!string.IsNullOrEmpty(att.ModelPath) ? att.ModelPath : "");
+					string val = att.AttachmentId ?? "";
 					if (!string.IsNullOrEmpty(val))
 					{
 						string cleanId = System.IO.Path.GetFileNameWithoutExtension(val);

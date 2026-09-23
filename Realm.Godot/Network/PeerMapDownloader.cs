@@ -99,12 +99,15 @@ public class PeerMapDownloader
                 return false;
             }
 
-            string localManifestDir = MapAssetManager.GlobalArchiveDirectory;
-            if (!Directory.Exists(localManifestDir))
+            string version = !string.IsNullOrWhiteSpace(manifest.Version) ? manifest.Version.Trim() : "1.0.0";
+            string manifestMapName = !string.IsNullOrWhiteSpace(manifest.MapName) ? manifest.MapName.Trim() : mapId;
+            string manifestBlake3 = MapAssetManager.ComputeManifestBlake3(manifest);
+            string localMapDir = MapAssetManager.GetMapDirectory(manifestMapName, version, manifestBlake3, true);
+            if (!Directory.Exists(localMapDir))
             {
-                Directory.CreateDirectory(localManifestDir);
+                Directory.CreateDirectory(localMapDir);
             }
-            string localManifestPath = Path.Combine(localManifestDir, $"{mapId}_manifest.json");
+            string localManifestPath = Path.Combine(localMapDir, "manifest.json");
             File.WriteAllText(localManifestPath, metadataJson);
 
             var missingHashes = MapAssetManager.GetMissingHashes(manifest.Files.Values);
@@ -132,7 +135,7 @@ public class PeerMapDownloader
                         return false;
                     }
 
-                    MapAssetManager.AddOrUpdateGlobalArchive(new Dictionary<string, byte[]> { { hash, fileData } });
+                    MapAssetManager.AddOrUpdateP2PArchive(new Dictionary<string, byte[]> { { hash, fileData } });
                     completed++;
                     float progress = (float)completed / missingHashes.Count;
                     DownloadProgressChanged?.Invoke(progress);
@@ -142,6 +145,9 @@ public class PeerMapDownloader
             {
                 DownloadProgressChanged?.Invoke(1.0f);
             }
+
+            MapAssetManager.ExtractManifestFiles(manifest, localMapDir, isP2P: true);
+            AssetIndexService.Instance.RegisterManifest(manifest, localManifestPath, isP2P: true);
 
             CleanupSockets();
             return true;

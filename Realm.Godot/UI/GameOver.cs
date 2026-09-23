@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Linq;
 using System.Collections.Generic;
+using Realm.Shared.Distribution;
 
 public partial class GameOver : Control
 {
@@ -587,17 +588,68 @@ public partial class GameOver : Control
 			mapTitle = mapTitle.Substring(0, dashIdx);
 		}
 		mapTitle = mapTitle.Trim();
+
+		string mapVersion = LobbyManager.Instance?.ActiveMapVersion ?? "1.0.0";
+		string authorPubKey = "";
+
+		try
+		{
+			string? manifestPath = MapAssetManager.FindManifestPath(mapName, mapVersion)
+				?? MapAssetManager.FindManifestPath(mapTitle, mapVersion);
+
+			if (!string.IsNullOrEmpty(manifestPath) && System.IO.File.Exists(manifestPath))
+			{
+				string json = System.IO.File.ReadAllText(manifestPath);
+				using var mapDoc = JsonDocument.Parse(json);
+				var root = mapDoc.RootElement;
+				if (root.TryGetProperty("author_key", out var keyProp))
+				{
+					authorPubKey = keyProp.GetString() ?? "";
+				}
+				if (root.TryGetProperty("Version", out var vProp) && vProp.ValueKind == JsonValueKind.String)
+				{
+					mapVersion = vProp.GetString() ?? mapVersion;
+				}
+			}
+			else
+			{
+				string[] possiblePaths = {
+					ProjectSettings.GlobalizePath($"user://maps/{mapTitle}/map.json"),
+					ProjectSettings.GlobalizePath($"res://Maps/{mapTitle}/map.json"),
+					ProjectSettings.GlobalizePath($"{MapEditorHUD.TempWorkspaceGodotPath}/map.json")
+				};
+				foreach (var p in possiblePaths)
+				{
+					if (System.IO.File.Exists(p))
+					{
+						string json = System.IO.File.ReadAllText(p);
+						using var mapDoc = JsonDocument.Parse(json);
+						var root = mapDoc.RootElement;
+						if (root.TryGetProperty("author_key", out var keyProp))
+						{
+							authorPubKey = keyProp.GetString() ?? "";
+						}
+						break;
+					}
+				}
+			}
+		}
+		catch {}
 		
 		var payload = new
 		{
 			MapTitle = mapTitle,
-			MapVersion = "1.0",
+			MapVersion = mapVersion,
+			AuthorPublicKey = authorPubKey,
 			PlaytimeMinutes = playtimeMinutes,
 			Stars = stars,
-			IsCompleteGame = isComplete
+			IsCompleteGame = isComplete,
+			PlayerId = LobbyManager.Instance?.AuthenticatedUsername ?? "Anonymous",
+			AuthToken = LobbyManager.Instance?.AuthToken,
+			AuthProvider = LobbyManager.Instance?.AuthProvider
 		};
 		
-		string seedServerUrl = GodotObject.IsInstanceValid(LobbyManager.Instance) ? LobbyManager.Instance.RegistryServerUrl : "http://localhost:5000";
+		string seedServerUrl = GodotObject.IsInstanceValid(LobbyManager.Instance) ? LobbyManager.Instance.RegistryServerUrl : ServersConfigHelper.GetDefaultServerUrl();
 		try
 		{
 			using (var httpClient = new System.Net.Http.HttpClient())

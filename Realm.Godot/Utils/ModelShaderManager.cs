@@ -15,7 +15,6 @@ public static class ModelShaderManager
 	private static readonly StringName _paramModelBrightness = new("model_brightness");
 	private static readonly StringName _paramModelColorTint = new("model_color_tint");
 	private static readonly StringName _paramIgnorePlayerColor = new("ignore_player_color");
-	private static readonly StringName _paramNormalMode = new("normal_mode");
 	private static readonly StringName _paramUnitAmbientBoost = new("unit_ambient_boost");
 	private static readonly StringName _paramUnitRimIntensity = new("unit_rim_intensity");
 	private static readonly StringName _paramHideInShroud = new("hide_in_shroud");
@@ -210,14 +209,6 @@ public static class ModelShaderManager
 	{
 		if (ormTexture == null) return false;
 
-		if (sourceMaterial is BaseMaterial3D baseMat and not OrmMaterial3D)
-		{
-			if (baseMat.RoughnessTexture != baseMat.MetallicTexture)
-			{
-				return false;
-			}
-		}
-
 		ulong ormId = ormTexture.GetInstanceId();
 		if (_playerMaskCheckCache.TryGetValue(ormId, out bool cached))
 		{
@@ -258,34 +249,27 @@ public static class ModelShaderManager
 			return false;
 		}
 
-		long lowCount = 0;
-		long highCount = 0;
 		int step = totalPixels > 262144 ? 4 : 1;
 		int stride = channels * step;
-		long sampledPixels = 0;
+		int maskCount = 0;
+		int unmaskCount = 0;
 
 		for (int i = 0; i < data.Length; i += stride)
 		{
 			byte r = data[i];
-			if (r <= 32)
+			if (r > 32)
 			{
-				lowCount++;
+				maskCount++;
 			}
-			else if (r >= 96)
+			else
 			{
-				highCount++;
+				unmaskCount++;
 			}
-			sampledPixels++;
 		}
 
-		if (sampledPixels == 0) sampledPixels = 1;
-
-		double lowRatio = (double)lowCount / sampledPixels;
-		double highRatio = (double)highCount / sampledPixels;
-
-		bool isValidMask = lowRatio >= 0.05 && highRatio >= 0.005;
-		_playerMaskCheckCache[ormId] = isValidMask;
-		return isValidMask;
+		bool hasMask = maskCount > 5 && unmaskCount > 5;
+		_playerMaskCheckCache[ormId] = hasMask;
+		return hasMask;
 	}
 
 	public static bool ModelHasPlayerMask(Node rootNode)
@@ -354,7 +338,7 @@ public static class ModelShaderManager
 
 		foreach (var child in node.GetChildren())
 		{
-			if (child is Node childNode && ModelHasPlayerMaskRecursive(childNode))
+			if (child is Node childNode && !IsAttachmentNode(childNode) && ModelHasPlayerMaskRecursive(childNode))
 			{
 				return true;
 			}
@@ -545,6 +529,17 @@ public static class ModelShaderManager
 		return material;
 	}
 
+	public static bool IsAttachmentNode(Node node)
+	{
+		if (node == null || !GodotObject.IsInstanceValid(node)) return false;
+		if (node.HasMeta("AttachmentId") || node.HasMeta("CleanAttachmentId")) return true;
+		string nodeName = node.Name.ToString();
+		return nodeName.StartsWith("Att_", StringComparison.OrdinalIgnoreCase)
+			|| nodeName.StartsWith("AttVisual_", StringComparison.OrdinalIgnoreCase)
+			|| nodeName.StartsWith("BoneAttachment_", StringComparison.OrdinalIgnoreCase)
+			|| nodeName.StartsWith("SocketAttachment_", StringComparison.OrdinalIgnoreCase);
+	}
+
 	private static bool IsExcludedMesh(GeometryInstance3D geomInst)
 	{
 		if (geomInst == null) return true;
@@ -585,14 +580,14 @@ public static class ModelShaderManager
 						continue;
 					}
 
-					if (srcMat is BaseMaterial3D || srcMat == null)
+					if (srcMat is BaseMaterial3D || srcMat is ShaderMaterial || srcMat == null)
 					{
 						var shaderMat = GetOrCreateShaderMaterial(srcMat, normalizeLuminance);
 						meshInst.SetSurfaceOverrideMaterial(i, shaderMat);
 					}
 				}
 
-				if (meshInst.MaterialOverride is ShaderMaterial smOver && smOver.Shader == _sharedShader)
+				if (meshInst.MaterialOverride != null && !(meshInst.MaterialOverride is ShaderMaterial smOver && smOver.Shader == _sharedShader))
 				{
 					var shaderMat = GetOrCreateShaderMaterial(meshInst.MaterialOverride, normalizeLuminance);
 					meshInst.MaterialOverride = shaderMat;
@@ -600,7 +595,6 @@ public static class ModelShaderManager
 
 				meshInst.SetInstanceShaderParameter(_paramPlayerColor, playerColor);
 				meshInst.SetInstanceShaderParameter(_paramIgnorePlayerColor, ignorePlayerColor ? 1.0f : 0.0f);
-				meshInst.SetInstanceShaderParameter(_paramNormalMode, 2.0f);
 				meshInst.SetInstanceShaderParameter(_paramUnitAmbientBoost, isUnitOrBuilding ? 0.10f : 0.0f);
 				meshInst.SetInstanceShaderParameter(_paramUnitRimIntensity, isUnitOrBuilding ? 0.25f : 0.0f);
 			}
@@ -608,7 +602,7 @@ public static class ModelShaderManager
 
 		foreach (var child in node.GetChildren())
 		{
-			if (child is Node childNode)
+			if (child is Node childNode && !IsAttachmentNode(childNode))
 			{
 				ApplyPlayerColorShaderRecursive(childNode, playerColor, ignorePlayerColor, normalizeLuminance, isUnitOrBuilding);
 			}
@@ -634,7 +628,7 @@ public static class ModelShaderManager
 
 		foreach (var child in node.GetChildren())
 		{
-			if (child is Node childNode)
+			if (child is Node childNode && !IsAttachmentNode(childNode))
 			{
 				SetUnitReadabilityRecursive(childNode, ambientBoost, rimIntensity);
 			}
@@ -663,7 +657,7 @@ public static class ModelShaderManager
 				}
 			}
 
-			if (meshInst.MaterialOverride is ShaderMaterial smOver && smOver.Shader == _sharedShader)
+			if (meshInst.MaterialOverride != null)
 			{
 				var shaderMat = GetOrCreateShaderMaterial(meshInst.MaterialOverride, normalizeLuminance);
 				meshInst.MaterialOverride = shaderMat;
@@ -697,7 +691,7 @@ public static class ModelShaderManager
 
 		foreach (var child in node.GetChildren())
 		{
-			if (child is Node childNode)
+			if (child is Node childNode && !IsAttachmentNode(childNode))
 			{
 				SetPlayerColorRecursive(childNode, playerColor);
 			}
@@ -722,7 +716,7 @@ public static class ModelShaderManager
 
 		foreach (var child in node.GetChildren())
 		{
-			if (child is Node childNode)
+			if (child is Node childNode && !IsAttachmentNode(childNode))
 			{
 				SetIgnorePlayerColorRecursive(childNode, ignorePlayerColor);
 			}
@@ -756,30 +750,6 @@ public static class ModelShaderManager
 		}
 	}
 
-	public static void SetNormalMode(Node rootNode, float normalMode)
-	{
-		if (rootNode == null || !GodotObject.IsInstanceValid(rootNode)) return;
-		SetNormalModeRecursive(rootNode, normalMode);
-	}
-
-	private static void SetNormalModeRecursive(Node node, float normalMode)
-	{
-		if (node is GeometryInstance3D geomInst)
-		{
-			if (!IsExcludedMesh(geomInst))
-			{
-				geomInst.SetInstanceShaderParameter(_paramNormalMode, normalMode);
-			}
-		}
-
-		foreach (var child in node.GetChildren())
-		{
-			if (child is Node childNode)
-			{
-				SetNormalModeRecursive(childNode, normalMode);
-			}
-		}
-	}
 
 	public static void ApplyBrightnessAndTintToAlbedoImage(Image img, float brightness, Color tint)
 	{

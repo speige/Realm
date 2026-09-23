@@ -50,6 +50,21 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
         run: New-Item -ItemType Directory -Force -Path publish
 
+      - name: Inject Variable servers.json
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        env:
+          SERVERS_JSON: ${{ vars.SERVERS_JSON }}
+        run: |
+          if ($env:SERVERS_JSON -and $env:SERVERS_JSON.Trim() -ne "") {
+            Set-Content -Path "Realm.Godot\servers.json" -Value $env:SERVERS_JSON -Encoding utf8
+            Write-Host "Successfully injected SERVERS_JSON variable into Realm.Godot\servers.json"
+          } else {
+            Write-Host "SERVERS_JSON variable not set; falling back to Realm.Godot\servers.template.json."
+            if (Test-Path "Realm.Godot\servers.template.json") {
+              Copy-Item -Path "Realm.Godot\servers.template.json" -Destination "Realm.Godot\servers.json" -Force
+            }
+          }
+
       - name: Import Godot Assets
         if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
         run: |
@@ -72,6 +87,25 @@ jobs:
             $cliPath = (Get-ChildItem -Path "Realm.Tools.Cli\bin\Release" -Filter "Realm.Tools.Cli.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName)
           }
           Copy-Item -Path $cliPath -Destination "$PWD\publish\Realm.Tools.Cli.exe" -Force
+
+      - name: Copy Terms and LICENSE to Publish Directory
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        run: |
+          if (Test-Path "Terms") {
+            Copy-Item -Path "Terms" -Destination "$PWD\publish\Terms" -Recurse -Force
+          }
+          if (Test-Path "LICENSE") {
+            Copy-Item -Path "LICENSE" -Destination "$PWD\publish\LICENSE" -Force
+          }
+
+      - name: Copy servers.json to Publish Directory
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        run: |
+          if (Test-Path "Realm.Godot\servers.json") {
+            Copy-Item -Path "Realm.Godot\servers.json" -Destination "$PWD\publish\servers.json" -Force
+          } elseif (Test-Path "Realm.Godot\servers.template.json") {
+            Copy-Item -Path "Realm.Godot\servers.template.json" -Destination "$PWD\publish\servers.json" -Force
+          }
 
       - name: Create 7z Ultra Archive
         if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}

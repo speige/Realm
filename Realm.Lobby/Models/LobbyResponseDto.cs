@@ -15,5 +15,6 @@ public record LobbyResponseDto(
 	string? OriginServerUri, 
 	int HostPingBaseline,
 	string? GameVersion = null,
-	string? LocalIP = null
+	string? LocalIP = null,
+	string? MapVersion = null
 );

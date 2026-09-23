@@ -369,7 +369,7 @@ public partial class VfxManagerDialog : FloatingDialogBase
 
 		try
 		{
-			var metadata = MetadataService.Instance.LoadMetadata(wsPath, fallbackToTemplate: true);
+			var metadata = MetadataService.Instance.LoadMetadata(wsPath);
 			if (metadata.CustomVfx != null)
 			{
 				foreach (var cfg in metadata.CustomVfx)

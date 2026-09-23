@@ -141,6 +141,12 @@ layout_mode = 2
 size_flags_horizontal = 4
 focus_mode = 0
 
+[node name="StorageButton" type="Button" parent="CentralPanel/VBoxContainer"]
+custom_minimumSize = Vector2(340, 50)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 0
+
 [node name="QuitButton" type="Button" parent="."]
 custom_minimumSize = Vector2(206, 68)
 layout_mode = 1

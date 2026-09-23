@@ -122,7 +122,7 @@ public class DistributionServer
                 return;
             }
 
-            if (path.Equals("/api/manifests", StringComparison.OrdinalIgnoreCase) || path.StartsWith("/api/manifests/", StringComparison.OrdinalIgnoreCase))
+            if (path.Equals("/api/manifests", StringComparison.OrdinalIgnoreCase) || path.StartsWith("/api/manifests/", StringComparison.OrdinalIgnoreCase) || path.Equals("/api/admin/remove_manifest", StringComparison.OrdinalIgnoreCase))
             {
                 await HandleManifestEndpointAsync(context, method, path);
                 return;
@@ -298,23 +298,66 @@ public class DistributionServer
 
         if (method == "GET")
         {
-            string mapId = path.Length > "/api/manifests/".Length ? path.Substring("/api/manifests/".Length) : string.Empty;
+            string rawMapId = path.Length > "/api/manifests/".Length ? path.Substring("/api/manifests/".Length) : string.Empty;
+            string mapId = Uri.UnescapeDataString(rawMapId);
             string manifestFolder = Path.Combine(_storage.RootDirectory, "manifests");
-            string manifestPath = Path.Combine(manifestFolder, $"{mapId}_manifest.json");
 
-            if (!File.Exists(manifestPath))
-            {
-                manifestPath = Path.Combine(manifestFolder, $"{mapId}.json");
-            }
-
-            if (!File.Exists(manifestPath))
+            if (!Directory.Exists(manifestFolder))
             {
                 response.StatusCode = (int)HttpStatusCode.NotFound;
                 response.Close();
                 return;
             }
 
-            byte[] manifestBytes = await File.ReadAllBytesAsync(manifestPath);
+            var candidates = new List<string>
+            {
+                Path.Combine(manifestFolder, $"{mapId}_manifest.json"),
+                Path.Combine(manifestFolder, $"{mapId}.json"),
+                Path.Combine(manifestFolder, $"{mapId.Replace(' ', '_')}_manifest.json"),
+                Path.Combine(manifestFolder, $"{mapId.Replace(' ', '_')}.json"),
+                Path.Combine(manifestFolder, $"{mapId.Replace('_', ' ')}_manifest.json"),
+                Path.Combine(manifestFolder, $"{mapId.Replace('_', ' ')}.json")
+            };
+
+            string? foundPath = null;
+            foreach (var candidate in candidates)
+            {
+                if (File.Exists(candidate))
+                {
+                    foundPath = candidate;
+                    break;
+                }
+            }
+
+            if (foundPath == null)
+            {
+                foreach (var file in Directory.EnumerateFiles(manifestFolder, "*.json"))
+                {
+                    try
+                    {
+                        var mf = MapManifest.LoadFromFile(file);
+                        if (mf != null)
+                        {
+                            if (string.Equals(mf.MapName, mapId, StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(mf.MapName?.Replace(' ', '_'), mapId.Replace(' ', '_'), StringComparison.OrdinalIgnoreCase))
+                            {
+                                foundPath = file;
+                                break;
+                            }
+                        }
+                    }
+                    catch { }
+                }
+            }
+
+            if (foundPath == null || !File.Exists(foundPath))
+            {
+                response.StatusCode = (int)HttpStatusCode.NotFound;
+                response.Close();
+                return;
+            }
+
+            byte[] manifestBytes = await File.ReadAllBytesAsync(foundPath);
             response.ContentType = "application/json";
             response.StatusCode = (int)HttpStatusCode.OK;
             await response.OutputStream.WriteAsync(manifestBytes, 0, manifestBytes.Length);
@@ -389,6 +432,190 @@ public class DistributionServer
             response.ContentType = "application/json";
             response.StatusCode = (int)HttpStatusCode.OK;
             await response.OutputStream.WriteAsync(responseBytes, 0, responseBytes.Length);
+            response.Close();
+            return;
+        }
+
+        if (method == "DELETE" || (method == "POST" && path.Equals("/api/admin/remove_manifest", StringComparison.OrdinalIgnoreCase)))
+        {
+            string mapTitle = string.Empty;
+            string? mapVersion = null;
+            string? adminPubKey = request.Headers["X-Admin-PublicKey"];
+            string? signature = request.Headers["X-Cluster-Signature"];
+            string? bypassToken = request.Headers["X-Admin-Bypass"];
+
+            if (method == "POST" && request.HasEntityBody)
+            {
+                using var reader = new StreamReader(request.InputStream, Encoding.UTF8);
+                string body = await reader.ReadToEndAsync();
+                if (!string.IsNullOrWhiteSpace(body))
+                {
+                    try
+                    {
+                        var req = JsonSerializer.Deserialize<AdminRemoveManifestRequest>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                        if (req != null)
+                        {
+                            mapTitle = req.MapTitle;
+                            mapVersion = req.MapVersion;
+                            if (!string.IsNullOrWhiteSpace(req.AdminPublicKey)) adminPubKey = req.AdminPublicKey;
+                            if (!string.IsNullOrWhiteSpace(req.Signature)) signature = req.Signature;
+                        }
+                    }
+                    catch { }
+                }
+            }
+
+            if (string.IsNullOrEmpty(mapTitle) && path.StartsWith("/api/manifests/", StringComparison.OrdinalIgnoreCase))
+            {
+                string rawMapId = path.Substring("/api/manifests/".Length);
+                string unescaped = Uri.UnescapeDataString(rawMapId);
+                string[] parts = unescaped.Split('/');
+                mapTitle = parts[0];
+                if (parts.Length > 1) mapVersion = parts[1];
+            }
+
+            if (string.IsNullOrWhiteSpace(mapTitle))
+            {
+                response.StatusCode = (int)HttpStatusCode.BadRequest;
+                byte[] error = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new RemoveManifestResponseDto { Success = false, Message = "MapTitle is required." }));
+                response.ContentType = "application/json";
+                await response.OutputStream.WriteAsync(error, 0, error.Length);
+                response.Close();
+                return;
+            }
+
+            bool isAuth = false;
+            string targetVerStr = mapVersion ?? "all";
+            string sigPayload1 = $"remove_manifest:{mapTitle.Trim().ToLowerInvariant()}:{targetVerStr.ToLowerInvariant()}";
+            string sigPayload2 = $"remove_manifest:{mapTitle.Trim().ToLowerInvariant()}";
+
+            if (!string.IsNullOrEmpty(_adminPublicKeyBase64))
+            {
+                if (!string.IsNullOrEmpty(bypassToken))
+                {
+                    isAuth = AdminBypassAuth.VerifyBypassToken(_adminPublicKeyBase64, mapTitle, targetVerStr, bypassToken)
+                        || AdminBypassAuth.VerifyBypassToken(_adminPublicKeyBase64, "admin", "remove_manifest", bypassToken)
+                        || AdminBypassAuth.VerifyBypassToken(_adminPublicKeyBase64, mapTitle, "*", bypassToken);
+                }
+
+                if (!isAuth && !string.IsNullOrEmpty(signature))
+                {
+                    isAuth = AuthorSignatureHelper.VerifySignature(_adminPublicKeyBase64, sigPayload1, signature)
+                        || AuthorSignatureHelper.VerifySignature(_adminPublicKeyBase64, sigPayload2, signature)
+                        || AdminBypassAuth.VerifyBypassToken(_adminPublicKeyBase64, mapTitle, targetVerStr, signature);
+                }
+            }
+
+            if (!isAuth)
+            {
+                response.StatusCode = (int)HttpStatusCode.Unauthorized;
+                byte[] error = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new RemoveManifestResponseDto { Success = false, Message = "Unauthorized admin request." }));
+                response.ContentType = "application/json";
+                await response.OutputStream.WriteAsync(error, 0, error.Length);
+                response.Close();
+                return;
+            }
+
+            string manifestFolder = Path.Combine(_storage.RootDirectory, "manifests");
+            int manifestsDeleted = 0;
+            var deletedFiles = new List<string>();
+
+            if (Directory.Exists(manifestFolder))
+            {
+                if (!string.IsNullOrWhiteSpace(mapVersion))
+                {
+                    string compositeKey = $"{mapTitle}_{mapVersion}";
+                    var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        $"{compositeKey}_manifest.json",
+                        $"{compositeKey}.json",
+                        $"{compositeKey.Replace(' ', '_')}_manifest.json",
+                        $"{compositeKey.Replace(' ', '_')}.json"
+                    };
+
+                    foreach (var file in Directory.EnumerateFiles(manifestFolder, "*.json"))
+                    {
+                        string fileName = Path.GetFileName(file);
+                        bool shouldDel = candidates.Contains(fileName);
+                        if (!shouldDel)
+                        {
+                            try
+                            {
+                                var mf = MapManifest.LoadFromFile(file);
+                                if (mf != null && string.Equals(mf.MapName, mapTitle, StringComparison.OrdinalIgnoreCase) && string.Equals(mf.Version, mapVersion, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    shouldDel = true;
+                                }
+                            }
+                            catch { }
+                        }
+
+                        if (shouldDel)
+                        {
+                            try
+                            {
+                                File.Delete(file);
+                                manifestsDeleted++;
+                                deletedFiles.Add(fileName);
+                            }
+                            catch { }
+                        }
+                    }
+                }
+                else
+                {
+                    foreach (var file in Directory.EnumerateFiles(manifestFolder, "*.json"))
+                    {
+                        string fileName = Path.GetFileName(file);
+                        bool shouldDel = fileName.StartsWith($"{mapTitle}_", StringComparison.OrdinalIgnoreCase)
+                            || fileName.StartsWith($"{mapTitle.Replace(' ', '_')}_", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(fileName, $"{mapTitle}.json", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(fileName, $"{mapTitle.Replace(' ', '_')}.json", StringComparison.OrdinalIgnoreCase);
+
+                        if (!shouldDel)
+                        {
+                            try
+                            {
+                                var mf = MapManifest.LoadFromFile(file);
+                                if (mf != null && string.Equals(mf.MapName, mapTitle, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    shouldDel = true;
+                                }
+                            }
+                            catch { }
+                        }
+
+                        if (shouldDel)
+                        {
+                            try
+                            {
+                                File.Delete(file);
+                                manifestsDeleted++;
+                                deletedFiles.Add(fileName);
+                            }
+                            catch { }
+                        }
+                    }
+                }
+            }
+
+            var removeDto = new RemoveManifestResponseDto
+            {
+                Success = true,
+                MapTitle = mapTitle,
+                MapVersion = mapVersion,
+                AllVersionsRemoved = string.IsNullOrWhiteSpace(mapVersion),
+                ManifestsDeleted = manifestsDeleted,
+                DeletedManifestFiles = deletedFiles,
+                Message = string.IsNullOrWhiteSpace(mapVersion)
+                    ? $"Successfully removed all published manifest versions for map '{mapTitle}'."
+                    : $"Successfully removed published manifest for map '{mapTitle}' version '{mapVersion}'."
+            };
+
+            byte[] respBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(removeDto));
+            response.ContentType = "application/json";
+            response.StatusCode = (int)HttpStatusCode.OK;
+            await response.OutputStream.WriteAsync(respBytes, 0, respBytes.Length);
             response.Close();
             return;
         }

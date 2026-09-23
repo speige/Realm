@@ -223,8 +223,7 @@
         LoadingTitle: document.getElementById('prop-LoadingTitle'),
         LoadingSubtitle: document.getElementById('prop-LoadingSubtitle'),
         LoadingBodyText: document.getElementById('prop-LoadingBodyText'),
-        HowToPlayObjective: document.getElementById('prop-HowToPlayObjective'),
-        Version: document.getElementById('prop-Version')
+        HowToPlayObjective: document.getElementById('prop-HowToPlayObjective')
     };
 
     const instructionInput = document.getElementById('instruction-input');
@@ -457,7 +456,7 @@
                 const knownTopKeys = [
                     'MapProperties', 'CustomUnits', 'CustomBuildings', 'CustomResources', 'CustomProps',
                     'CustomAbilities', 'CustomItems', 'CustomUpgrades', 'CustomWeapons', 'Assets', 
-                    'ModelOffsets', 'ModelScales', 'ModelCollisionCircleRatios', 'ModelBrightness', 'ModelNormalModes',
+                    'ModelOffsets', 'ModelScales', 'ModelCollisionCircleRatios', 'ModelBrightness', 'ModelDespillPlayerColor',
                     'ModelIgnorePlayerColor'
                 ];
                 for (const [key, val] of Object.entries(units)) {
@@ -479,9 +478,10 @@
                             u.PathingType = defaultPathing;
                         }
                     }
-                    if (u.NormalMode === undefined || u.NormalMode === null) {
-                        u.NormalMode = 'Flat';
+                    if (u.DespillPlayerColor === undefined || u.DespillPlayerColor === null) {
+                        u.DespillPlayerColor = true;
                     }
+                    delete u.NormalMode;
                     delete u.RecalculateNormals;
                     delete u.MovementType;
                     delete u.PathingCapabilities;

@@ -1,0 +1,32 @@
+REALM PLATFORM
+USER-GENERATED CONTENT (UGC) LICENSE
+
+1. OWNERSHIP
+Creators retain all underlying ownership, copyright, and intellectual property
+rights to original maps, scripts, balance data, art, and assets ("UGC") they create.
+
+2. LICENSE TO THE PLATFORM OPERATOR
+By publishing, uploading, or synchronizing UGC via the Realm platform, creators
+grant the Platform Operator (Devin Garner / Realm) a perpetual, worldwide,
+non-exclusive, royalty-free, sublicensable license to host, cache, route,
+distribute, reproduce, display, and format the UGC across any current or future
+official Realm platform services, databases, or client distributions.
+
+3. LICENSE TO OTHER PLAYERS & REMIX PERMISSIONS
+Creators grant other registered Realm users a personal, non-exclusive license to play, 
+stream, and adapt/remix the UGC for use exclusively within the official Realm Platform. 
+If a creator elects to export or adapt their UGC into an external, standalone game, 
+they may only export assets they authored personally. No imported or derivative 
+works authored by third-party Realm creators may be bundled into external standalone 
+projects without separate written authorization from those respective creators.
+
+4. RESTRICTION ON EXTERNAL EXPORTS & FORKS
+Third-party forks, standalone game builds, or external platforms may not bundle,
+scrape, repackage, or distribute UGC created by other users without express
+written authorization directly from the respective asset owner(s).
+
+5. MONETIZATION & IN-GAME ECONOMIES
+Creators may accept voluntary donations or offer cosmetic, non-gameplay-altering 
+rewards for their UGC within the Realm platform. Creators may not implement 
+pay-to-win mechanics, lock gameplay balance/features behind paywalls, or circumvent 
+the Platform Operator's designated monetization APIs.

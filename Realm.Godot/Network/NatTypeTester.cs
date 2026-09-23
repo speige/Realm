@@ -13,37 +13,31 @@ public class NatTypeTester
         public IPEndPoint ChangedEndPoint { get; set; }
     }
 
-    public static async Task<NatType> DetermineNatTypeAsync(int testLocalPort = 8999)
+    public static async Task<NatType> DetermineNatTypeAsync(int testLocalPort = 0)
     {
         try
         {
-
             var stunAddresses = await Dns.GetHostAddressesAsync("stun.l.google.com");
             if (stunAddresses.Length == 0)
             {
-
                 return NatType.Open;
             }
-
-
 
             var serverIp1 = stunAddresses[0];
             var serverIp2 = stunAddresses.Length > 1 ? stunAddresses[1] : IPAddress.Parse("74.125.200.127"); // google stun alternate
 
-
             var test1 = await QueryStunAsync(serverIp1, 19302, testLocalPort);
             if (!test1.Success)
             {
-
                 return NatType.RestrictedCone;
             }
 
+            int boundPort = test1.LocalEndPoint != null ? test1.LocalEndPoint.Port : testLocalPort;
 
             if (test1.MappedEndPoint.Address.Equals(test1.LocalEndPoint.Address) && 
                 test1.MappedEndPoint.Port == test1.LocalEndPoint.Port)
             {
-
-                var test2Open = await QueryStunWithChangeRequestAsync(serverIp1, 19302, testLocalPort, changeIP: true, changePort: true);
+                var test2Open = await QueryStunWithChangeRequestAsync(serverIp1, 19302, boundPort, changeIP: true, changePort: true);
                 if (test2Open.Success)
                 {
                     return NatType.Open;
@@ -54,19 +48,15 @@ public class NatTypeTester
                 }
             }
 
-
-            var test2 = await QueryStunWithChangeRequestAsync(serverIp1, 19302, testLocalPort, changeIP: true, changePort: true);
+            var test2 = await QueryStunWithChangeRequestAsync(serverIp1, 19302, boundPort, changeIP: true, changePort: true);
             if (test2.Success)
             {
                 return NatType.FullCone;
             }
 
-
-
-            var test1Alt = await QueryStunAsync(serverIp2, 19302, testLocalPort);
+            var test1Alt = await QueryStunAsync(serverIp2, 19302, boundPort);
             if (test1Alt.Success)
             {
-
                 if (!test1.MappedEndPoint.Address.Equals(test1Alt.MappedEndPoint.Address) || 
                     test1.MappedEndPoint.Port != test1Alt.MappedEndPoint.Port)
                 {
@@ -74,8 +64,7 @@ public class NatTypeTester
                 }
             }
 
-
-            var test3 = await QueryStunWithChangeRequestAsync(serverIp1, 19302, testLocalPort, changeIP: false, changePort: true);
+            var test3 = await QueryStunWithChangeRequestAsync(serverIp1, 19302, boundPort, changeIP: false, changePort: true);
             if (test3.Success)
             {
                 return NatType.RestrictedCone;

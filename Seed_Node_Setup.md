@@ -84,21 +84,16 @@ Your public IP address is needed for players to connect. You can retrieve it usi
   curl icanhazip.com
   ```
 
-### 2. Submit a Pull Request
-To make your seed node available to all players:
-1. Navigate to `Realm.Godot/servers.json` in the project's repository on GitHub.
-2. Click the **Edit this file** (pencil icon) in the top-right corner. GitHub will handle forking the repository automatically.
-3. Add your public IP or custom static domain to the `registryServers` array. For example:
-   ```json
-   {
-     "registryServers": [
-       "http://127.0.0.1:5000",
-       "http://<YOUR_STATIC_PUBLIC_IP>:5000"
-     ]
-   }
-   ```
-4. Click **Propose changes** / **Commit changes**, select **Create a new branch and start a pull request**, and submit the PR.
-5. Once verified for stability and uptime, your seed node will be merged and automatically discovered by game clients.
+### 2. Request Seed Node Verification
+To protect the network from malicious tampering and rogue IP injection, official registry endpoints and admin keys are managed securely via GitHub repository variables embedded during official release builds.
+
+To have your seed node registered in the official registry:
+1. Open an Issue or Registration Request on the project repository with:
+   - Your static public IP or persistent domain name (e.g. `http://<YOUR_STATIC_PUBLIC_IP>:5000`)
+   - Your server region / hosting location (e.g., `us-east`, `eu-central`)
+   - Proof of uptime and reachability on port 5000
+2. Maintainers will perform connectivity checks and add your node to the official `SERVERS_JSON` registry variable.
+3. Once verified, your node will be included in official release builds and peer-to-peer discovery.
 
 
 ---

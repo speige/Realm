@@ -68,7 +68,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	private DecalSettingsDialog _decalEditDialog;
 	private ShaderEditorDialog _shaderEditDialog;
 
-	private string _currentCategory = "glb_characters";
+	private string _currentCategory = "rmesh_characters";
 	private string _searchFilter = "";
 	private string _currentPreviewAssetKey = "";
 	private string _currentPreviewAssetCategory = "";
@@ -235,13 +235,13 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		_optAssetCategory.AddThemeFontSizeOverride("font_size", 11);
 		_optAssetCategory.CustomMinimumSize = new Vector2(170, 26);
 		_optAssetCategory.AddItem(TranslationServer.Translate("3D Models (Characters)"), 0);
-		_optAssetCategory.SetItemMetadata(0, "glb_characters");
+		_optAssetCategory.SetItemMetadata(0, "rmesh_characters");
 		_optAssetCategory.AddItem(TranslationServer.Translate("3D Models (Buildings)"), 1);
-		_optAssetCategory.SetItemMetadata(1, "glb_buildings");
+		_optAssetCategory.SetItemMetadata(1, "rmesh_buildings");
 		_optAssetCategory.AddItem(TranslationServer.Translate("3D Models (Props)"), 2);
-		_optAssetCategory.SetItemMetadata(2, "glb_props");
+		_optAssetCategory.SetItemMetadata(2, "rmesh_props");
 		_optAssetCategory.AddItem(TranslationServer.Translate("3D Models (Items)"), 3);
-		_optAssetCategory.SetItemMetadata(3, "glb_items");
+		_optAssetCategory.SetItemMetadata(3, "rmesh_items");
 		_optAssetCategory.AddItem(TranslationServer.Translate("Terrain"), 4);
 		_optAssetCategory.SetItemMetadata(4, "textures");
 		_optAssetCategory.AddItem(TranslationServer.Translate("Spritesheets"), 5);
@@ -279,8 +279,14 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		_btnImportAsset = AddButton(catRow, "\uf093 " + TranslationServer.Translate("Import Asset"), () => OpenImportFileDialog(), "Import a new asset for the selected category", 11, new Vector2(120, 26));
 		_btnConvert3DModel = AddButton(catRow, "\uf021 " + TranslationServer.Translate("Convert 3D Model to Realm Format"), () =>
 		{
-			IsGlbCategory(_currentCategory, out string glbSub);
-			Hud?.OpenConvertGlbDialog(null, glbSub, (_) => RefreshAssetList());
+			IsRmeshCategory(_currentCategory, out string rmeshSub);
+			string targetSub = rmeshSub switch
+			{
+				"characters" => "units",
+				"items" => "projectiles",
+				_ => rmeshSub
+			};
+			Hud?.OpenConvertGlbDialog(null, targetSub, (_) => RefreshAssetList());
 		}, "Select a 3D model (.glb, .gltf, .fbx, .obj) to optimize with LODs and convert to Realm format", 11, new Vector2(230, 26));
 		_btnConvert3DModel.Visible = false;
 
@@ -307,13 +313,13 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		catRow.AddChild(_btnAiGenerate3D);
 		_btnAiGenerate3D.Visible = false;
 
-		_btnConvertImage = AddButton(catRow, "\uf021 " + TranslationServer.Translate("Convert Image to Realm format"), () => OnConvertImagePressed(), "Convert an image file (PNG, JPG, BMP, WEBP, DDS, SVG, etc.) to Realm format (RTEX)", 11, new Vector2(230, 26));
+		_btnConvertImage = AddButton(catRow, "\uf021 " + TranslationServer.Translate("Convert Image to Realm format (.rtex)"), () => OnConvertImagePressed(), "Convert an image file (PNG, JPG, BMP, WEBP, DDS, SVG, etc.) to Realm format (RTEX)", 11, new Vector2(230, 26));
 		_btnConvertImage.Visible = false;
 
-		_btnConvertAudio = AddButton(catRow, "\uf021 " + TranslationServer.Translate("Convert Audio to .ogg"), () => OnConvertAudioPressed(), "Convert an audio file (MP3, WAV, AIFF, FLAC, AAC, etc.) to .ogg format", 11, new Vector2(190, 26));
+		_btnConvertAudio = AddButton(catRow, "\uf021 " + TranslationServer.Translate("Convert Audio to Realm format (.raud)"), () => OnConvertAudioPressed(), "Convert an audio file (MP3, WAV, AIFF, FLAC, AAC, etc.) to .ogg format", 11, new Vector2(190, 26));
 		_btnConvertAudio.Visible = false;
 
-		_btnConvertMixamo = AddButton(catRow, "\uf021 " + TranslationServer.Translate("Convert Mixamo FBX/GLB to .ranim"), () => OnConvertMixamoPressed(), "Select a Mixamo .fbx or .glb file from disk to extract and convert into .ranim animations", 11, new Vector2(230, 26));
+		_btnConvertMixamo = AddButton(catRow, "\uf021 " + TranslationServer.Translate("Convert Mixamo to Realm format (.ranim)"), () => OnConvertMixamoPressed(), "Select a Mixamo .fbx or .glb file from disk to extract and convert into .ranim animations", 11, new Vector2(230, 26));
 		_btnConvertMixamo.Visible = false;
 
 		_btnGenerateNoise = AddButton(catRow, "\uf074 " + TranslationServer.Translate("Generate Noise"), () => Hud?.OpenNoiseTextureDialog((_) => RefreshAssetList()), "Create procedural noise texture on CPU using FastNoiseLite", 11, new Vector2(130, 26));
@@ -345,7 +351,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		_txtSearchFilter.AddThemeFontSizeOverride("font_size", 11);
 		_txtSearchFilter.TextChanged += (text) =>
 		{
-			_searchFilter = text?.Trim() ?? string.Empty;
+			_searchFilter = text ?? string.Empty;
 			RefreshAssetList();
 		};
 		searchRow.AddChild(_txtSearchFilter);
@@ -377,14 +383,14 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		_simRoot.AddChild(_vfxSprite);
 	}
 
-	private static bool IsGlbCategory(string category, out string subCategory)
+	private static bool IsRmeshCategory(string category, out string subCategory)
 	{
-		if (!string.IsNullOrEmpty(category) && category.StartsWith("glb_", StringComparison.OrdinalIgnoreCase))
+		if (!string.IsNullOrEmpty(category) && category.StartsWith("rmesh_", StringComparison.OrdinalIgnoreCase))
 		{
-			subCategory = category.Substring(4).ToLowerInvariant();
+			subCategory = category.Substring(6).ToLowerInvariant();
 			return true;
 		}
-		if (!string.IsNullOrEmpty(category) && category.Equals("glb", StringComparison.OrdinalIgnoreCase))
+		if (!string.IsNullOrEmpty(category) && category.Equals("rmesh", StringComparison.OrdinalIgnoreCase))
 		{
 			subCategory = "props";
 			return true;
@@ -406,16 +412,15 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 		if (_lblModelTypeDescription != null)
 		{
-			if (IsGlbCategory(_currentCategory, out string glbSub))
+			if (IsRmeshCategory(_currentCategory, out string rmeshSub))
 			{
 				_lblModelTypeDescription.Visible = true;
-				_lblModelTypeDescription.Text = glbSub switch
+				_lblModelTypeDescription.Text = rmeshSub switch
 				{
-					"units" => TranslationServer.Translate("Units: Controllable characters, heroes, monsters, and mobile entities."),
+					"characters" or "units" => TranslationServer.Translate("Units: Controllable characters, heroes, monsters, and mobile entities."),
 					"buildings" => TranslationServer.Translate("Buildings: Player bases, towers, barracks, and stationary structures."),
-					"resources" => TranslationServer.Translate("Resources: Harvestable nodes, trees, gold mines, and gatherable objects."),
-					"props" => TranslationServer.Translate("Props: Static environmental decorations, rocks, clutter, and obstacles."),
-					"projectiles" => TranslationServer.Translate("Projectiles: Arrows, missiles, spell effects, and ballistic models."),
+					"props" or "resources" => TranslationServer.Translate("Props: Static environmental decorations, rocks, clutter, and obstacles."),
+					"items" or "projectiles" or "attachments" or "weapons" => TranslationServer.Translate("Items: Weapons, attachments, projectiles, and wearable equipment."),
 					_ => ""
 				};
 			}
@@ -451,11 +456,11 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		}
 		if (_btnConvert3DModel != null)
 		{
-			_btnConvert3DModel.Visible = IsGlbCategory(category, out _);
+			_btnConvert3DModel.Visible = IsRmeshCategory(category, out _);
 		}
 		if (_btnAiGenerate3D != null)
 		{
-			_btnAiGenerate3D.Visible = IsGlbCategory(category, out _);
+			_btnAiGenerate3D.Visible = IsRmeshCategory(category, out _);
 		}
 		if (_btnConvertImage != null)
 		{
@@ -478,8 +483,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 		RefreshAssetList();
 
-		// Auto-preview first item if available
-		var items = GetAssetsForCategory(_currentCategory);
+		var items = FilterAssets(GetAssetsForCategory(_currentCategory), _searchFilter);
 		if (items.Count > 0)
 		{
 			LoadPreviewForAsset(_currentCategory, items[0].Key, items[0].SubCategory);
@@ -488,6 +492,43 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		{
 			ClearPreview();
 		}
+	}
+
+	private List<AssetItemInfo> FilterAssets(List<AssetItemInfo> items, string filterText)
+	{
+		if (string.IsNullOrWhiteSpace(filterText))
+		{
+			return items;
+		}
+
+		var searchTerms = filterText.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+		if (searchTerms.Length == 0)
+		{
+			return items;
+		}
+
+		var matchedItems = new List<(AssetItemInfo Item, int MatchCount)>();
+		foreach (var item in items)
+		{
+			int matchCount = 0;
+			foreach (var term in searchTerms)
+			{
+				if (item.Key != null && item.Key.IndexOf(term, StringComparison.OrdinalIgnoreCase) >= 0)
+				{
+					matchCount++;
+				}
+			}
+
+			if (matchCount > 0)
+			{
+				matchedItems.Add((item, matchCount));
+			}
+		}
+
+		return matchedItems
+			.OrderByDescending(m => m.MatchCount)
+			.Select(m => m.Item)
+			.ToList();
 	}
 
 	public void RefreshAssetList()
@@ -499,11 +540,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			child.QueueFree();
 		}
 
-		var items = GetAssetsForCategory(_currentCategory);
-		if (!string.IsNullOrEmpty(_searchFilter))
-		{
-			items = items.Where(i => i.Key.IndexOf(_searchFilter, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
-		}
+		var items = FilterAssets(GetAssetsForCategory(_currentCategory), _searchFilter);
 
 		if (items.Count == 0)
 		{
@@ -531,11 +568,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			child.QueueFree();
 		}
 
-		var items = GetAssetsForCategory(_currentCategory);
-		if (!string.IsNullOrEmpty(_searchFilter))
-		{
-			items = items.Where(i => i.Key.IndexOf(_searchFilter, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
-		}
+		var items = FilterAssets(GetAssetsForCategory(_currentCategory), _searchFilter);
 
 		if (items.Count == 0)
 		{
@@ -567,7 +600,6 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			scroll.EnsureControlVisible(targetRow);
 		}
 
-		// Auto-preview the newly imported asset, falling back to the first item
 		var match = items.FirstOrDefault(i =>
 			string.Equals(i.Key, targetKey, StringComparison.OrdinalIgnoreCase) ||
 			string.Equals(System.IO.Path.GetFileName(i.Key), targetKey, StringComparison.OrdinalIgnoreCase));
@@ -626,7 +658,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		}
 
 		string ext = Path.GetExtension(fileName).ToLowerInvariant();
-		if (ext == ".glb")
+		if (ext is ".rmesh")
 		{
 			return subCategoryOrFolder switch
 			{
@@ -657,7 +689,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		{
 			return "Animation";
 		}
-		else if (ext == ".ogg")
+		else if (ext is ".ogg" or ".raud")
 		{
 			return subCategoryOrFolder == "music" ? "Music" : "SoundEffect";
 		}
@@ -668,7 +700,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 	private string ResolveAssetFilePath(string wsPath, string fileName, string subCategoryOrFolder)
 	{
 		string ext = Path.GetExtension(fileName).ToLowerInvariant();
-		if (ext == ".glb")
+		if (ext is ".rmesh")
 		{
 			string path = Path.Combine(wsPath, "Assets", "models", subCategoryOrFolder, fileName);
 			if (File.Exists(path)) return path;
@@ -698,7 +730,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		{
 			return Path.Combine(wsPath, "Assets", "animations", fileName);
 		}
-		else if (ext == ".ogg")
+		else if (ext is ".ogg" or ".raud")
 		{
 			string sub = subCategoryOrFolder == "music" ? "music" : "sfx";
 			string path = Path.Combine(wsPath, "Assets", "audio", sub, fileName);
@@ -721,10 +753,10 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 			string expectedAssetType = category switch
 			{
-				"glb_characters" or "glb_units" => "Character",
-				"glb_buildings" => "Building",
-				"glb_props" or "glb_resources" => "Prop",
-				"glb_items" or "glb_attachments" or "glb_weapons" or "glb_projectiles" => "Item",
+				"rmesh_characters" or "rmesh_units" => "Character",
+				"rmesh_buildings" => "Building",
+				"rmesh_props" or "rmesh_resources" => "Prop",
+				"rmesh_items" or "rmesh_attachments" or "rmesh_weapons" or "rmesh_projectiles" => "Item",
 				"textures" => "Terrain",
 				"vfx_radial" or "vfx_radials" => "vfx_radial",
 				"vfx_vertical" or "vfx_verticals" => "vfx_vertical",
@@ -740,21 +772,26 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				_ => category
 			};
 
-			if (IsGlbCategory(category, out string glbSub))
+			if (IsRmeshCategory(category, out string rmeshSub))
 			{
-				var glbObj = assetsObj["glb"]?.AsObject();
-				if (glbObj != null)
+				foreach (var topKey in new[] { "glb", "rmesh", "models" })
 				{
-					foreach (var subKvp in glbObj)
+					if (assetsObj[topKey] is JsonObject modelContainer)
 					{
-						if (subKvp.Value is JsonObject subCatObj)
+						foreach (var subKvp in modelContainer)
 						{
-							foreach (var model in subCatObj)
+							if (subKvp.Value is JsonObject subCatObj)
 							{
-								string resolvedType = ResolveAssetType(model.Key, subKvp.Key, model.Value);
-								if (resolvedType.Equals(expectedAssetType, StringComparison.OrdinalIgnoreCase))
+								foreach (var model in subCatObj)
 								{
-									result.Add(new AssetItemInfo { Category = category, SubCategory = subKvp.Key, Key = model.Key, ExtraData = model.Value });
+									string resolvedType = ResolveAssetType(model.Key, subKvp.Key, model.Value);
+									if (resolvedType.Equals(expectedAssetType, StringComparison.OrdinalIgnoreCase))
+									{
+										if (!result.Any(r => r.Key.Equals(model.Key, StringComparison.OrdinalIgnoreCase)))
+										{
+											result.Add(new AssetItemInfo { Category = category, SubCategory = subKvp.Key, Key = model.Key, ExtraData = model.Value });
+										}
+									}
 								}
 							}
 						}
@@ -950,16 +987,16 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		_preview2DFrameTimer = 0.0;
 		if (_preview2DImage != null) _preview2DImage.Modulate = Colors.White;
 
-		if (IsGlbCategory(category, out string glbSub) || category == "animations" || category == "vfx_spritesheets" || category == "shaders")
+		if (IsRmeshCategory(category, out string rmeshSub) || category == "animations" || category == "vfx_spritesheets" || category == "shaders")
 		{
 			_viewportContainer.Visible = true;
 			_preview2DContainer.Visible = false;
 			_previewAudioContainer.Visible = false;
-			if (_cameraPresetRow != null) _cameraPresetRow.Visible = (IsGlbCategory(category, out _) || category == "animations" || category == "shaders");
+			if (_cameraPresetRow != null) _cameraPresetRow.Visible = (IsRmeshCategory(category, out _) || category == "animations" || category == "shaders");
 
-			if (IsGlbCategory(category, out glbSub))
+			if (IsRmeshCategory(category, out rmeshSub))
 			{
-				Load3DGlbModel(key, !string.IsNullOrEmpty(subCategory) ? subCategory : glbSub);
+				Load3DModel(key, !string.IsNullOrEmpty(subCategory) ? subCategory : rmeshSub);
 			}
 			else if (category == "animations")
 			{
@@ -1039,14 +1076,14 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		}
 	}
 
-	private void Load3DGlbModel(string key, string subCategory)
+	private void Load3DModel(string key, string subCategory)
 	{
 		Clear3DModelPreview();
 		string wsPath = GetWorkspacePath();
 		string modelPath = Path.Combine(wsPath, "Assets", "models", subCategory ?? "props", key);
 		if (!File.Exists(modelPath))
 		{
-			foreach (var sub in new[] { "units", "buildings", "resources", "props", "projectiles" })
+			foreach (var sub in new[] { "units", "buildings", "resources", "props", "projectiles", "characters", "items", "attachments", "weapons" })
 			{
 				string p = Path.Combine(wsPath, "Assets", "models", sub, key);
 				if (File.Exists(p))
@@ -1059,16 +1096,34 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 		if (!File.Exists(modelPath)) return;
 
+		var loadedNode = ModelCache.GetModel(modelPath) ?? ModelCache.GetModel(key);
+		if (loadedNode is Node3D node3D)
+		{
+			_currentModelRoot.AddChild(node3D);
+			CenterAndFrameNode(node3D);
+			return;
+		}
+
 		var gltfDoc = new GltfDocument();
 		var gltfState = new GltfState();
-		var err = gltfDoc.AppendFromFile(modelPath, gltfState);
+		Error err;
+		if (modelPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
+		{
+			byte[] rmeshBytes = File.ReadAllBytes(modelPath);
+			byte[] glbBytes = Realm.Shared.ModelOptimization.RmeshFile.GetGlbBytes(rmeshBytes) ?? rmeshBytes;
+			err = gltfDoc.AppendFromBuffer(glbBytes, "", gltfState);
+		}
+		else
+		{
+			err = gltfDoc.AppendFromFile(modelPath, gltfState);
+		}
 		if (err == Error.Ok)
 		{
 			var node = gltfDoc.GenerateScene(gltfState);
-			if (node is Node3D node3D)
+			if (node is Node3D gltfNode3D)
 			{
-				_currentModelRoot.AddChild(node3D);
-				CenterAndFrameNode(node3D);
+				_currentModelRoot.AddChild(gltfNode3D);
+				CenterAndFrameNode(gltfNode3D);
 			}
 		}
 	}
@@ -1089,50 +1144,70 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		string modelPath = Path.Combine(wsPath, "Assets", "models", "units", _selectedRanimBaseModel);
 		if (!File.Exists(modelPath))
 		{
-			foreach (var sub in new[] { "units", "buildings", "resources", "props" })
+			foreach (var sub in new[] { "units", "buildings", "resources", "props", "projectiles", "characters", "items", "attachments", "weapons" })
 			{
 				string p = Path.Combine(wsPath, "Assets", "models", sub, _selectedRanimBaseModel);
 				if (File.Exists(p)) { modelPath = p; break; }
 			}
 		}
 
-		if (!File.Exists(modelPath)) return;
-
-		var gltfDoc = new GltfDocument();
-		var gltfState = new GltfState();
-		if (gltfDoc.AppendFromFile(modelPath, gltfState) == Error.Ok)
+		Node3D? animModelNode = null;
+		var loaded = ModelCache.GetModel(modelPath ?? _selectedRanimBaseModel) ?? ModelCache.GetModel(_selectedRanimBaseModel);
+		if (loaded is Node3D n)
 		{
-			var node = gltfDoc.GenerateScene(gltfState);
-			if (node is Node3D node3D)
+			animModelNode = n;
+		}
+		else if (modelPath != null && File.Exists(modelPath))
+		{
+			var gltfDoc = new GltfDocument();
+			var gltfState = new GltfState();
+			Error err;
+			if (modelPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
 			{
-				_currentModelRoot.AddChild(node3D);
-				CenterAndFrameNode(node3D);
+				byte[] rmeshBytes = File.ReadAllBytes(modelPath);
+				byte[] glbBytes = Realm.Shared.ModelOptimization.RmeshFile.GetGlbBytes(rmeshBytes) ?? rmeshBytes;
+				err = gltfDoc.AppendFromBuffer(glbBytes, "", gltfState);
+			}
+			else
+			{
+				err = gltfDoc.AppendFromFile(modelPath, gltfState);
+			}
+			if (err == Error.Ok)
+			{
+				var node = gltfDoc.GenerateScene(gltfState);
+				if (node is Node3D node3D) animModelNode = node3D;
+			}
+		}
 
-				// Load and bind .ranim animation
-				string animPath = Path.Combine(wsPath, "Assets", "animations", ranimKey);
-				if (File.Exists(animPath))
+		if (animModelNode != null)
+		{
+			_currentModelRoot.AddChild(animModelNode);
+			CenterAndFrameNode(animModelNode);
+
+			// Load and bind .ranim animation
+			string animPath = Path.Combine(wsPath, "Assets", "animations", ranimKey);
+			if (File.Exists(animPath))
+			{
+				try
 				{
-					try
+					var animData = AnimationRetargetingService.GetOrLoadRanimData(animPath);
+					if (animData != null)
 					{
-						var animData = AnimationRetargetingService.GetOrLoadRanimData(animPath);
-						if (animData != null)
+						if (AnimationRetargetingService.RetargetAndBind(animData, animModelNode, "preview_loop", out _))
 						{
-							if (AnimationRetargetingService.RetargetAndBind(animData, node3D, "preview_loop", out _))
+							var animPlayer = AnimationRetargetingService.FindOrCreateAnimationPlayer(animModelNode);
+							if (animPlayer != null && animPlayer.HasAnimation("preview_loop"))
 							{
-								var animPlayer = AnimationRetargetingService.FindOrCreateAnimationPlayer(node3D);
-								if (animPlayer != null && animPlayer.HasAnimation("preview_loop"))
-								{
-									var anim = animPlayer.GetAnimation("preview_loop");
-									if (anim != null) anim.LoopMode = Godot.Animation.LoopModeEnum.Linear;
-									animPlayer.Play("preview_loop");
-								}
+								var anim = animPlayer.GetAnimation("preview_loop");
+								if (anim != null) anim.LoopMode = Godot.Animation.LoopModeEnum.Linear;
+								animPlayer.Play("preview_loop");
 							}
 						}
 					}
-					catch (Exception ex)
-					{
-						GD.PrintErr($"[AssetManagerDialog] LoadRanimAnimation error: {ex.Message}");
-					}
+				}
+				catch (Exception ex)
+				{
+					GD.PrintErr($"[AssetManagerDialog] LoadRanimAnimation error: {ex.Message}");
 				}
 			}
 		}
@@ -1317,27 +1392,54 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		string modelPath = null;
 		if (!string.IsNullOrEmpty(_selectedRanimBaseModel))
 		{
-			foreach (var sub in new[] { "units", "buildings", "resources", "props", "projectiles", "attachments" })
+			foreach (var sub in new[] { "units", "buildings", "resources", "props", "projectiles", "characters", "items", "attachments", "weapons" })
 			{
 				string p = Path.Combine(wsPath, "Assets", "models", sub, _selectedRanimBaseModel);
 				if (File.Exists(p)) { modelPath = p; break; }
 			}
+
+			if (!File.Exists(modelPath))
+			{
+				string modelsDir = Path.Combine(wsPath, "Assets", "models");
+				if (Directory.Exists(modelsDir))
+				{
+					var files = Directory.GetFiles(modelsDir, _selectedRanimBaseModel, SearchOption.AllDirectories);
+					if (files.Length > 0) modelPath = files[0];
+				}
+			}
 		}
 
-		if (modelPath != null && File.Exists(modelPath))
+		Node3D? previewNode = null;
+		if (!string.IsNullOrEmpty(_selectedRanimBaseModel))
+		{
+			var loaded = ModelCache.GetModel(modelPath ?? _selectedRanimBaseModel) ?? ModelCache.GetModel(_selectedRanimBaseModel);
+			if (loaded is Node3D n) previewNode = n;
+		}
+
+		if (previewNode == null && modelPath != null && File.Exists(modelPath))
 		{
 			var gltfDoc = new GltfDocument();
 			var gltfState = new GltfState();
-			if (gltfDoc.AppendFromFile(modelPath, gltfState) == Error.Ok)
+			Error err;
+			if (modelPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
 			{
-				var node = gltfDoc.GenerateScene(gltfState);
-				if (node is Node3D node3D)
+				byte[] rmeshBytes = File.ReadAllBytes(modelPath);
+				byte[] glbBytes = Realm.Shared.ModelOptimization.RmeshFile.GetGlbBytes(rmeshBytes) ?? rmeshBytes;
+				err = gltfDoc.AppendFromBuffer(glbBytes, "", gltfState);
+				
+				if (err == Error.Ok)
 				{
-					_currentModelRoot.AddChild(node3D);
-					CenterAndFrameNode(node3D);
-					SpawnDeathShaderManager.ApplyShaderPreview(_currentModelRoot, _currentShaderConfig, 0.5f);
+					var node = gltfDoc.GenerateScene(gltfState);
+					if (node is Node3D n3d) previewNode = n3d;
 				}
 			}
+		}
+
+		if (previewNode != null)
+		{
+			_currentModelRoot.AddChild(previewNode);
+			CenterAndFrameNode(previewNode);
+			SpawnDeathShaderManager.ApplyShaderPreview(_currentModelRoot, _currentShaderConfig, 0.5f);
 		}
 		else
 		{
@@ -1563,7 +1665,16 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		{
 			try
 			{
-				if (audioPath.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase))
+				if (audioPath.EndsWith(".raud", StringComparison.OrdinalIgnoreCase))
+				{
+					byte[] raudBytes = File.ReadAllBytes(audioPath);
+					byte[]? oggBytes = Realm.Shared.Audio.RaudFile.GetTrack(raudBytes, 0);
+					if (oggBytes != null && oggBytes.Length > 0)
+					{
+						_audioPlayer.Stream = AudioStreamOggVorbis.LoadFromBuffer(oggBytes);
+					}
+				}
+				else if (audioPath.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase))
 				{
 					_audioPlayer.Stream = AudioStreamOggVorbis.LoadFromFile(audioPath);
 				}
@@ -1684,9 +1795,14 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			{
 				foreach (var u in metadata.CustomUnits)
 				{
-					if (!string.IsNullOrEmpty(u.ModelPath) && u.ModelPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+					if (!string.IsNullOrEmpty(u.ModelPath) && (u.ModelPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) || !Path.HasExtension(u.ModelPath)))
 					{
-						candidateModels.Add(Path.GetFileName(u.ModelPath));
+						string fileName = Path.GetFileName(u.ModelPath);
+						string? resolved = ModelCache.ResolveModelPath(fileName);
+						if (!string.IsNullOrEmpty(resolved) && File.Exists(resolved))
+						{
+							candidateModels.Add(fileName);
+						}
 					}
 				}
 			}
@@ -1695,14 +1811,27 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		try
 		{
 			var assets = MapAssetHelper.LoadUnionedAssets(wsPath);
-			var unitsGlbObj = assets["glb"]?["units"]?.AsObject();
-			if (unitsGlbObj != null)
+			foreach (var topKey in new[] { "rmesh", "glb", "models" })
 			{
-				foreach (var model in unitsGlbObj)
+				if (assets[topKey] is JsonObject glbObj)
 				{
-					if (!string.IsNullOrEmpty(model.Key))
+					foreach (var subKey in new[] { "characters", "units" })
 					{
-						candidateModels.Add(Path.GetFileName(model.Key));
+						if (glbObj[subKey] is JsonObject subObj)
+						{
+							foreach (var model in subObj)
+							{
+								if (!string.IsNullOrEmpty(model.Key))
+								{
+									string fileName = Path.GetFileName(model.Key);
+									string? resolved = ModelCache.ResolveModelPath(fileName);
+									if (!string.IsNullOrEmpty(resolved) && File.Exists(resolved))
+									{
+										candidateModels.Add(fileName);
+									}
+								}
+							}
+						}
 					}
 				}
 			}
@@ -1714,16 +1843,22 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		{
 			foreach (var kvp in GameHost.UnitRegistry)
 			{
-				if (!string.IsNullOrEmpty(kvp.Value.ModelPath) && kvp.Value.ModelPath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+				if (!string.IsNullOrEmpty(kvp.Value.ModelPath) && (kvp.Value.ModelPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) || !Path.HasExtension(kvp.Value.ModelPath)))
 				{
-					candidateModels.Add(Path.GetFileName(kvp.Value.ModelPath));
+					string fileName = Path.GetFileName(kvp.Value.ModelPath);
+					string? resolved = ModelCache.ResolveModelPath(fileName);
+					if (!string.IsNullOrEmpty(resolved) && File.Exists(resolved))
+					{
+						candidateModels.Add(fileName);
+					}
 				}
 			}
 		}
 
-		// 3. Scan filesystem directories for unit GLB models
+		// 3. Scan filesystem directories for unit and character rmesh models
 		var unitDirs = new List<string>
 		{
+			Path.Combine(wsPath, "Assets", "models", "characters"),
 			Path.Combine(wsPath, "Assets", "models", "units"),
 		};
 
@@ -1731,7 +1866,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		{
 			if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
 			{
-				foreach (var file in Directory.GetFiles(dir, "*.glb"))
+				foreach (var file in Directory.GetFiles(dir, "*.rmesh"))
 				{
 					candidateModels.Add(Path.GetFileName(file));
 				}
@@ -1742,6 +1877,13 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		var riggedList = new List<string>();
 		foreach (var modelFile in candidateModels)
 		{
+			string? resolvedPath = ModelCache.ResolveModelPath(modelFile);
+			if (string.IsNullOrEmpty(resolvedPath) || !File.Exists(resolvedPath))
+			{
+				_riggedModelCache.Remove(modelFile);
+				continue;
+			}
+
 			if (_riggedModelCache.TryGetValue(modelFile, out bool isRigged))
 			{
 				if (isRigged) riggedList.Add(modelFile);
@@ -1758,17 +1900,29 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				}
 				else
 				{
-					string resolvedPath = Path.Combine(wsPath, "Assets", "models", "units", modelFile);
-
-					var doc = new GltfDocument();
-					var state = new GltfState();
-					if (doc.AppendFromFile(resolvedPath, state) == Error.Ok)
+					if (File.Exists(resolvedPath))
 					{
-						var scene = doc.GenerateScene(state);
-						if (scene != null)
+						var doc = new GltfDocument();
+						var state = new GltfState();
+						Error err;
+						if (resolvedPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
 						{
-							hasSkeleton = SkeletonValidator.FindSkeleton(scene) != null;
-							scene.QueueFree();
+							byte[] rmeshBytes = File.ReadAllBytes(resolvedPath);
+							byte[] glbBytes = Realm.Shared.ModelOptimization.RmeshFile.GetGlbBytes(rmeshBytes) ?? rmeshBytes;
+							err = doc.AppendFromBuffer(glbBytes, "", state);
+						}
+						else
+						{
+							err = doc.AppendFromFile(resolvedPath, state);
+						}
+						if (err == Error.Ok)
+						{
+							var scene = doc.GenerateScene(state);
+							if (scene != null)
+							{
+								hasSkeleton = SkeletonValidator.FindSkeleton(scene) != null;
+								scene.QueueFree();
+							}
 						}
 					}
 				}
@@ -1807,17 +1961,25 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		try
 		{
 			var assets = MapAssetHelper.LoadUnionedAssets(wsPath);
-			if (assets["glb"] is JsonObject glbObj)
+			foreach (var topKey in new[] { "rmesh", "glb", "models" })
 			{
-				foreach (var sub in glbObj)
+				if (assets[topKey] is JsonObject glbObj)
 				{
-					if (sub.Value is JsonObject subObj)
+					foreach (var sub in glbObj)
 					{
-						foreach (var model in subObj)
+						if (sub.Value is JsonObject subObj)
 						{
-							if (!string.IsNullOrEmpty(model.Key))
+							foreach (var model in subObj)
 							{
-								models.Add(Path.GetFileName(model.Key));
+								if (!string.IsNullOrEmpty(model.Key))
+								{
+									string fileName = Path.GetFileName(model.Key);
+									string? resolved = ModelCache.ResolveModelPath(fileName);
+									if (!string.IsNullOrEmpty(resolved) && File.Exists(resolved))
+									{
+										models.Add(fileName);
+									}
+								}
 							}
 						}
 					}
@@ -1826,14 +1988,18 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		}
 		catch { }
 
-		foreach (var sub in new[] { "units", "buildings", "resources", "props", "projectiles" })
+		foreach (var sub in new[] { "units", "buildings", "resources", "props", "projectiles", "characters", "items", "attachments", "weapons" })
 		{
 			string dir = Path.Combine(wsPath, "Assets", "models", sub);
 			if (Directory.Exists(dir))
 			{
-				foreach (var file in Directory.GetFiles(dir, "*.glb"))
+				foreach (var file in Directory.GetFiles(dir))
 				{
-					models.Add(Path.GetFileName(file));
+					string ext = Path.GetExtension(file).ToLowerInvariant();
+					if (ext is ".rmesh" or ".glb")
+					{
+						models.Add(Path.GetFileName(file));
+					}
 				}
 			}
 		}
@@ -1844,17 +2010,14 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 	private string? GetRequiredAssetTypeForCategory(string category)
 	{
-		if (IsGlbCategory(category, out string glbSub))
+		if (IsRmeshCategory(category, out string rmeshSub))
 		{
-			return glbSub switch
+			return rmeshSub switch
 			{
-				"units" => "Character",
+				"characters" or "units" => "Character",
 				"buildings" => "Building",
-				"resources" => "Environment",
-				"projectiles" => "Projectile",
-				"props" => "Prop",
-				"attachments" => "Attachment",
-				"weapons" => "Weapon",
+				"props" or "resources" or "environment" => "Prop",
+				"items" or "projectiles" or "attachments" or "weapons" => "Item",
 				_ => "Prop"
 			};
 		}
@@ -1868,6 +2031,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			"icons" => "Icon",
 			"decals" => "Decal",
 			"ribbons" or "ribbon_textures" => "Ribbon",
+			"noise_textures" or "noise" => "Noise",
 			"skyboxes" => "Skybox",
 			"animations" => "Animation",
 			"music" => "Music",
@@ -1888,9 +2052,9 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		string[] extensions;
 		string? requiredAssetType = GetRequiredAssetTypeForCategory(_currentCategory);
 
-		if (IsGlbCategory(_currentCategory, out _))
+		if (IsRmeshCategory(_currentCategory, out _))
 		{
-			extensions = new[] { ".glb" };
+			extensions = new[] { ".rmesh" };
 		}
 		else
 		{
@@ -1910,7 +2074,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 					break;
 				case "sfx":
 				case "music":
-					extensions = new[] { ".ogg" };
+					extensions = new[] { ".ogg", ".raud" };
 					break;
 				case "animations":
 					extensions = new[] { ".ranim" };
@@ -2316,70 +2480,68 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		try
 		{
 			string subCat = "props";
-			if (IsGlbCategory(_currentCategory, out string glbSub))
+			if (IsRmeshCategory(_currentCategory, out string rmeshSub))
 			{
-				subCat = glbSub;
+				subCat = rmeshSub switch
+				{
+					"characters" => "units",
+					"items" => "projectiles",
+					_ => rmeshSub
+				};
 			}
 
-			string destDir = Path.Combine(wsPath, "Assets", "glb", subCat);
+			string destDir = Path.Combine(wsPath, "Assets", "models", subCat);
 			Directory.CreateDirectory(destDir);
-			string destPath = Path.Combine(destDir, $"{cleanBase}.glb");
+			string destPath = Path.Combine(destDir, $"{cleanBase}.rmesh");
 
-			byte[] srcBytes = File.ReadAllBytes(sourceFilePath);
-			var optimizer = ServiceLocator.TryGet<ModelOptimizerService>()
-				?? new ModelOptimizerService(ServiceLocator.TryGet<WorldAccessor>());
-
-			var optResult = optimizer.OptimizeGlb(srcBytes, new ModelOptimizerService.OptimizationOptions
+			int maxRes = subCat is "attachments" or "items" or "projectiles" or "weapons" ? 512 : 1024;
+			string canonicalAssetType = subCat switch
 			{
-				AllowedPixelError = 1.5f,
-				CreaseAngleDegrees = 45.0f,
-				MaxTextureResolution = 1024,
-				ForceReDecimate = true
-			});
+				"units" or "characters" => "Character",
+				"buildings" => "Building",
+				"attachments" or "items" or "projectiles" or "weapons" => "Item",
+				_ => "Prop"
+			};
 
-			if (!optResult.Success || optResult.OptimizedGlbBytes == null)
-			{
-				var glbOpt = new Realm.Shared.GlbOptimizer();
-				var res = glbOpt.Optimize(srcBytes, new Realm.Shared.OptimizationOptions
+			var convRes = Realm.Shared.ModelOptimization.ModelConverter.ConvertToRmesh(
+				sourceFilePath,
+				destPath,
+				canonicalAssetType,
+				force: true,
+				options: new Realm.Shared.OptimizationOptions
 				{
 					SimplificationRatio = 0.5f,
-					MaxTextureResolution = 1024,
+					MaxTextureResolution = maxRes,
 					ForceReDecimate = true
 				});
-				if (res.Success && res.OutputGlbBytes != null)
-				{
-					File.WriteAllBytes(destPath, res.OutputGlbBytes);
-				}
-				else
-				{
-					Hud?.ShowFeedback($"Failed to optimize model: {optResult.ErrorMessage ?? res.ErrorMessage}");
-					return;
-				}
-			}
-			else
+
+			if (!convRes.Success)
 			{
-				File.WriteAllBytes(destPath, optResult.OptimizedGlbBytes);
+				Hud?.ShowFeedback($"Failed to optimize model: {convRes.ErrorMessage}");
+				return;
 			}
 
-			var assetsObj = MapAssetHelper.LoadUnionedAssets(wsPath);
+			var assetsObj = MapAssetHelper.LoadUnionedAssets(wsPath) ?? new JsonObject();
 			if (!assetsObj.ContainsKey("glb") || assetsObj["glb"] == null) assetsObj["glb"] = new JsonObject();
 			var glbObj = assetsObj["glb"]!.AsObject();
 			if (!glbObj.ContainsKey(subCat) || glbObj[subCat] == null) glbObj[subCat] = new JsonObject();
 
-			byte[] finalBytes = File.ReadAllBytes(destPath);
-			string hash = Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(finalBytes, ".glb");
+			string hash = convRes.OutputBytes != null
+				? Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(convRes.OutputBytes, ".rmesh")
+				: Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(destPath);
 
 			float defaultScale = subCat switch
 			{
 				"resources" => 2.75f,
 				"buildings" => 1.5f,
 				"props" => 1.25f,
-				"units" => 1.0f,
+				"units" or "characters" => 1.0f,
+				"attachments" or "items" or "projectiles" or "weapons" => 1.0f,
 				_ => 1.0f
 			};
 
 			var (minY, autoYOffset) = Realm.Godot.Utils.ModelCache.CalculateModelBounds(destPath, defaultScale);
-			bool isPropOrRes = subCat == "resources" || subCat == "props";
+			bool isPropOrRes = subCat == "resources" || subCat == "props" || subCat == "attachments" || subCat == "weapons" || subCat == "items" || subCat == "projectiles";
 
 			var glbMetaObj = new JsonObject
 			{
@@ -2388,22 +2550,23 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				["scale"] = defaultScale,
 				["y_offset"] = autoYOffset,
 				["default_asset_type"] = subCat,
-				["normal_mode"] = "Flat",
+				["despill_player_color"] = true,
 				["normalize_luminance"] = true,
-				["ignore_player_color"] = isPropOrRes
+				["ignore_player_color"] = isPropOrRes,
+				["team_color"] = convRes.SupportsTeamColor
 			};
-			glbObj[subCat].AsObject()[$"{cleanBase}.glb"] = glbMetaObj;
+			glbObj[subCat]![$"{cleanBase}.rmesh"] = glbMetaObj;
 
 			string unitId = cleanBase;
 
 			MetadataService.Instance.UpdateMetadata(wsPath, meta =>
 			{
-				meta.SetModelYOffset($"{cleanBase}.glb", autoYOffset);
-				meta.SetModelScale($"{cleanBase}.glb", defaultScale);
+				meta.SetModelYOffset($"{cleanBase}.rmesh", autoYOffset);
+				meta.SetModelScale($"{cleanBase}.rmesh", defaultScale);
 
 				switch (subCat)
 				{
-					case "units":
+					case "units" or "characters":
 						bool updatedU = meta.UpdateUnit(unitId, u =>
 						{
 							if (autoYOffset != 0f) u.YOffset = autoYOffset;
@@ -2416,11 +2579,11 @@ public partial class AssetManagerDialog : FloatingDialogBase
 								UnitId = unitId,
 								Name = unitId,
 								Description = "",
-								ModelPath = $"{cleanBase}.glb",
+								ModelPath = $"{cleanBase}.rmesh",
 								Scale = defaultScale,
 								YOffset = autoYOffset,
 								PathingType = 9,
-								NormalMode = GameHost.ModelNormalMode.Flat,
+								DespillPlayerColor = true,
 								NormalizeLuminance = true
 							});
 						}
@@ -2438,11 +2601,11 @@ public partial class AssetManagerDialog : FloatingDialogBase
 								UnitId = unitId,
 								Name = unitId,
 								Description = "",
-								ModelPath = $"{cleanBase}.glb",
+								ModelPath = $"{cleanBase}.rmesh",
 								Scale = defaultScale,
 								YOffset = autoYOffset,
 								PathingType = 32,
-								NormalMode = GameHost.ModelNormalMode.Flat,
+								DespillPlayerColor = true,
 								NormalizeLuminance = true
 							});
 						}
@@ -2460,11 +2623,11 @@ public partial class AssetManagerDialog : FloatingDialogBase
 								UnitId = unitId,
 								Name = unitId,
 								Description = "",
-								ModelPath = $"{cleanBase}.glb",
+								ModelPath = $"{cleanBase}.rmesh",
 								Scale = defaultScale,
 								YOffset = autoYOffset,
 								PathingType = 255,
-								NormalMode = GameHost.ModelNormalMode.Flat,
+								DespillPlayerColor = true,
 								NormalizeLuminance = true,
 								IgnorePlayerColor = true
 							});
@@ -2483,11 +2646,11 @@ public partial class AssetManagerDialog : FloatingDialogBase
 								UnitId = unitId,
 								Name = unitId,
 								Description = "",
-								ModelPath = $"{cleanBase}.glb",
+								ModelPath = $"{cleanBase}.rmesh",
 								Scale = defaultScale,
 								YOffset = autoYOffset,
 								PathingType = 255,
-								NormalMode = GameHost.ModelNormalMode.Flat,
+								DespillPlayerColor = true,
 								NormalizeLuminance = true,
 								IgnorePlayerColor = true
 							});
@@ -2496,11 +2659,14 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				}
 			});
 
-			GameHost.Instance?.SetModelYOffset($"{cleanBase}.glb", autoYOffset);
-			GameHost.Instance?.SetModelScale($"{cleanBase}.glb", defaultScale);
+			GameHost.Instance?.SetModelYOffset($"{cleanBase}.rmesh", autoYOffset);
+			GameHost.Instance?.SetModelScale($"{cleanBase}.rmesh", defaultScale);
 
 			MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj);
-			Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Converted and imported 3D model {0}.glb"), cleanBase));
+			MetadataService.Instance.CleanMetadata(wsPath);
+			GameHost.Instance?.LoadUnitMetadata(wsPath);
+			Hud?.RefreshEntityPalette();
+			Hud?.ShowFeedback(string.Format(TranslationServer.Translate("Converted and imported 3D model {0}.rmesh"), cleanBase));
 
 			RefreshAssetList();
 		}
@@ -2556,36 +2722,43 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			byte[] fileBytes = File.ReadAllBytes(sourceFilePath);
 			string hash = ComputeHashHex(fileBytes);
 
-			if (IsGlbCategory(_currentCategory, out string subCategory))
+			if (IsRmeshCategory(_currentCategory, out string subCategory))
 			{
-				if (!ModelOptimizerService.HasOptimizationCompletedFlag(sourceFilePath))
+				string targetSub = subCategory switch
 				{
-					Hud?.OpenConvertGlbDialog(sourceFilePath, subCategory, (_) => RefreshAssetList());
+					"characters" => "units",
+					"items" => "projectiles",
+					_ => subCategory
+				};
+				if (!sourceExtension.Equals(".rmesh", StringComparison.OrdinalIgnoreCase))
+				{
+					Hud?.OpenConvertGlbDialog(sourceFilePath, targetSub, (_) => RefreshAssetList());
 					return;
 				}
-				string destDir = Path.Combine(wsPath, "Assets", "models", subCategory);
+				string destDir = Path.Combine(wsPath, "Assets", "models", targetSub);
 				Directory.CreateDirectory(destDir);
 				string destPath = Path.Combine(destDir, fileName);
 				File.Copy(sourceFilePath, destPath, true);
 				Realm.Shared.Metadata.RealmMetadataHelper.EnsureMetadata(destPath);
 				byte[] finalBytes = File.ReadAllBytes(destPath);
-				hash = Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(finalBytes, ".glb");
+				hash = Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(finalBytes, ".rmesh");
 
-				float defaultScale = subCategory switch
+				float defaultScale = targetSub switch
 				{
 					"resources" => 2.75f,
 					"buildings" => 1.5f,
 					"props" => 1.25f,
-					"units" => 1.0f,
+					"units" or "characters" => 1.0f,
+					"attachments" or "items" or "projectiles" or "weapons" => 1.0f,
 					_ => 1.0f
 				};
 
 				var (minY, autoYOffset) = Realm.Godot.Utils.ModelCache.CalculateModelBounds(destPath, defaultScale);
-				bool isPropOrRes = subCategory == "resources" || subCategory == "props";
+				bool isPropOrRes = targetSub == "resources" || targetSub == "props" || targetSub == "attachments" || targetSub == "weapons" || targetSub == "items" || targetSub == "projectiles";
 
 				if (!assetsObj.ContainsKey("glb") || assetsObj["glb"] == null) assetsObj["glb"] = new JsonObject();
 				var glbObj = assetsObj["glb"].AsObject();
-				if (!glbObj.ContainsKey(subCategory) || glbObj[subCategory] == null) glbObj[subCategory] = new JsonObject();
+				if (!glbObj.ContainsKey(targetSub) || glbObj[targetSub] == null) glbObj[targetSub] = new JsonObject();
 
 				var glbMetaObj = new JsonObject
 				{
@@ -2593,12 +2766,12 @@ public partial class AssetManagerDialog : FloatingDialogBase
 					["min_y"] = minY,
 					["scale"] = defaultScale,
 					["y_offset"] = autoYOffset,
-					["default_asset_type"] = subCategory,
-					["normal_mode"] = "Flat",
+					["default_asset_type"] = targetSub,
+					["despill_player_color"] = true,
 					["normalize_luminance"] = true,
 					["ignore_player_color"] = isPropOrRes
 				};
-				glbObj[subCategory].AsObject()[fileName] = glbMetaObj;
+				glbObj[targetSub].AsObject()[fileName] = glbMetaObj;
 
 				string unitId = Path.GetFileNameWithoutExtension(fileName);
 
@@ -2607,9 +2780,9 @@ public partial class AssetManagerDialog : FloatingDialogBase
 					meta.SetModelYOffset(fileName, autoYOffset);
 					meta.SetModelScale(fileName, defaultScale);
 
-					switch (subCategory)
+					switch (targetSub)
 					{
-						case "units":
+						case "units" or "characters":
 							bool updatedU = meta.UpdateUnit(unitId, u =>
 							{
 								if (autoYOffset != 0f) u.YOffset = autoYOffset;
@@ -2626,7 +2799,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 									Scale = defaultScale,
 									YOffset = autoYOffset,
 									PathingType = 9,
-									NormalMode = GameHost.ModelNormalMode.Flat,
+									DespillPlayerColor = true,
 									NormalizeLuminance = true
 								});
 							}
@@ -2648,7 +2821,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 									Scale = defaultScale,
 									YOffset = autoYOffset,
 									PathingType = 32,
-									NormalMode = GameHost.ModelNormalMode.Flat,
+									DespillPlayerColor = true,
 									NormalizeLuminance = true
 								});
 							}
@@ -2670,7 +2843,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 									Scale = defaultScale,
 									YOffset = autoYOffset,
 									PathingType = 255,
-									NormalMode = GameHost.ModelNormalMode.Flat,
+									DespillPlayerColor = true,
 									NormalizeLuminance = true,
 									IgnorePlayerColor = true
 								});
@@ -2693,7 +2866,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 									Scale = defaultScale,
 									YOffset = autoYOffset,
 									PathingType = 255,
-									NormalMode = GameHost.ModelNormalMode.Flat,
+									DespillPlayerColor = true,
 									NormalizeLuminance = true,
 									IgnorePlayerColor = true
 								});
@@ -2807,10 +2980,14 @@ public partial class AssetManagerDialog : FloatingDialogBase
 					byte[] rtexBytes = File.ReadAllBytes(destPath);
 					hash = Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(rtexBytes, ".rtex");
 
+					float scaleFactor = Realm.Shared.Textures.TextureConverter.CalculateLuminanceScaleFactor(destPath);
+					if (scaleFactor <= 0.0001f) scaleFactor = 1.0f;
+
 					texturesObj[effectiveRtexName] = new JsonObject
 					{
 						["hash"] = hash,
-						["swatchIndex"] = assignedSlot
+						["swatchIndex"] = assignedSlot,
+						["Scale_Factor"] = scaleFactor
 					};
 
 					MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj);
@@ -2919,6 +3096,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 			MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj);
 			MetadataService.Instance.CleanMetadata(wsPath);
+			GameHost.Instance?.LoadUnitMetadata(wsPath);
+			Hud?.RefreshEntityPalette();
 			RefreshAssetList();
 			string importedKey = _currentCategory == "textures" ? (Path.GetExtension(fileName).ToLowerInvariant() == ".rtex" ? fileName : $"{Path.GetFileNameWithoutExtension(fileName).ToLowerInvariant().Replace(' ', '_')}.rtex") : fileName;
 			LoadPreviewForAsset(_currentCategory, importedKey);
@@ -3170,14 +3349,6 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			{
 				swatchIdx = parsedIdx;
 			}
-			else if (node is JsonObject sObj2 && sObj2.TryGetPropertyValue("swatch_index", out var idxNode2) && idxNode2 != null && int.TryParse(idxNode2.ToString(), out int parsedIdx2))
-			{
-				swatchIdx = parsedIdx2;
-			}
-			else if (node is JsonObject sObj3 && sObj3.TryGetPropertyValue("SwatchIndex", out var idxNode3) && idxNode3 != null && int.TryParse(idxNode3.ToString(), out int parsedIdx3))
-			{
-				swatchIdx = parsedIdx3;
-			}
 
 			if (swatchIdx < 0 || swatchIdx >= Realm.Godot.Utils.TextureSwatchSlots.MaxSlots)
 			{
@@ -3200,13 +3371,11 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			if (swatchIdx >= 0) newObj["swatchIndex"] = swatchIdx;
 			if (node is JsonObject origObj)
 			{
-				if (origObj.TryGetPropertyValue("scale_factor", out var sf1)) newObj["scale_factor"] = sf1?.DeepClone();
-				else if (origObj.TryGetPropertyValue("Scale_Factor", out var sf2)) newObj["scale_factor"] = sf2?.DeepClone();
-				else if (origObj.TryGetPropertyValue("ScaleFactor", out var sf3)) newObj["scale_factor"] = sf3?.DeepClone();
+				if (origObj.TryGetPropertyValue("Scale_Factor", out var sf)) newObj["Scale_Factor"] = sf?.DeepClone();
 			}
 			foreach (var prop in updatedData)
 			{
-				if (prop.Key.Equals("swatch_index", StringComparison.OrdinalIgnoreCase) || prop.Key.Equals("swatchIndex", StringComparison.OrdinalIgnoreCase)) continue;
+				if (prop.Key.Equals("swatchIndex", StringComparison.OrdinalIgnoreCase)) continue;
 				newObj[prop.Key] = prop.Value?.DeepClone();
 			}
 
@@ -3235,14 +3404,15 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				try
 				{
 					var assetsObj = MapAssetHelper.LoadUnionedAssets(wsPath);
-					if (IsGlbCategory(category, out string glbSub) || category == "glb")
+					if (IsRmeshCategory(category, out string rmeshSub) || category == "glb" || category == "rmesh")
 					{
-						string targetSub = !string.IsNullOrEmpty(subCategory) ? subCategory : glbSub;
+						string targetSub = !string.IsNullOrEmpty(subCategory) ? subCategory : rmeshSub;
 						assetsObj["glb"]?[targetSub]?.AsObject()?.Remove(key);
+						assetsObj["rmesh"]?[targetSub]?.AsObject()?.Remove(key);
 						string p = Path.Combine(wsPath, "Assets", "models", targetSub ?? "props", key);
 						if (File.Exists(p)) File.Delete(p);
 						if (File.Exists(p + ".import")) File.Delete(p + ".import");
-						foreach (var sub in new[] { "units", "buildings", "resources", "props", "projectiles" })
+						foreach (var sub in new[] { "units", "buildings", "resources", "props", "projectiles", "characters", "items", "attachments", "weapons" })
 						{
 							string cand = Path.Combine(wsPath, "Assets", "models", sub, key);
 							if (File.Exists(cand)) File.Delete(cand);
@@ -3254,21 +3424,21 @@ public partial class AssetManagerDialog : FloatingDialogBase
 						{
 							switch (targetSub)
 							{
-								case "units":
+								case "units" or "characters":
 									meta.RemoveUnit(unitId);
-									meta.CustomUnits?.RemoveAll(u => key.Equals(u.ModelPath, StringComparison.OrdinalIgnoreCase));
+									meta.CustomUnits?.RemoveAll(u => key.Equals(u.ModelPath, StringComparison.OrdinalIgnoreCase) || unitId.Equals(u.UnitId, StringComparison.OrdinalIgnoreCase));
 									break;
 								case "buildings":
 									meta.RemoveBuilding(unitId);
-									meta.CustomBuildings?.RemoveAll(b => key.Equals(b.ModelPath, StringComparison.OrdinalIgnoreCase));
+									meta.CustomBuildings?.RemoveAll(b => key.Equals(b.ModelPath, StringComparison.OrdinalIgnoreCase) || unitId.Equals(b.UnitId, StringComparison.OrdinalIgnoreCase));
 									break;
 								case "resources":
 									meta.RemoveResource(unitId);
-									meta.CustomResources?.RemoveAll(r => key.Equals(r.ModelPath, StringComparison.OrdinalIgnoreCase));
+									meta.CustomResources?.RemoveAll(r => key.Equals(r.ModelPath, StringComparison.OrdinalIgnoreCase) || unitId.Equals(r.UnitId, StringComparison.OrdinalIgnoreCase));
 									break;
 								case "props":
 									meta.RemoveProp(unitId);
-									meta.CustomProps?.RemoveAll(p => key.Equals(p.ModelPath, StringComparison.OrdinalIgnoreCase));
+									meta.CustomProps?.RemoveAll(p => key.Equals(p.ModelPath, StringComparison.OrdinalIgnoreCase) || unitId.Equals(p.UnitId, StringComparison.OrdinalIgnoreCase));
 									break;
 							}
 						});
@@ -3349,8 +3519,25 @@ public partial class AssetManagerDialog : FloatingDialogBase
 						}
 					}
 
+					_riggedModelCache.Remove(key);
+					_riggedModelCache.Remove(Path.GetFileName(key));
+					ModelCache.Clear();
+
 					MapAssetHelper.SaveAssetsToManifest(wsPath, assetsObj);
 					SaveLoadService.SyncMetadataAssetsAndPrune(wsPath);
+					GameHost.Instance?.LoadUnitMetadata(wsPath);
+					Hud?.RefreshEntityPalette();
+
+					if (_currentCategory == "animations" || _currentCategory == "shaders")
+					{
+						var validModels = GetPreviewMeshModels();
+						if (string.IsNullOrEmpty(_selectedRanimBaseModel) || !validModels.Contains(_selectedRanimBaseModel))
+						{
+							_selectedRanimBaseModel = validModels.Count > 0 ? validModels[0] : string.Empty;
+							_setRanimBaseModelValue?.Invoke(_selectedRanimBaseModel);
+						}
+					}
+
 					if (category == "textures")
 					{
 						GameHost.Instance?.GroundTerrain?.ReloadTerrainTextures(true);
@@ -3370,11 +3557,11 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 	private string GetCategoryDisplayName(string cat) => cat switch
 	{
-		"glb_characters" or "glb_units" => TranslationServer.Translate("3D Models (Characters)"),
-		"glb_buildings" => TranslationServer.Translate("3D Models (Buildings)"),
-		"glb_props" or "glb_resources" => TranslationServer.Translate("3D Models (Props)"),
-		"glb_items" or "glb_attachments" or "glb_weapons" or "glb_projectiles" => TranslationServer.Translate("3D Models (Items)"),
-		"glb" => TranslationServer.Translate("3D Models (GLB)"),
+		"rmesh_characters" or "rmesh_units" => TranslationServer.Translate("3D Models (Characters)"),
+		"rmesh_buildings" => TranslationServer.Translate("3D Models (Buildings)"),
+		"rmesh_props" or "rmesh_resources" => TranslationServer.Translate("3D Models (Props)"),
+		"rmesh_items" or "rmesh_attachments" or "rmesh_weapons" or "rmesh_projectiles" => TranslationServer.Translate("3D Models (Items)"),
+		"rmesh" => TranslationServer.Translate("3D Models (.rmesh)"),
 		"textures" => TranslationServer.Translate("Terrain"),
 		"vfx_spritesheets" => TranslationServer.Translate("Spritesheets"),
 		"vfx_radial" => TranslationServer.Translate("VFX Radial"),
@@ -3522,38 +3709,59 @@ public partial class AssetManagerDialog : FloatingDialogBase
 
 			int prunedCount = 0;
 
-			if (IsGlbCategory(_currentCategory, out string glbSub))
+			if (IsRmeshCategory(_currentCategory, out string rmeshSub))
 			{
-				if (assetsObj["glb"] is JsonObject glbObj && glbObj[glbSub] is JsonObject subObj)
+				string folderName = MapAssetHelper.NormalizeGlbSubCategory(rmeshSub);
+				foreach (var containerKey in new[] { "rmesh", "glb", "models" })
 				{
-					foreach (var modelProp in subObj.ToList())
+					if (assetsObj[containerKey] is JsonObject cObj && cObj[rmeshSub] is JsonObject subObj)
 					{
-						if (!referenced.Contains(modelProp.Key) && !referenced.Contains(Path.GetFileNameWithoutExtension(modelProp.Key)))
+						foreach (var modelProp in subObj.ToList())
 						{
-							subObj.Remove(modelProp.Key);
-							string p = Path.Combine(wsPath, "Assets", "models", glbSub, modelProp.Key);
-							if (File.Exists(p)) File.Delete(p);
-							prunedCount++;
+							if (!referenced.Contains(modelProp.Key) && !referenced.Contains(Path.GetFileNameWithoutExtension(modelProp.Key)))
+							{
+								subObj.Remove(modelProp.Key);
+								string p = Path.Combine(wsPath, "Assets", "models", folderName, modelProp.Key);
+								if (File.Exists(p)) File.Delete(p);
+								prunedCount++;
+							}
+						}
+					}
+					else if (assetsObj[containerKey] is JsonObject cObj2 && cObj2[folderName] is JsonObject subObj2)
+					{
+						foreach (var modelProp in subObj2.ToList())
+						{
+							if (!referenced.Contains(modelProp.Key) && !referenced.Contains(Path.GetFileNameWithoutExtension(modelProp.Key)))
+							{
+								subObj2.Remove(modelProp.Key);
+								string p = Path.Combine(wsPath, "Assets", "models", folderName, modelProp.Key);
+								if (File.Exists(p)) File.Delete(p);
+								prunedCount++;
+							}
 						}
 					}
 				}
 			}
-			else if (_currentCategory == "glb")
+			else if (_currentCategory == "rmesh" || _currentCategory == "glb")
 			{
-				if (assetsObj["glb"] is JsonObject glbObj)
+				foreach (var containerKey in new[] { "rmesh", "glb", "models" })
 				{
-					foreach (var subProp in glbObj.ToList())
+					if (assetsObj[containerKey] is JsonObject cObj)
 					{
-						if (subProp.Value is JsonObject subObj)
+						foreach (var subProp in cObj.ToList())
 						{
-							foreach (var modelProp in subObj.ToList())
+							if (subProp.Value is JsonObject subObj)
 							{
-								if (!referenced.Contains(modelProp.Key) && !referenced.Contains(Path.GetFileNameWithoutExtension(modelProp.Key)))
+								string folderName = MapAssetHelper.NormalizeGlbSubCategory(subProp.Key);
+								foreach (var modelProp in subObj.ToList())
 								{
-									subObj.Remove(modelProp.Key);
-									string p = Path.Combine(wsPath, "Assets", "models", subProp.Key, modelProp.Key);
-									if (File.Exists(p)) File.Delete(p);
-									prunedCount++;
+									if (!referenced.Contains(modelProp.Key) && !referenced.Contains(Path.GetFileNameWithoutExtension(modelProp.Key)))
+									{
+										subObj.Remove(modelProp.Key);
+										string p = Path.Combine(wsPath, "Assets", "models", folderName, modelProp.Key);
+										if (File.Exists(p)) File.Delete(p);
+										prunedCount++;
+									}
 								}
 							}
 						}

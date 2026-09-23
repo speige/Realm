@@ -554,21 +554,24 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
             }
         }
 
-        const scriptUri = webview.asWebviewUri(vscode.Uri.file(
-            path.join(this.context.extensionPath, 'media', 'editor.js')
-        ));
-        const styleUri = webview.asWebviewUri(vscode.Uri.file(
-            path.join(this.context.extensionPath, 'media', 'editor.css')
-        ));
         const nonce = this.getNonce();
+
+        let scriptContent = '';
+        let styleContent = '';
+        try {
+            scriptContent = fs.readFileSync(path.join(this.context.extensionPath, 'media', 'editor.js'), 'utf8');
+        } catch {}
+        try {
+            styleContent = fs.readFileSync(path.join(this.context.extensionPath, 'media', 'editor.css'), 'utf8');
+        } catch {}
 
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src http://127.0.0.1:* http://localhost:*; img-src ${webview.cspSource} data: https:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src http://127.0.0.1:* http://localhost:*; img-src ${webview.cspSource} data: https:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link href="${styleUri}" rel="stylesheet" />
+    <style>${styleContent}</style>
     <title>Realm Map Editor</title>
 </head>
 <body>
@@ -594,7 +597,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                 <button type="button" id="toggle-lock-btn" class="btn secondary-btn small-btn" title="Lock Editor (Read-Only Mode)">🔓 Lock</button>
                 <button type="button" id="toggle-buttons-btn" class="btn secondary-btn small-btn" title="Toggle Add/Delete Controls">➕ Edit Ops</button>
                 <button type="button" id="toggle-debug-btn" class="btn secondary-btn small-btn" title="Toggle Debug JSON View">🐞 Debug</button>
-                <span style="font-size: 11px; color: var(--text-muted); opacity: 0.8; margin-left: 4px;" title="Press F12 inside editor to open Chromium DevTools console for debugging">💡 F12 DevTools</span>
+                <span style="font-size: 11px; color: var(--text-muted); opacity: 0.8; margin-left: 4px;" title="Press Ctrl+Shift+I inside editor to open Chromium DevTools console for debugging">💡 Ctrl+Shift+I DevTools</span>
             </div>
         </div>
         <div class="editor-body">
@@ -654,7 +657,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                             <textarea id="field-Description" rows="3" required></textarea>
                         </div>
                         <div class="form-group">
-                            <label>Model Asset (GLB)</label>
+                            <label>Model Asset (rmesh)</label>
                             <div class="input-with-browse" style="display: flex; gap: 6px; width: 100%; align-items: center;">
                                 <span id="field-ModelPath" class="readonly-model-label" style="flex: 1; min-height: 28px; padding: 4px 8px; background: var(--vscode-input-background, #1e1e1e); border: 1px solid var(--vscode-input-border, #3c3c3c); border-radius: 2px; color: var(--vscode-input-foreground, #cccccc); display: flex; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px;">(None)</span>
                                 <button type="button" class="btn edit-model-btn" data-field="ModelPath" title="Edit Model Asset in Godot">✏️</button>
@@ -1080,11 +1083,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
                         </div>
                     </div>
                     <div class="form-section">
-                        <h3>Changelog & Versioning</h3>
-                        <div class="form-group">
-                            <label for="prop-Version">Map Version</label>
-                            <input type="text" id="prop-Version" placeholder="e.g. 1.0.0" />
-                        </div>
+                        <h3>Changelog</h3>
                         <div id="changelog-container" class="list-editor-container">
                             <div id="changelog-list"></div>
                             <button type="button" id="add-changelog-btn" class="btn secondary-btn">+ Add Changelog Entry</button>
@@ -1197,7 +1196,7 @@ export class RealmMapEditorProvider implements vscode.CustomTextEditorProvider {
         window.REALM_I18N = ${JSON.stringify(activeDict)};
         window.REALM_EN_FALLBACK = ${JSON.stringify(enDict)};
     </script>
-    <script nonce="${nonce}" src="${scriptUri}"></script>
+    <script nonce="${nonce}">${scriptContent}</script>
 </body>
 </html>`;
     }

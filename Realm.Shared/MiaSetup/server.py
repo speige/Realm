@@ -128,6 +128,10 @@ def fbx2glb(input_fbx: str, output_glb: str, original_glb: str):
         if mesh.users == 0:
             bpy.data.meshes.remove(mesh)
 
+    out_parent = os.path.dirname(output_glb)
+    if out_parent and not os.path.exists(out_parent):
+        os.makedirs(out_parent, exist_ok=True)
+
     bpy.ops.export_scene.gltf(
         filepath=output_glb,
         export_format='GLB',

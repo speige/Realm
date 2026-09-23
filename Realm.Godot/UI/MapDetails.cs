@@ -1,5 +1,8 @@
 using Godot;
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using Realm.Shared.Distribution;
 
 public partial class MapDetails : Control
 {
@@ -55,6 +58,9 @@ public partial class MapDetails : Control
 
 	private Button _downloadButton;
 	private Label _downloadSubtitle;
+	private OptionButton _versionDropdown;
+	private HBoxContainer _versionContainer;
+	private Label _versionLabel;
 
 	private MapData _mapData;
 	private int _carouselIndex = 0;
@@ -128,6 +134,40 @@ public partial class MapDetails : Control
 		_downloadButton = GetNode<Button>("StatsPanel/VBoxContainer/DownloadButton");
 		_downloadSubtitle = GetNode<Label>("StatsPanel/VBoxContainer/DownloadSubtitle");
 
+		_versionContainer = new HBoxContainer();
+		_versionContainer.Name = "VersionDropdownContainer";
+		_versionContainer.Alignment = BoxContainer.AlignmentMode.Center;
+		_versionContainer.AddThemeConstantOverride("separation", 10);
+		_versionContainer.CustomMinimumSize = new Vector2(300, 36);
+		_versionContainer.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
+
+		_versionLabel = new Label();
+		_versionLabel.Text = Tr("VERSION:");
+		_versionLabel.VerticalAlignment = VerticalAlignment.Center;
+		_versionLabel.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		_versionLabel.AddThemeFontSizeOverride("font_size", 14);
+		_versionContainer.AddChild(_versionLabel);
+
+		_versionDropdown = new OptionButton();
+		_versionDropdown.Name = "VersionDropdown";
+		_versionDropdown.CustomMinimumSize = new Vector2(160, 36);
+		_versionDropdown.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
+		_versionDropdown.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+		_versionDropdown.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+		_versionDropdown.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+		_versionDropdown.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+		_versionDropdown.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		_versionDropdown.AddThemeColorOverride("font_hover_color", new Color(1.0f, 0.94f, 0.75f));
+		_versionDropdown.AddThemeColorOverride("font_pressed_color", UIStyle.ColorGold);
+		_versionDropdown.AddThemeColorOverride("font_focus_color", UIStyle.ColorGold);
+		_versionDropdown.AddThemeFontSizeOverride("font_size", 14);
+		_versionDropdown.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
+		_versionContainer.AddChild(_versionDropdown);
+
+		var downloadParent = _downloadButton.GetParent();
+		downloadParent.AddChild(_versionContainer);
+		downloadParent.MoveChild(_versionContainer, _downloadButton.GetIndex());
+
 		ApplyStyles();
 		RegisterEvents();
 	}
@@ -155,26 +195,6 @@ public partial class MapDetails : Control
 			float pulse = (Mathf.Sin(_pulseTimer) + 1.0f) * 0.5f;
 			_downloadButton.Modulate = new Color(1.0f + pulse * 0.15f, 1.0f + pulse * 0.12f, 1.0f + pulse * 0.08f);
 		}
-
-		if (_isDownloading)
-		{
-			_downloadProgress += (float)delta * 40.0f; // Simulate 40% per second
-			if (_downloadProgress >= 100.0f)
-			{
-				_downloadProgress = 100.0f;
-				_isDownloading = false;
-				_downloadButton.Disabled = false;
-				UIStyle.ApplyButtonText(_downloadButton, "PLAY MAP" +
-					"", 18);
-				_downloadSubtitle.Text = Tr("Ready to Play");
-				_downloadSubtitle.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
-			}
-			else
-			{
-				UIStyle.ApplyButtonText(_downloadButton, $"Downloading... {(int)_downloadProgress}%", 16);
-				_downloadSubtitle.Text = $"{((_downloadProgress / 100.0f) * double.Parse(_mapData.FileSize.Split(' ')[0])):F2} GB / {_mapData.FileSize}";
-			}
-		}
 	}
 
 	public void SetMapData(MapData mapData)
@@ -182,20 +202,54 @@ public partial class MapDetails : Control
 		_mapData = mapData;
 		if (_mapData == null) return;
 
+		if (_mapData.AvailableVersions == null || _mapData.AvailableVersions.Count == 0)
+		{
+			_mapData.AvailableVersions = new List<MapData> { _mapData };
+		}
+
 		_carouselIndex = 0;
 		_isDownloading = false;
 		_downloadProgress = 0.0f;
 
+		_versionDropdown.Clear();
+		int selectedIndex = 0;
+		for (int i = 0; i < _mapData.AvailableVersions.Count; i++)
+		{
+			var vData = _mapData.AvailableVersions[i];
+			string vLabel = !string.IsNullOrWhiteSpace(vData.Version) ? $"v{vData.Version}" : "v1.0.0";
+			_versionDropdown.AddItem(vLabel, i);
+			if (string.Equals(vData.Version, _mapData.Version, StringComparison.OrdinalIgnoreCase) ||
+			    string.Equals(vData.MapId, _mapData.MapId, StringComparison.OrdinalIgnoreCase))
+			{
+				selectedIndex = i;
+			}
+		}
+		_versionDropdown.Select(selectedIndex);
+
+		UpdateVersionDisplay();
+	}
+
+	private void OnVersionSelected(int index)
+	{
+		if (_mapData?.AvailableVersions != null && index >= 0 && index < _mapData.AvailableVersions.Count)
+		{
+			var selectedVersion = _mapData.AvailableVersions[index];
+			selectedVersion.AvailableVersions = _mapData.AvailableVersions;
+			_mapData = selectedVersion;
+			UpdateVersionDisplay();
+		}
+	}
+
+	private void UpdateVersionDisplay()
+	{
+		if (_mapData == null) return;
 
 		UIStyle.ApplyTitle(_titleLabel, $"MAP DETAILS: {_mapData.Title}", 28);
 		_creatorLabel.Text = $"By: {_mapData.Creator}";
 
-
 		_descText.Text = _mapData.Description;
 
-
 		PopulateFeatures();
-
 
 		if (_mapData.Screenshots != null && _mapData.Screenshots.Length > 0)
 		{
@@ -204,23 +258,64 @@ public partial class MapDetails : Control
 			UpdateCarousel();
 		}
 
-
 		PopulateRatings();
-
-
 		PopulateAwards();
-
-
 		PopulateGameplayStats();
-
-
 		PopulateTechInfo();
 
+		bool isDownloaded = CheckIfMapAlreadyDownloaded(_mapData);
 
 		_downloadButton.Disabled = false;
-		UIStyle.ApplyButtonText(_downloadButton, "DOWNLOAD MAP", 18);
-		_downloadSubtitle.Text = $"File Size: {_mapData.FileSize}";
-		_downloadSubtitle.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		if (isDownloaded)
+		{
+			UIStyle.ApplyButtonText(_downloadButton, "PLAY MAP", 18);
+			_downloadSubtitle.Text = Tr("Ready to Play");
+			_downloadSubtitle.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+		}
+		else
+		{
+			UIStyle.ApplyButtonText(_downloadButton, "DOWNLOAD MAP", 18);
+			_downloadSubtitle.Text = $"File Size: {_mapData.FileSize}";
+			_downloadSubtitle.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		}
+	}
+
+	private bool CheckIfMapAlreadyDownloaded(MapData map)
+	{
+		if (map == null) return false;
+
+		string version = !string.IsNullOrWhiteSpace(map.Version) ? map.Version.Trim() : "1.0.0";
+
+		if (FileAccess.FileExists($"res://Maps/{map.Title}/{version}/manifest.json") ||
+		    FileAccess.FileExists($"res://Maps/{map.MapId}/manifest.json"))
+		{
+			return true;
+		}
+
+		if (FileAccess.FileExists($"res://Maps/{map.Title}/manifest.json"))
+		{
+			try
+			{
+				var mf = MapManifest.LoadFromJson(FileAccess.GetFileAsString($"res://Maps/{map.Title}/manifest.json"));
+				if (mf != null && (string.Equals(mf.Version, version, StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(mf.Version)))
+				{
+					return true;
+				}
+			}
+			catch { }
+		}
+
+		if (!string.IsNullOrWhiteSpace(map.MapId) && MapAssetManager.IsMapDownloaded(map.MapId))
+		{
+			return true;
+		}
+
+		if (!string.IsNullOrWhiteSpace(map.Title) && MapAssetManager.IsMapDownloaded(map.Title, version))
+		{
+			return true;
+		}
+
+		return false;
 	}
 
 	private void ApplyStyles()
@@ -611,20 +706,23 @@ public partial class MapDetails : Control
 			UpdateCarousel();
 		};
 
+		_versionDropdown.ItemSelected += (index) =>
+		{
+			UIManager.Instance.PlayClickSound();
+			OnVersionSelected((int)index);
+		};
+
 		_downloadButton.Pressed += () =>
 		{
 			UIManager.Instance.PlayClickSound();
-			if (_downloadButton.Text == "PLAY MAP")
+			if (CheckIfMapAlreadyDownloaded(_mapData))
 			{
 				GD.Print("Playing map: " + _mapData?.Title);
-
 				UIManager.Instance.TransitionTo(GameScreen.MainMenu);
 			}
 			else
 			{
-				_isDownloading = true;
-				_downloadProgress = 0.0f;
-				_downloadButton.Disabled = true;
+				StartMapDownloadAsync();
 			}
 		};
 
@@ -790,11 +888,21 @@ public partial class MapDetails : Control
 
 		if (_mapData == null) return;
 
-		string[] allPossibleFeatures = { "Custom Units", "Boss Waves", "Achievements", "Hardcore Mode" };
+		var featureSet = new HashSet<string>(_mapData.Features ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+		var displayList = new List<string>(_mapData.Features ?? Array.Empty<string>());
+		string[] standardFeatures = { "Custom Units", "Custom Buildings", "Custom Abilities", "Custom Weapons", "Custom Upgrades", "Boss Waves", "Achievements", "Hardcore Mode" };
 
-		foreach (var feat in allPossibleFeatures)
+		foreach (var sf in standardFeatures)
 		{
-			bool isActive = Array.Exists(_mapData.Features, f => f == feat);
+			if (!featureSet.Contains(sf) && displayList.Count < 8)
+			{
+				displayList.Add(sf);
+			}
+		}
+
+		foreach (var feat in displayList)
+		{
+			bool isActive = featureSet.Contains(feat);
 
 			var rowPanel = new PanelContainer();
 			var rowStyle = new StyleBoxFlat();
@@ -822,11 +930,11 @@ public partial class MapDetails : Control
 			iconRect.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
 			if (isActive)
 			{
-				iconRect.Texture = GD.Load<Texture2D>("res://Assets/UI/checked_box.jpg");
+				iconRect.Texture = LoadTextureSafe("res://Assets/UI/checked_box.jpg");
 			}
 			else
 			{
-				iconRect.Texture = GD.Load<Texture2D>("res://Assets/UI/unchecked_box.jpg");
+				iconRect.Texture = LoadTextureSafe("res://Assets/UI/unchecked_box.jpg");
 			}
 			hBox.AddChild(iconRect);
 
@@ -917,7 +1025,7 @@ public partial class MapDetails : Control
 			rect.CustomMinimumSize = new Vector2(36, 36);
 			rect.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 			rect.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
-			rect.Texture = GD.Load<Texture2D>(awardPath);
+			rect.Texture = LoadTextureSafe(awardPath) ?? LoadTextureSafe("res://Assets/UI/gold_coin.png");
 			
 			badgePanel.AddChild(rect);
 			AttachHoverAnimation(badgePanel, 1.10f, UIStyle.ColorGold, UIStyle.ColorGoldDull);
@@ -1081,5 +1189,48 @@ public partial class MapDetails : Control
 				}
 			}
 		};
+	}
+
+	private async void StartMapDownloadAsync()
+	{
+		if (_mapData == null || _isDownloading) return;
+		_isDownloading = true;
+		_downloadButton.Disabled = true;
+		_downloadProgress = 0.0f;
+		UIStyle.ApplyButtonText(_downloadButton, "Downloading... 0%", 16);
+		_downloadSubtitle.Text = $"0% ({_mapData.FileSize})";
+		_downloadSubtitle.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+
+		string seedServerUrl = GodotObject.IsInstanceValid(LobbyManager.Instance)
+			? LobbyManager.Instance.RegistryServerUrl
+			: ServersConfigHelper.GetDefaultServerUrl();
+
+		var distClient = new MapDistributionClient();
+		bool success = await distClient.DownloadMapPackageFromRegistryAsync(
+			_mapData.MapId,
+			seedServerUrl,
+			progress =>
+			{
+				_downloadProgress = progress * 100.0f;
+				UIStyle.ApplyButtonText(_downloadButton, $"Downloading... {(int)_downloadProgress}%", 16);
+				_downloadSubtitle.Text = $"{_downloadProgress:F0}% ({_mapData.FileSize})";
+			}
+		);
+
+		_isDownloading = false;
+		_downloadButton.Disabled = false;
+
+		if (success)
+		{
+			UIStyle.ApplyButtonText(_downloadButton, "PLAY MAP", 18);
+			_downloadSubtitle.Text = Tr("Ready to Play");
+			_downloadSubtitle.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
+		}
+		else
+		{
+			UIStyle.ApplyButtonText(_downloadButton, "RETRY DOWNLOAD", 18);
+			_downloadSubtitle.Text = Tr("Download failed. Click to retry.");
+			_downloadSubtitle.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
+		}
 	}
 }

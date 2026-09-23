@@ -1,9 +1,1 @@
-namespace Realm.Lobby.Models;
-
-public class PublishMapRequest
-{
-    public string MapJson { get; set; } = "";
-    public List<string> ReferencedHashes { get; set; } = new();
-    public string Signature { get; set; } = "";
-    public string PublicKey { get; set; } = "";
-}
+// Deprecated - using Realm.Shared.Distribution.PublishMapRequest

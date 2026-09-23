@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 using Arch.Core;
 using Godot;
 using Realm.Ecs.Common;
@@ -203,7 +204,11 @@ public class SaveLoadService
 			else
 			{
 				int maxBackups = EditorSettingsDialog.CurrentSettings?.MaxBackupSnapshots ?? 3;
-				CreateWorkspaceBackup(directory, maxBackups);
+				if (maxBackups > 0)
+				{
+					string backupSourceDir = directory;
+					_ = Task.Run(() => CreateWorkspaceBackup(backupSourceDir, maxBackups));
+				}
 			}
 
 			string heightsPath = Path.Combine(directory, "terrain_heights.exr");
@@ -848,8 +853,7 @@ public class SaveLoadService
 				{
 					foreach (var u in saveData.Units)
 					{
-						string cleanUnitId = StripIdPath(u.UnitId);
-						if (!IsValidUnitObjectId(cleanUnitId, mapDir))
+						if (!IsValidUnitObjectId(u.UnitId, mapDir))
 						{
 							GD.PushWarning($"[SaveLoadService] Ignored invalid unit '{u.UnitId}' in terrain.json because it does not exist as an Object ID in metadata.json.");
 							continue;
@@ -857,7 +861,7 @@ public class SaveLoadService
 
 						var reqEnt = EcsWorld.Create();
 						EcsWorld.Add(reqEnt, new UnitSpawnRequest(
-							cleanUnitId,
+							u.UnitId,
 							new System.Numerics.Vector3(u.PosX, u.PosY, u.PosZ),
 							u.RotationY,
 							u.Scale,
@@ -871,8 +875,7 @@ public class SaveLoadService
 				{
 					foreach (var p in saveData.Props)
 					{
-						string cleanPropId = StripIdPath(p.PropId);
-						if (!IsValidPropObjectId(cleanPropId, mapDir))
+						if (!IsValidPropObjectId(p.PropId, mapDir))
 						{
 							GD.PushWarning($"[SaveLoadService] Ignored invalid prop '{p.PropId}' in terrain.json because it does not exist as an Object ID in metadata.json.");
 							continue;
@@ -880,7 +883,7 @@ public class SaveLoadService
 
 						var reqEnt = EcsWorld.Create();
 						EcsWorld.Add(reqEnt, new PropSpawnRequest(
-							cleanPropId,
+							p.PropId,
 							new System.Numerics.Vector3(p.PosX, p.PosY, p.PosZ),
 							p.RotationY,
 							p.Scale
@@ -932,13 +935,6 @@ public class SaveLoadService
 			Console.Error.WriteLine(ex.Message);
 			return false;
 		}
-	}
-
-	private static string StripIdPath(string id)
-	{
-		if (string.IsNullOrEmpty(id)) return id;
-		string directory = Path.GetDirectoryName(id);
-		return string.IsNullOrEmpty(directory) ? id : Path.GetFileName(id);
 	}
 
 	public static void RemapSplatExrFiles(string mapDirectory, IReadOnlyDictionary<int, int> remap)
@@ -1144,7 +1140,14 @@ public class SaveLoadService
 
 		try
 		{
-			string wsName = Path.GetFileName(workspacePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+			string fullWsPath = Path.GetFullPath(workspacePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			string fullUserDataDir = Path.GetFullPath(OS.GetUserDataDir()).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			if (string.Equals(fullWsPath, fullUserDataDir, StringComparison.OrdinalIgnoreCase))
+			{
+				return string.Empty;
+			}
+
+			string wsName = Path.GetFileName(fullWsPath);
 			if (string.IsNullOrEmpty(wsName)) wsName = MapWorkspaceService.DefaultWorkspaceFolder;
 
 			string backupsRoot = Path.Combine(OS.GetUserDataDir(), "map_backups", wsName);
@@ -1158,7 +1161,7 @@ public class SaveLoadService
 
 			Directory.CreateDirectory(targetBackupDir);
 
-			CopyDirectoryContentsSafe(workspacePath, targetBackupDir);
+			CopyDirectoryContentsSafe(workspacePath, targetBackupDir, backupsRoot);
 
 			PruneOldBackups(backupsRoot, maxBackups);
 
@@ -1171,29 +1174,37 @@ public class SaveLoadService
 		}
 	}
 
-	private static void CopyDirectoryContentsSafe(string sourceDir, string targetDir)
+	private static void CopyDirectoryContentsSafe(string sourceDir, string targetDir, string backupsRoot = null)
 	{
 		var source = new DirectoryInfo(sourceDir);
 		if (!source.Exists) return;
 
 		var excludedFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
 		{
-			".git", "bin", "obj", ".godot", ".vs", ".vscode"
+			".git", "bin", "obj", ".godot", ".vs", ".vscode", "map_backups", "backups", ".dotnet", ".wasi", ".sidecarcache", ".cache"
 		};
 
-		foreach (var dir in source.GetDirectories())
-		{
-			if (excludedFolders.Contains(dir.Name)) continue;
-			string destSubDir = Path.Combine(targetDir, dir.Name);
-			Directory.CreateDirectory(destSubDir);
-			CopyDirectoryContentsSafe(dir.FullName, destSubDir);
-		}
+		Directory.CreateDirectory(targetDir);
 
 		foreach (var file in source.GetFiles())
 		{
 			if (file.Extension.Equals(".tmp", StringComparison.OrdinalIgnoreCase)) continue;
 			string destFile = Path.Combine(targetDir, file.Name);
 			file.CopyTo(destFile, true);
+		}
+
+		foreach (var dir in source.GetDirectories())
+		{
+			if (excludedFolders.Contains(dir.Name)) continue;
+			if (!string.IsNullOrEmpty(backupsRoot) &&
+				(string.Equals(dir.FullName, backupsRoot, StringComparison.OrdinalIgnoreCase) ||
+				 dir.FullName.StartsWith(backupsRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
+			{
+				continue;
+			}
+
+			string destSubDir = Path.Combine(targetDir, dir.Name);
+			CopyDirectoryContentsSafe(dir.FullName, destSubDir, backupsRoot);
 		}
 	}
 
@@ -1512,18 +1523,25 @@ public class SaveLoadService
 		if (_cachedAllowedMetadataTopLevel != null) return _cachedAllowedMetadataTopLevel;
 		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+		set.Add("GameBuildNumber");
 		AddTypeMembersToSet(typeof(Realm.Ecs.Definitions.MapProperties), set);
 		set.Add(nameof(Realm.Ecs.Definitions.MapProperties));
-		set.Add("map_name");
-		set.Add("name");
+
+		foreach (var prop in typeof(MapMetadata).GetProperties(BindingFlags.Public | BindingFlags.Instance))
+		{
+			set.Add(prop.Name);
+			var jsonAttr = prop.GetCustomAttribute<System.Text.Json.Serialization.JsonPropertyNameAttribute>();
+			if (jsonAttr != null && !string.IsNullOrEmpty(jsonAttr.Name))
+			{
+				set.Add(jsonAttr.Name);
+			}
+		}
 
 		foreach (var field in typeof(GameHost).GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
 		{
 			if (field.Name.StartsWith("Model", StringComparison.OrdinalIgnoreCase))
 			{
 				set.Add(field.Name);
-				set.Add(field.Name.ToLowerInvariant());
-				set.Add(ConvertToSnakeCase(field.Name));
 			}
 		}
 		set.Add("ModelOffsets");
@@ -1534,6 +1552,19 @@ public class SaveLoadService
 		set.Add("decals");
 		set.Add("vfx_spritesheets");
 		set.Add("noise_textures");
+		set.Add("icons");
+		set.Add("skyboxes");
+		set.Add("ribbons");
+		set.Add("CustomUnits");
+		set.Add("CustomBuildings");
+		set.Add("CustomResources");
+		set.Add("CustomProps");
+		set.Add("CustomAbilities");
+		set.Add("CustomWeapons");
+		set.Add("CustomUpgrades");
+		set.Add("CustomItems");
+		set.Add("CustomAttachments");
+		set.Add("CustomVfx");
 
 		Type[] entityTypes = new[]
 		{
@@ -1559,26 +1590,7 @@ public class SaveLoadService
 				? baseName[..^1] + "ies"
 				: baseName + "s";
 
-			set.Add(baseName);
-			set.Add(plural);
-			set.Add("Custom" + baseName);
 			set.Add("Custom" + plural);
-		}
-
-		foreach (var field in typeof(GameHost).GetFields(BindingFlags.Public | BindingFlags.Static))
-		{
-			if (field.Name.EndsWith("Registry", StringComparison.OrdinalIgnoreCase))
-			{
-				string baseName = field.Name[..^"Registry".Length];
-				string plural = baseName.EndsWith("y", StringComparison.OrdinalIgnoreCase)
-					? baseName[..^1] + "ies"
-					: baseName + "s";
-
-				set.Add(baseName);
-				set.Add(plural);
-				set.Add("Custom" + baseName);
-				set.Add("Custom" + plural);
-			}
 		}
 
 		if (schemaRoot != null && schemaRoot.TryGetPropertyValue("properties", out var propertiesNode) && propertiesNode is JsonObject propertiesObject)
@@ -1586,7 +1598,6 @@ public class SaveLoadService
 			foreach (var property in propertiesObject)
 			{
 				set.Add(property.Key);
-				set.Add(ConvertToSnakeCase(property.Key));
 			}
 		}
 
@@ -1659,14 +1670,8 @@ public class SaveLoadService
 		AddTypeMembersToSet(typeof(GameHost.AttachmentMetadata), set);
 
 		set.Add("spawn_shader");
-		set.Add("spawnshader");
-		set.Add("SpawnShader");
 		set.Add("death_shader");
-		set.Add("deathshader");
-		set.Add("DeathShader");
 		set.Add("despawn_shader");
-		set.Add("despawnshader");
-		set.Add("DespawnShader");
 
 		if (schemaRoot != null && schemaRoot.TryGetPropertyValue("definitions", out var definitionsNode) && definitionsNode is JsonObject definitionsObject)
 		{
@@ -2095,105 +2100,52 @@ public class SaveLoadService
 			}
 		}
 
-		string baseAbilityName = nameof(GameHost.AbilityMetadata)[..^"Metadata".Length];
-		string abilityPlural = baseAbilityName.EndsWith("y", StringComparison.OrdinalIgnoreCase) ? baseAbilityName[..^1] + "ies" : baseAbilityName + "s";
 		var allowedAbilityProperties = GetAllowedAbilityItemProperties(schemaRoot);
-		foreach (var arrayName in new[] { "Custom" + abilityPlural, abilityPlural })
+		if (root.TryGetPropertyValue("CustomAbilities", out var abilitiesNode) && abilitiesNode is JsonArray abilitiesArray)
 		{
-			if (root.TryGetPropertyValue(arrayName, out var abilitiesNode) && abilitiesNode is JsonArray abilitiesArray)
-			{
-				CleanJsonArrayObjects(abilitiesArray, allowedAbilityProperties);
-			}
+			CleanJsonArrayObjects(abilitiesArray, allowedAbilityProperties);
 		}
 
-		string baseWeaponName = nameof(GameHost.WeaponMetadata)[..^"Metadata".Length];
-		string weaponPlural = baseWeaponName + "s";
 		var allowedWeaponProperties = GetAllowedWeaponItemProperties(schemaRoot);
-		foreach (var arrayName in new[] { "Custom" + weaponPlural, weaponPlural })
+		if (root.TryGetPropertyValue("CustomWeapons", out var weaponsNode) && weaponsNode is JsonArray weaponsArray)
 		{
-			if (root.TryGetPropertyValue(arrayName, out var weaponsNode) && weaponsNode is JsonArray weaponsArray)
-			{
-				CleanJsonArrayObjects(weaponsArray, allowedWeaponProperties);
-			}
+			CleanJsonArrayObjects(weaponsArray, allowedWeaponProperties);
 		}
 
-		string baseUpgradeName = nameof(GameHost.UpgradeMetadata)[..^"Metadata".Length];
-		string upgradePlural = baseUpgradeName + "s";
 		var allowedUpgradeProperties = GetAllowedUpgradeItemProperties(schemaRoot);
-		foreach (var arrayName in new[] { "Custom" + upgradePlural, upgradePlural })
+		if (root.TryGetPropertyValue("CustomUpgrades", out var upgradesNode) && upgradesNode is JsonArray upgradesArray)
 		{
-			if (root.TryGetPropertyValue(arrayName, out var upgradesNode) && upgradesNode is JsonArray upgradesArray)
-			{
-				CleanJsonArrayObjects(upgradesArray, allowedUpgradeProperties);
-			}
+			CleanJsonArrayObjects(upgradesArray, allowedUpgradeProperties);
 		}
 
-		string baseItemName = nameof(GameHost.ItemMetadata)[..^"Metadata".Length];
-		string itemPlural = baseItemName + "s";
 		var allowedCustomItemProperties = GetAllowedCustomItemProperties(schemaRoot);
-		foreach (var arrayName in new[] { "Custom" + itemPlural, itemPlural })
+		if (root.TryGetPropertyValue("CustomItems", out var customItemsNode) && customItemsNode is JsonArray customItemsArray)
 		{
-			if (root.TryGetPropertyValue(arrayName, out var customItemsNode) && customItemsNode is JsonArray customItemsArray)
-			{
-				CleanJsonArrayObjects(customItemsArray, allowedCustomItemProperties);
-			}
+			CleanJsonArrayObjects(customItemsArray, allowedCustomItemProperties);
 		}
 
-		string baseAttachmentName = nameof(GameHost.AttachmentMetadata)[..^"Metadata".Length];
-		string attachmentPlural = baseAttachmentName + "s";
 		var allowedAttachmentProperties = GetAllowedAttachmentItemProperties(schemaRoot);
-		foreach (var arrayName in new[] { "Custom" + attachmentPlural, attachmentPlural })
+		if (root.TryGetPropertyValue("CustomAttachments", out var attachmentsNode) && attachmentsNode is JsonArray attachmentsArray)
 		{
-			if (root.TryGetPropertyValue(arrayName, out var attachmentsNode) && attachmentsNode is JsonArray attachmentsArray)
-			{
-				CleanJsonArrayObjects(attachmentsArray, allowedAttachmentProperties);
-			}
+			CleanJsonArrayObjects(attachmentsArray, allowedAttachmentProperties);
 		}
 
 		var allowedVfxConfigProperties = GetAllowedVfxConfigProperties(schemaRoot);
-		foreach (var arrayName in new[] { "CustomVfx", "Vfx" })
+		if (root.TryGetPropertyValue("CustomVfx", out var vfxConfigsNode) && vfxConfigsNode is JsonArray vfxConfigsArray)
 		{
-			if (root.TryGetPropertyValue(arrayName, out var vfxConfigsNode) && vfxConfigsNode is JsonArray vfxConfigsArray)
-			{
-				CleanJsonArrayObjects(vfxConfigsArray, allowedVfxConfigProperties);
-			}
+			CleanJsonArrayObjects(vfxConfigsArray, allowedVfxConfigProperties);
 		}
 	}
 
 	private static string[] GetMetadataEntityArrayNames()
 	{
-		var list = new List<string>();
-		Type[] types = new[]
+		return new[]
 		{
-			typeof(GameHost.UnitMetadata),
-			typeof(GameHost.PropMetadata),
-			typeof(GameHost.ResourceMetadata)
+			"CustomUnits",
+			"CustomBuildings",
+			"CustomResources",
+			"CustomProps"
 		};
-
-		foreach (var t in types)
-		{
-			string name = t.Name;
-			if (name.EndsWith("Metadata", StringComparison.OrdinalIgnoreCase))
-			{
-				name = name[..^"Metadata".Length];
-			}
-			string plural = name + "s";
-			list.Add("Custom" + plural);
-			list.Add(plural);
-		}
-
-		foreach (var field in typeof(GameHost).GetFields(BindingFlags.Public | BindingFlags.Static))
-		{
-			if (field.Name.EndsWith("Registry", StringComparison.OrdinalIgnoreCase) && !field.Name.StartsWith("Weapon", StringComparison.OrdinalIgnoreCase))
-			{
-				string name = field.Name[..^"Registry".Length];
-				string plural = name + "s";
-				if (!list.Contains("Custom" + plural)) list.Add("Custom" + plural);
-				if (!list.Contains(plural)) list.Add(plural);
-			}
-		}
-
-		return list.ToArray();
 	}
 
 	public static void SyncMetadataAssetsAndPrune(string mapDirectory)

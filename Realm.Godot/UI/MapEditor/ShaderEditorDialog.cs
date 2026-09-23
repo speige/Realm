@@ -443,7 +443,7 @@ public partial class ShaderEditorDialog : FloatingDialogBase
 		string modelsDir = Path.Combine(wsPath, "Assets", "models");
 		if (Directory.Exists(modelsDir))
 		{
-			var files = Directory.GetFiles(modelsDir, "*.glb", SearchOption.AllDirectories);
+			var files = Directory.GetFiles(modelsDir, "*.rmesh", SearchOption.AllDirectories);
 			foreach (var f in files)
 			{
 				string name = Path.GetFileName(f);
@@ -453,6 +453,32 @@ public partial class ShaderEditorDialog : FloatingDialogBase
 				}
 			}
 		}
+
+		try
+		{
+			var assets = MapAssetHelper.LoadUnionedAssets(wsPath);
+			if (assets["rmesh"] is JsonObject rmeshObj)
+			{
+				foreach (var sub in rmeshObj)
+				{
+					if (sub.Value is JsonObject subObj)
+					{
+						foreach (var model in subObj)
+						{
+							if (!string.IsNullOrEmpty(model.Key) && model.Key.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
+							{
+								string name = Path.GetFileName(model.Key);
+								if (!_availableModels.Contains(name))
+								{
+									_availableModels.Add(name);
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		catch { }
 
 		if (_availableModels.Count == 0)
 		{
@@ -464,6 +490,17 @@ public partial class ShaderEditorDialog : FloatingDialogBase
 		foreach (var m in _availableModels)
 		{
 			_optModelPicker.AddItem(m, idx++);
+		}
+
+		int selectedIdx = !string.IsNullOrEmpty(_selectedModelKey) ? _availableModels.IndexOf(_selectedModelKey) : -1;
+		if (selectedIdx >= 0)
+		{
+			_optModelPicker.Selected = selectedIdx;
+		}
+		else if (_availableModels.Count > 0)
+		{
+			_selectedModelKey = _availableModels[0];
+			_optModelPicker.Selected = 0;
 		}
 	}
 
@@ -549,6 +586,8 @@ public partial class ShaderEditorDialog : FloatingDialogBase
 			child.QueueFree();
 		}
 
+		if (string.IsNullOrEmpty(key)) return;
+
 		if (key.StartsWith("("))
 		{
 			var meshInst = new MeshInstance3D();
@@ -572,7 +611,7 @@ public partial class ShaderEditorDialog : FloatingDialogBase
 
 		string wsPath = MapWorkspaceService.GetActiveWorkspacePath();
 		string modelPath = null;
-		foreach (var sub in new[] { "buildings", "units", "resources", "props", "projectiles" })
+		foreach (var sub in new[] { "units", "buildings", "resources", "props", "projectiles", "characters", "items", "attachments", "weapons" })
 		{
 			string p = Path.Combine(wsPath, "Assets", "models", sub, key);
 			if (File.Exists(p)) { modelPath = p; break; }
@@ -580,23 +619,43 @@ public partial class ShaderEditorDialog : FloatingDialogBase
 
 		if (!File.Exists(modelPath))
 		{
-			var files = Directory.GetFiles(Path.Combine(wsPath, "Assets", "models"), key, SearchOption.AllDirectories);
-			if (files.Length > 0) modelPath = files[0];
-		}
-
-		if (File.Exists(modelPath))
-		{
-			var gltfDoc = new GltfDocument();
-			var gltfState = new GltfState();
-			if (gltfDoc.AppendFromFile(modelPath, gltfState) == Error.Ok)
+			string modelsDir = Path.Combine(wsPath, "Assets", "models");
+			if (Directory.Exists(modelsDir))
 			{
-				var node = gltfDoc.GenerateScene(gltfState);
-				if (node is Node3D node3D)
+				var files = Directory.GetFiles(modelsDir, key, SearchOption.AllDirectories);
+				if (files.Length > 0 && files[0].EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
 				{
-					_currentModelRoot.AddChild(node3D);
-					CenterAndFrameNode(node3D);
+					modelPath = files[0];
 				}
 			}
+		}
+
+		Node3D? loadedNode3D = null;
+		if (modelPath != null && modelPath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase) && File.Exists(modelPath))
+		{
+			var loaded = ModelCache.GetModel(modelPath) ?? ModelCache.GetModel(key);
+			if (loaded is Node3D n)
+			{
+				loadedNode3D = n;
+			}
+			else
+			{
+				var gltfDoc = new GltfDocument();
+				var gltfState = new GltfState();
+				byte[] rmeshBytes = File.ReadAllBytes(modelPath);
+				byte[] glbBytes = Realm.Shared.ModelOptimization.RmeshFile.GetGlbBytes(rmeshBytes) ?? rmeshBytes;
+				if (gltfDoc.AppendFromBuffer(glbBytes, "", gltfState) == Error.Ok)
+				{
+					var node = gltfDoc.GenerateScene(gltfState);
+					if (node is Node3D n3d) loadedNode3D = n3d;
+				}
+			}
+		}
+
+		if (loadedNode3D != null)
+		{
+			_currentModelRoot.AddChild(loadedNode3D);
+			CenterAndFrameNode(loadedNode3D);
 		}
 
 		UpdateShaderParameters();

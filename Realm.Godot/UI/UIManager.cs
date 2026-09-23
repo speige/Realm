@@ -2,6 +2,7 @@ using Godot;
 using System;
 using System.Threading.Tasks;
 using Realm.Godot.ReplaySystem;
+using Realm.Godot.Services;
 using Realm.Shared;
 
 public partial class UIManager : Control
@@ -19,6 +20,7 @@ public partial class UIManager : Control
 	[Export] public PackedScene MapEditorHUDScene;
 	[Export] public PackedScene ReplayListScene;
 	[Export] public PackedScene LobbyCreateScene;
+	[Export] public PackedScene StorageScene;
 
 	private Control _currentScreen;
 	private ColorRect _fadeOverlay;
@@ -320,7 +322,7 @@ public partial class UIManager : Control
 		_fadeAnim.Play("fade_in");
 
 
-		if (screen == GameScreen.MainMenu || screen == GameScreen.LobbyBrowser || screen == GameScreen.LobbyRoom || screen == GameScreen.Settings || screen == GameScreen.MapDiscovery || screen == GameScreen.CreatorDiscovery || screen == GameScreen.MapDetails)
+		if (screen == GameScreen.MainMenu || screen == GameScreen.LobbyBrowser || screen == GameScreen.LobbyRoom || screen == GameScreen.Settings || screen == GameScreen.MapDiscovery || screen == GameScreen.CreatorDiscovery || screen == GameScreen.MapDetails || screen == GameScreen.Storage)
 		{
 			PlayMusic("res://Assets/Audio/Music/enchanted_realm.ogg");
 		}
@@ -475,6 +477,10 @@ public partial class UIManager : Control
 				targetScene = ReplayListScene ?? GD.Load<PackedScene>("res://UI/ReplayListPanel.tscn");
 				Input.MouseMode = Input.MouseModeEnum.Visible;
 				break;
+			case GameScreen.Storage:
+				targetScene = StorageScene ?? GD.Load<PackedScene>("res://UI/StorageMenu.tscn");
+				Input.MouseMode = Input.MouseModeEnum.Visible;
+				break;
 		}
 
 		if (targetScene != null)
@@ -554,7 +560,7 @@ public partial class UIManager : Control
 		}
 	}
 
-	public void ShowConfirmationDialog(string message, Action onConfirm, string confirmText = "YES", string cancelText = "NO", Action onCancel = null)
+	public void ShowConfirmationDialog(string message, Action onConfirm, string confirmText = "YES", string cancelText = "NO", Action onCancel = null, bool showCancel = true)
 	{
 		var overlay = new ColorRect();
 		overlay.Name = "ConfirmationOverlay";
@@ -578,7 +584,7 @@ public partial class UIManager : Control
 		panel.AddChild(vbox);
 
 		var lblTitle = new Label();
-		UIStyle.ApplyTitle(lblTitle, TranslationServer.Translate("CONFIRMATION REQUIRED"), 18);
+		UIStyle.ApplyTitle(lblTitle, TranslationServer.Translate(showCancel ? "CONFIRMATION REQUIRED" : "NOTIFICATION"), 18);
 		lblTitle.AddThemeColorOverride("font_color", UIStyle.ColorGold);
 		vbox.AddChild(lblTitle);
 
@@ -609,23 +615,157 @@ public partial class UIManager : Control
 		};
 		hbox.AddChild(btnConfirm);
 
-		var btnCancel = new Button();
-		btnCancel.Set("icon_max_width", 0);
-		UIStyle.ApplyButtonText(btnCancel, TranslationServer.Translate(cancelText), 13);
-		btnCancel.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
-		btnCancel.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
-		btnCancel.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
-		btnCancel.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
-		Action cancelAction = () =>
+		if (showCancel)
 		{
-			overlay.QueueFree();
-			onCancel?.Invoke();
-		};
-		overlay.SetMeta("CancelAction", Callable.From(cancelAction));
-		btnCancel.Pressed += () =>
+			var btnCancel = new Button();
+			btnCancel.Set("icon_max_width", 0);
+			UIStyle.ApplyButtonText(btnCancel, TranslationServer.Translate(cancelText), 13);
+			btnCancel.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
+			btnCancel.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
+			btnCancel.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
+			btnCancel.AddThemeColorOverride("font_color", new Color(0.9f, 0.3f, 0.3f));
+			Action cancelAction = () =>
+			{
+				overlay.QueueFree();
+				onCancel?.Invoke();
+			};
+			overlay.SetMeta("CancelAction", Callable.From(cancelAction));
+			btnCancel.Pressed += () =>
+			{
+				cancelAction();
+			};
+			hbox.AddChild(btnCancel);
+		}
+	}
+
+	public void PromptAndImportMapArchive(Action<string, string>? onSuccess = null)
+	{
+		var err = DisplayServer.FileDialogShow(
+			TranslationServer.Translate("Select Map Archive (.zip / .7z)"),
+			OS.GetSystemDir(OS.SystemDir.Documents),
+			"",
+			false,
+			DisplayServer.FileDialogMode.OpenFile,
+			new[] { "*.zip, *.7z ; Map Archives (*.zip, *.7z)", "*.zip ; ZIP Archive (*.zip)", "*.7z ; 7-Zip Archive (*.7z)", "*.* ; All Files (*.*)" },
+			Callable.From((bool status, string[] selectedPaths, int selectedFilterIndex) =>
+			{
+				if (status && selectedPaths.Length > 0)
+				{
+					string selectedPath = selectedPaths[0];
+					_ = ImportMapWithProgressAsync(selectedPath, onSuccess);
+				}
+			})
+		);
+	}
+
+	public async Task<(bool Success, string Message, string? MapTitle, string? MapVersion)> ImportMapWithProgressAsync(
+		string archivePath,
+		Action<string, string>? onSuccess = null)
+	{
+		var overlay = new ColorRect();
+		overlay.Name = "ImportMapProgressOverlay";
+		overlay.Color = new Color(0, 0, 0, 0.65f);
+		overlay.SetAnchorsPreset(LayoutPreset.FullRect);
+		overlay.ZIndex = 1100;
+		AddChild(overlay);
+
+		var center = new CenterContainer();
+		center.SetAnchorsPreset(LayoutPreset.FullRect);
+		overlay.AddChild(center);
+
+		var panel = new PanelContainer();
+		panel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
+		panel.CustomMinimumSize = new Vector2(500, 220);
+		center.AddChild(panel);
+
+		var vbox = new VBoxContainer();
+		vbox.AddThemeConstantOverride("separation", 12);
+		panel.AddChild(vbox);
+
+		var titleLabel = new Label();
+		UIStyle.ApplyTitle(titleLabel, "📥 " + TranslationServer.Translate("IMPORTING MAP ARCHIVE"), 20);
+		titleLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		vbox.AddChild(titleLabel);
+
+		var fileNameLabel = new Label();
+		fileNameLabel.Text = System.IO.Path.GetFileName(archivePath);
+		fileNameLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		fileNameLabel.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+		fileNameLabel.AddThemeFontSizeOverride("font_size", 13);
+		vbox.AddChild(fileNameLabel);
+
+		var progressBar = new ProgressBar();
+		progressBar.CustomMinimumSize = new Vector2(440, 22);
+		progressBar.MinValue = 0;
+		progressBar.MaxValue = 100;
+		progressBar.Value = 0;
+		vbox.AddChild(progressBar);
+
+		var statusLabel = new Label();
+		statusLabel.Text = TranslationServer.Translate("Extracting and validating archive contents...");
+		statusLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		statusLabel.AddThemeFontSizeOverride("font_size", 13);
+		statusLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
+		vbox.AddChild(statusLabel);
+
+		await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+
+		var mapStorageService = ServiceLocator.Get<MapStorageService>();
+		(bool Success, string Message, string? MapTitle, string? MapVersion) result;
+
+		try
 		{
-			cancelAction();
-		};
-		hbox.AddChild(btnCancel);
+			result = await Task.Run(() => mapStorageService.ImportMapAsync(
+				archivePath,
+				progress =>
+				{
+					Callable.From(() =>
+					{
+						if (GodotObject.IsInstanceValid(progressBar))
+						{
+							progressBar.Value = Mathf.Clamp(progress * 100.0, 0, 100);
+						}
+						if (GodotObject.IsInstanceValid(statusLabel))
+						{
+							statusLabel.Text = string.Format(TranslationServer.Translate("Importing assets... {0}%"), (int)(progress * 100));
+						}
+					}).CallDeferred();
+				}
+			));
+		}
+		catch (Exception ex)
+		{
+			result = (false, ex.Message, null, null);
+		}
+		finally
+		{
+			if (GodotObject.IsInstanceValid(overlay))
+			{
+				overlay.QueueFree();
+			}
+		}
+
+		if (result.Success)
+		{
+			onSuccess?.Invoke(result.MapTitle ?? string.Empty, result.MapVersion ?? string.Empty);
+
+			ShowConfirmationDialog(
+				TranslationServer.Translate("Map imported successfully."),
+				() => { },
+				confirmText: "OK",
+				showCancel: false
+			);
+		}
+		else
+		{
+			ShowConfirmationDialog(
+				string.Format(TranslationServer.Translate("Import failed: {0}"), result.Message),
+				() => { },
+				confirmText: "OK",
+				showCancel: false
+			);
+		}
+
+		return result;
 	}
 }
