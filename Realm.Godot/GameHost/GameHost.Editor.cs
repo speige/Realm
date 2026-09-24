@@ -1853,9 +1853,13 @@ public partial class GameHost
 		HideCoordinateSelectionOutline();
 		MapEditorHUD.Instance?.RefreshCoordinateListExternal();
 
+		MapEditorHUD.ResetFolderLocations();
 		MapEditorHUD.Instance?.ClearTempWorkspaceExternal();
 		MapEditorHUD.Instance?.GenerateVSCodeFilesExternal();
 		MapEditorHUD.Instance?.ReadMetadataAndRefreshTextures();
+		MapEditorHUD.Instance?.LoadMapProperties();
+		MapEditorHUD.Instance?.UpdateMapNameHeader();
+		MapEditorHUD.Instance?.SaveCurrentDirectoryBlake3();
 		MapEditorHUD.Instance?.ShowFeedbackExternal("Map reset: cleared all entities & terrain");
 		MapEditorHUD.Instance?.RegenerateMinimap();
 	}

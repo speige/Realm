@@ -47,13 +47,13 @@ public partial class MapEditorHUD : Control
 	public static float SavedBrushStrength = 0.5f;
 	public static float SavedTextureIntensity = 10f;
 
-	private static string _lastUsedFolder = "";
-	private static string _currentSourceFolder = "";
+	private static string? _lastUsedFolder = null;
+	private static string? _currentSourceFolder = null;
 
-	private static string _pendingCasSourceDirectory = "";
-	private static string _pendingDefaultSaveFolder = "";
+	private static string? _pendingCasSourceDirectory = null;
+	private static string? _pendingDefaultSaveFolder = null;
 
-	public static void RequestOpenFromCas(string casSourceDirectory, string defaultSaveFolder)
+	public static void RequestOpenFromCas(string casSourceDirectory, string? defaultSaveFolder)
 	{
 		_pendingCasSourceDirectory = casSourceDirectory;
 		_pendingDefaultSaveFolder = defaultSaveFolder;
@@ -689,7 +689,7 @@ public partial class MapEditorHUD : Control
 		{
 			ShowConfirmationDialog(
 				"Are you sure you want to clear the entire map? This will delete all placed entities and reset terrain heights.",
-				() => GameHost.Instance?.ClearMapEntirely()
+				() => ResetToBlankMap()
 			);
 		}, 13, "Clear all terrain heights, colors, and placed entities");
 
@@ -2822,16 +2822,16 @@ public partial class MapEditorHUD : Control
 		if (!string.IsNullOrEmpty(_pendingCasSourceDirectory) && System.IO.Directory.Exists(_pendingCasSourceDirectory))
 		{
 			string casDir = _pendingCasSourceDirectory;
-			string defaultSave = _pendingDefaultSaveFolder;
-			_pendingCasSourceDirectory = "";
-			_pendingDefaultSaveFolder = "";
+			string? defaultSave = _pendingDefaultSaveFolder;
+			_pendingCasSourceDirectory = null;
+			_pendingDefaultSaveFolder = null;
 
 			_ = OpenFromCasAsync(casDir, defaultSave);
 		}
 
 	}
 
-	private async System.Threading.Tasks.Task OpenFromCasAsync(string casSourceDirectory, string defaultSaveFolder)
+	private async System.Threading.Tasks.Task OpenFromCasAsync(string casSourceDirectory, string? defaultSaveFolder)
 	{
 		bool loaded = await LoadMapFolderAsync(casSourceDirectory);
 		if (loaded && !string.IsNullOrEmpty(defaultSaveFolder))
@@ -2978,6 +2978,7 @@ public partial class MapEditorHUD : Control
 				_isSyncing = true;
 				try
 				{
+					ResetFolderLocations();
 					ClearTempWorkspaceExternal();
 					MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, "MapScript");
 					GameHost.Instance?.ClearMapEntirely();
@@ -2987,6 +2988,8 @@ public partial class MapEditorHUD : Control
 					_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 					SaveCurrentDirectoryBlake3();
 					ReadMetadataAndRefreshTextures();
+					LoadMapProperties();
+					UpdateMapNameHeader();
 				}
 				catch (Exception ex)
 				{
@@ -3644,6 +3647,42 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	public static void ResetFolderLocations()
+	{
+		_lastUsedFolder = null;
+		_currentSourceFolder = null;
+		_pendingCasSourceDirectory = null;
+		_pendingDefaultSaveFolder = null;
+	}
+
+	public void ResetToBlankMap()
+	{
+		ResetFolderLocations();
+		GameHost.Instance?.ClearMapEntirely();
+		LoadMapProperties();
+		UpdateMapNameHeader();
+		SaveCurrentDirectoryBlake3();
+	}
+
+	public static string GetDocumentsDirectory()
+	{
+		string docs = System.Environment.GetFolderPath(System.Environment.SpecialFolder.MyDocuments);
+		if (string.IsNullOrEmpty(docs))
+		{
+			string userProfile = System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile);
+			docs = !string.IsNullOrEmpty(userProfile) ? System.IO.Path.Combine(userProfile, "Documents") : ProjectSettings.GlobalizePath("user://");
+		}
+		try
+		{
+			if (!System.IO.Directory.Exists(docs))
+			{
+				System.IO.Directory.CreateDirectory(docs);
+			}
+		}
+		catch { }
+		return docs;
+	}
+
 	private string GetInitialDirectory()
 	{
 		if (!string.IsNullOrEmpty(_lastUsedFolder) && !IsRestrictedSaveDirectory(_lastUsedFolder) && System.IO.Directory.Exists(_lastUsedFolder))
@@ -3654,7 +3693,7 @@ public partial class MapEditorHUD : Control
 		{
 			return _currentSourceFolder;
 		}
-		return GetDefaultDevelopmentMapDirectory();
+		return GetDocumentsDirectory();
 	}
 
 	public string GetDefaultDevelopmentMapDirectory(string? mapName = null)
@@ -3663,11 +3702,7 @@ public partial class MapEditorHUD : Control
 		string cleanName = string.Join("_", name.Split(System.IO.Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries)).Trim();
 		if (string.IsNullOrEmpty(cleanName) || cleanName.Equals("Untitled Map", StringComparison.OrdinalIgnoreCase)) cleanName = "new_map";
 
-		string docs = System.Environment.GetFolderPath(System.Environment.SpecialFolder.MyDocuments);
-		if (string.IsNullOrEmpty(docs))
-		{
-			docs = System.IO.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile), "Documents");
-		}
+		string docs = GetDocumentsDirectory();
 		return System.IO.Path.Combine(docs, cleanName);
 	}
 
@@ -4594,7 +4629,7 @@ public partial class MapEditorHUD : Control
 		_mapSettingsDialog?.SaveMapProperties();
 	}
 
-	private void LoadMapProperties()
+	public void LoadMapProperties()
 	{
 		_mapSettingsDialog?.LoadMapProperties();
 	}
@@ -5183,6 +5218,7 @@ public partial class MapEditorHUD : Control
 	{
 		if (GameHost.Instance == null || GameHost.Instance.GroundTerrain == null) return;
 
+		ResetFolderLocations();
 		GameHost.Instance.ClearMapEntirely();
 		bool success = GameHost.Instance.ImportTerrainFromMinimap(selectedPath, out var smoothedHeights, out var splatMap, out var treePositions);
 		if (!success) return;
