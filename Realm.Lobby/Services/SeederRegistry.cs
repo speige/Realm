@@ -60,8 +60,27 @@ public class SeederRegistry
             return new List<SeederInfo>();
         }
 
+        string rawQuery = mapIdOrManifestHash.Trim();
+        string normalizedQuery = rawQuery.Replace('_', ' ');
+
         return _seeders.Values
-            .Where(s => s.MapIds.Any(m => m.Equals(mapIdOrManifestHash, StringComparison.OrdinalIgnoreCase)))
+            .Where(s => s.MapIds != null && s.MapIds.Any(m =>
+            {
+                if (string.IsNullOrWhiteSpace(m)) return false;
+                string rawM = m.Trim();
+                string normM = rawM.Replace('_', ' ');
+
+                if (string.Equals(rawM, rawQuery, StringComparison.OrdinalIgnoreCase)) return true;
+                if (string.Equals(normM, normalizedQuery, StringComparison.OrdinalIgnoreCase)) return true;
+
+                if (rawM.StartsWith(rawQuery + "_", StringComparison.OrdinalIgnoreCase) ||
+                    normM.StartsWith(normalizedQuery + " ", StringComparison.OrdinalIgnoreCase)) return true;
+
+                if (rawQuery.StartsWith(rawM + "_", StringComparison.OrdinalIgnoreCase) ||
+                    normalizedQuery.StartsWith(normM + " ", StringComparison.OrdinalIgnoreCase)) return true;
+
+                return false;
+            }))
             .OrderByDescending(s => s.LastSeen)
             .ToList();
     }

@@ -16,15 +16,14 @@ public partial class PeerSeederManager : Node
     private static PeerSeederManager? _instance;
     public static PeerSeederManager Instance => _instance ??= new PeerSeederManager();
 
-    private SceneMultiplayer _multiplayer = new();
     private ENetMultiplayerPeer? _enetPeer;
-    private EnetMapTransferService? _transferService;
     private CancellationTokenSource? _cts;
     private bool _isSeeding;
     private string _seederId = "";
 
     public int CapacityPercentage { get; set; } = 100;
     public bool AcceptingUploads { get; set; } = true;
+    public bool IsSeeding => _isSeeding;
 
     private PeerSeederManager()
     {
@@ -62,16 +61,10 @@ public partial class PeerSeederManager : Node
                 return;
             }
 
-            _multiplayer.ServerRelay = false;
-            _multiplayer.MultiplayerPeer = _enetPeer;
+            LobbyManager.Instance.Multiplayer.MultiplayerPeer = _enetPeer;
+            LobbyManager.Instance.IsHost = true;
 
-            _transferService = new EnetMapTransferService();
-            _transferService.Name = "SeederTransferService";
-            AddChild(_transferService);
-
-            GetTree().SetMultiplayer(_multiplayer, _transferService.GetPath());
-
-            GD.Print($"[PeerSeeder] Bound ENet listener on port {localPort}");
+            GD.Print($"[PeerSeeder] Bound ENet seeder listener on port {localPort}");
         }
         catch (Exception ex)
         {
@@ -89,16 +82,18 @@ public partial class PeerSeederManager : Node
         _isSeeding = false;
         _cts?.Cancel();
 
-        if (_transferService != null && IsInstanceValid(_transferService) && GetTree() != null)
-        {
-            try { GetTree().SetMultiplayer(null, _transferService.GetPath()); } catch { }
-            try { _transferService.QueueFree(); } catch { }
-            _transferService = null;
-        }
-
         try
         {
-            _enetPeer?.Close();
+            if (LobbyManager.Instance != null && LobbyManager.Instance.Multiplayer.MultiplayerPeer == _enetPeer)
+            {
+                _enetPeer?.Close();
+                LobbyManager.Instance.Multiplayer.MultiplayerPeer = null;
+                LobbyManager.Instance.IsHost = false;
+            }
+            else
+            {
+                _enetPeer?.Close();
+            }
             _enetPeer = null;
         }
         catch { }

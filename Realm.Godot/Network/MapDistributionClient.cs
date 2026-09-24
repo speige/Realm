@@ -9,102 +9,60 @@ using System.Threading;
 using System.Threading.Tasks;
 using Realm.Shared.Distribution;
 
-public partial class EnetEphemeralLobbyClientNode : Node
-{
-    private SceneMultiplayer _multiplayer = new();
-    private ENetMultiplayerPeer _peer = new();
-    private bool _connected;
-    private EnetMapTransferService? _transferService;
-
-    public async Task<bool> DownloadFromTargetAsync(string targetIp, int targetPort, string mapIdOrHash, Action<float>? progressCallback, CancellationToken token)
-    {
-        if (LobbyManager.Instance == null) return false;
-
-        bool isLocal = targetIp == "127.0.0.1" || targetIp == "localhost" || targetIp == LobbyManager.Instance.PublicIP;
-        if (!isLocal)
-        {
-            int clientLocalPort = LobbyManager.Instance.ENetPort + 16;
-            await UdpHolePuncher.PunchHoleAsync(targetIp, targetPort, clientLocalPort);
-        }
-
-        if (GetParent() == null)
-        {
-            LobbyManager.Instance.AddChild(this);
-        }
-
-        _transferService = new EnetMapTransferService();
-        _transferService.Name = $"ClientTransfer_{Guid.NewGuid():N}";
-        AddChild(_transferService);
-
-        GetTree().SetMultiplayer(_multiplayer, _transferService.GetPath());
-
-        await Task.Delay(50, token);
-
-        int clientPort = LobbyManager.Instance.ENetPort + 16;
-        var err = _peer.CreateClient(targetIp, targetPort, localPort: isLocal ? 0 : clientPort);
-        if (err != Error.Ok)
-        {
-            Cleanup();
-            return false;
-        }
-
-        _multiplayer.ServerRelay = false;
-        _multiplayer.MultiplayerPeer = _peer;
-
-        _connected = false;
-        _multiplayer.ConnectedToServer += () => _connected = true;
-
-        int waitMs = 0;
-        while (!_connected && waitMs < 8000 && !token.IsCancellationRequested)
-        {
-            await Task.Delay(100, token);
-            waitMs += 100;
-        }
-
-        if (!_connected || token.IsCancellationRequested)
-        {
-            Cleanup();
-            return false;
-        }
-
-        bool success = await _transferService.RequestAndDownloadMapAsync(_multiplayer, 1, mapIdOrHash, progressCallback, token);
-
-        Cleanup();
-        return success;
-    }
-
-    private void Cleanup()
-    {
-        try
-        {
-            if (_transferService != null && IsInstanceValid(_transferService) && GetTree() != null)
-            {
-                GetTree().SetMultiplayer(null, _transferService.GetPath());
-                _transferService.QueueFree();
-                _transferService = null;
-            }
-        }
-        catch { }
-
-        try { _peer?.Close(); } catch { }
-        Callable.From(() => { try { QueueFree(); } catch { } }).CallDeferred();
-    }
-}
-
 public class MapDistributionClient
 {
     private readonly System.Net.Http.HttpClient _httpClient = new System.Net.Http.HttpClient();
 
     public event Action<float>? DownloadProgressChanged;
 
+    private static LobbyManager? GetLobbyManager()
+    {
+        if (LobbyManager.Instance != null && GodotObject.IsInstanceValid(LobbyManager.Instance))
+        {
+            return LobbyManager.Instance;
+        }
+
+        var tree = Engine.GetMainLoop() as SceneTree;
+        if (tree?.Root != null)
+        {
+            var existing = tree.Root.GetNodeOrNull<LobbyManager>("LobbyManager");
+            if (existing != null && GodotObject.IsInstanceValid(existing))
+            {
+                return existing;
+            }
+
+            var lm = new LobbyManager();
+            lm.Name = "LobbyManager";
+            tree.Root.AddChild(lm);
+            return lm;
+        }
+
+        return null;
+    }
+
     public async Task<bool> DownloadMapAsync(string hostIp, int port, string mapName, Action<float>? progressCallback = null)
     {
-        var node = new EnetEphemeralLobbyClientNode();
-        return await node.DownloadFromTargetAsync(hostIp, port, mapName, p =>
+        if (port == 80 || port == 5000 || port == 443)
         {
-            progressCallback?.Invoke(p);
-            DownloadProgressChanged?.Invoke(p);
-        }, CancellationToken.None);
+            string hostBaseUrl = $"http://{hostIp}:{port}";
+            bool httpSuccess = await DownloadMapPackageFromRegistryAsync(mapName, hostBaseUrl, progressCallback, CancellationToken.None);
+            if (httpSuccess)
+            {
+                return true;
+            }
+        }
+
+        var lm = GetLobbyManager();
+        if (lm != null)
+        {
+            return await lm.DownloadMapEphemerallyAsync(hostIp, port, mapName, p =>
+            {
+                progressCallback?.Invoke(p);
+                DownloadProgressChanged?.Invoke(p);
+            }, CancellationToken.None);
+        }
+
+        return false;
     }
 
     public async Task<bool> DownloadMapPackageFromRegistryAsync(
@@ -113,6 +71,74 @@ public class MapDistributionClient
         Action<float>? progressCallback = null,
         CancellationToken cancellationToken = default)
     {
+        var lm = GetLobbyManager();
+        List<string> serverUrls = lm != null && lm.OfficialServers.Count > 0
+            ? lm.OfficialServers
+            : new List<string> { registryServerUrl };
+
+        if (!serverUrls.Contains(registryServerUrl, StringComparer.OrdinalIgnoreCase))
+        {
+            serverUrls.Add(registryServerUrl);
+        }
+
+        foreach (var serverUrl in serverUrls)
+        {
+            if (cancellationToken.IsCancellationRequested) break;
+
+            try
+            {
+                string baseUrl = serverUrl.TrimEnd('/');
+                var distClient = new Realm.Shared.Distribution.DistributionClient(baseUrl, _httpClient);
+                var manifest = await distClient.GetManifestAsync(mapId, cancellationToken);
+                if (manifest != null && manifest.Files != null && manifest.Files.Count > 0)
+                {
+                    string version = !string.IsNullOrWhiteSpace(manifest.Version) ? manifest.Version.Trim() : "1.0.0";
+                    string manifestMapName = !string.IsNullOrWhiteSpace(manifest.MapName) ? manifest.MapName.Trim() : mapId;
+                    string manifestBlake3 = MapAssetManager.ComputeManifestBlake3(manifest);
+                    string localMapDir = MapAssetManager.GetMapDirectory(manifestMapName, version, manifestBlake3, false);
+                    if (!Directory.Exists(localMapDir))
+                    {
+                        Directory.CreateDirectory(localMapDir);
+                    }
+
+                    string localManifestPath = Path.Combine(localMapDir, "manifest.json");
+                    await File.WriteAllTextAsync(localManifestPath, manifest.ToJson(), cancellationToken);
+
+                    var seeders = await distClient.GetActiveSeedersAsync(cancellationToken);
+                    bool httpSuccess = await distClient.DownloadMissingAssetsMultiThreadedAsync(
+                        manifest,
+                        MapAssetManager.Storage,
+                        seeders,
+                        fallbackHostUrl: baseUrl,
+                        progressCallback: p =>
+                        {
+                            progressCallback?.Invoke(p);
+                            DownloadProgressChanged?.Invoke(p);
+                        },
+                        maximumConcurrency: 6,
+                        cancellationToken: cancellationToken);
+
+                    if (httpSuccess)
+                    {
+                        MapAssetManager.ExtractManifestFiles(manifest, localMapDir, isP2P: false);
+                        AssetIndexService.Instance.RegisterManifest(manifest, localManifestPath, isP2P: false);
+                        progressCallback?.Invoke(1.0f);
+                        DownloadProgressChanged?.Invoke(1.0f);
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                GD.PrintErr($"[MapDistributionClient] HTTP server download error from {serverUrl}: {ex.Message}");
+            }
+        }
+
+        if (lm == null)
+        {
+            return false;
+        }
+
         var candidateSeeders = new List<(string IP, int Port)>();
         try
         {
@@ -152,41 +178,13 @@ public class MapDistributionClient
         {
             if (cancellationToken.IsCancellationRequested) break;
 
-            var node = new EnetEphemeralLobbyClientNode();
-            bool ok = await node.DownloadFromTargetAsync(seederIp, seederPort, mapId, p =>
+            bool ok = await lm.DownloadMapEphemerallyAsync(seederIp, seederPort, mapId, p =>
             {
                 progressCallback?.Invoke(p);
                 DownloadProgressChanged?.Invoke(p);
             }, cancellationToken);
 
             if (ok) return true;
-        }
-
-        List<string> officialServers = LobbyManager.Instance != null && LobbyManager.Instance.OfficialServers.Count > 0
-            ? LobbyManager.Instance.OfficialServers
-            : new List<string> { registryServerUrl };
-
-        var randomizedOfficial = officialServers.OrderBy(_ => rng.Next()).ToList();
-        foreach (var serverUrl in randomizedOfficial)
-        {
-            if (cancellationToken.IsCancellationRequested) break;
-
-            try
-            {
-                Uri uri = new Uri(serverUrl);
-                string host = uri.Host;
-                int officialPort = LobbyManager.Instance != null ? LobbyManager.Instance.ENetPort : 8999;
-
-                var fallbackNode = new EnetEphemeralLobbyClientNode();
-                bool ok = await fallbackNode.DownloadFromTargetAsync(host, officialPort, mapId, p =>
-                {
-                    progressCallback?.Invoke(p);
-                    DownloadProgressChanged?.Invoke(p);
-                }, cancellationToken);
-
-                if (ok) return true;
-            }
-            catch { }
         }
 
         return false;

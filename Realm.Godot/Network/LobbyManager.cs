@@ -86,7 +86,7 @@ public partial class LobbyManager : Node
 
 
     public NatType LocalNatType { get; private set; } = NatType.Open;
-    public bool IsHost { get; private set; }
+    public bool IsHost { get; set; }
     public string? ActiveLobbyId { get; private set; }
     public bool IsGameStarted { get; set; }
     public DateTime? GameSessionStartTime { get; private set; }
@@ -940,6 +940,10 @@ public partial class LobbyManager : Node
 
         if (IsHost)
         {
+            if (string.IsNullOrEmpty(ActiveLobbyId))
+            {
+                return;
+            }
 
             if (PlayerList.Count >= MaxPlayers)
             {
@@ -1006,6 +1010,11 @@ public partial class LobbyManager : Node
                         catch { }
                     }
                 }
+            }
+
+            if (string.IsNullOrEmpty(ActiveLobbyId))
+            {
+                return;
             }
 
             int removedIdx = PlayerList.FindIndex(p => p.PeerId == id);
@@ -1222,10 +1231,130 @@ public partial class LobbyManager : Node
         }
     }
 
+    public async Task<bool> DownloadMapEphemerallyAsync(
+        string targetIp,
+        int targetPort,
+        string mapName,
+        Action<float>? progressCallback = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(mapName) || string.IsNullOrWhiteSpace(targetIp) || targetPort <= 0)
+        {
+            return false;
+        }
+
+        if (MapAssetManager.IsMapDownloaded(mapName))
+        {
+            progressCallback?.Invoke(1.0f);
+            MapDownloadProgressChanged?.Invoke(1.0f);
+            MapDownloadCompleted?.Invoke();
+            return true;
+        }
+
+        bool wasSeeding = PeerSeederManager.Instance != null && PeerSeederManager.Instance.IsSeeding;
+        if (wasSeeding)
+        {
+            PeerSeederManager.Instance.Stop();
+        }
+
+        Action<float>? progressHandler = null;
+        if (progressCallback != null)
+        {
+            progressHandler = p => progressCallback.Invoke(p);
+            MapDownloadProgressChanged += progressHandler;
+        }
+
+        try
+        {
+            bool isLocal = targetIp == "127.0.0.1" || targetIp == "localhost" || targetIp == PublicIP;
+            int clientPort = ENetPort + 16;
+            if (!isLocal)
+            {
+                await UdpHolePuncher.PunchHoleAsync(targetIp, targetPort, clientPort);
+            }
+
+            var peer = new ENetMultiplayerPeer();
+            int localPortToUse = isLocal ? 0 : clientPort;
+            var err = peer.CreateClient(targetIp, targetPort, localPort: localPortToUse);
+            if (err != Error.Ok && localPortToUse != 0)
+            {
+                err = peer.CreateClient(targetIp, targetPort, localPort: 0);
+            }
+
+            if (err != Error.Ok)
+            {
+                GD.PrintErr($"[LobbyManager] Failed to create ephemeral ENet client: {err}");
+                return false;
+            }
+
+            var packetPeer = peer.GetPeer(1);
+            if (packetPeer != null)
+            {
+                packetPeer.SetTimeout(32, 5000, 15000);
+            }
+
+            _isConnectedToHost = false;
+            Multiplayer.MultiplayerPeer = peer;
+
+            var connectedTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            void OnConnected() => connectedTcs.TrySetResult(true);
+            void OnFailed() => connectedTcs.TrySetResult(false);
+
+            Multiplayer.ConnectedToServer += OnConnected;
+            Multiplayer.ConnectionFailed += OnFailed;
+
+            var connectTask = await Task.WhenAny(connectedTcs.Task, Task.Delay(8000, cancellationToken));
+            Multiplayer.ConnectedToServer -= OnConnected;
+            Multiplayer.ConnectionFailed -= OnFailed;
+
+            if (connectTask != connectedTcs.Task || !connectedTcs.Task.Result)
+            {
+                GD.PrintErr($"[LobbyManager] Ephemeral connection to {targetIp}:{targetPort} timed out or failed.");
+                try { peer.Close(); } catch { }
+                Multiplayer.MultiplayerPeer = null;
+                _isConnectedToHost = false;
+                return false;
+            }
+
+            _isConnectedToHost = true;
+            bool downloadResult = await EnsureMapDownloadedAsync(mapName);
+
+            try { peer.Close(); } catch { }
+            Multiplayer.MultiplayerPeer = null;
+            _isConnectedToHost = false;
+
+            return downloadResult;
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[LobbyManager] Ephemeral map download error: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            if (progressHandler != null)
+            {
+                MapDownloadProgressChanged -= progressHandler;
+            }
+
+            if (Multiplayer.MultiplayerPeer != null)
+            {
+                try { Multiplayer.MultiplayerPeer.Close(); } catch { }
+                Multiplayer.MultiplayerPeer = null;
+            }
+            _isConnectedToHost = false;
+
+            if (wasSeeding)
+            {
+                PeerSeederManager.Instance?.CheckIdleAndSeedStatus();
+            }
+        }
+    }
+
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
     private void RequestMapManifestRpc(string targetMap)
     {
-        if (!IsHost) return;
+        if (!IsHost && (PeerSeederManager.Instance == null || !PeerSeederManager.Instance.IsSeeding)) return;
         int senderId = Multiplayer.GetRemoteSenderId();
         var manifest = MapAssetManager.FindHostManifest(targetMap);
         if (manifest != null)
@@ -1248,7 +1377,7 @@ public partial class LobbyManager : Node
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable)]
     private void RequestMapAssetTransferRpc(string transferId, string mapName, string mapVersion, string[] missingHashes)
     {
-        if (!IsHost) return;
+        if (!IsHost && (PeerSeederManager.Instance == null || !PeerSeederManager.Instance.IsSeeding)) return;
         int senderId = Multiplayer.GetRemoteSenderId();
         _ = HandleHostAssetTransferAsync(senderId, transferId, mapName, mapVersion, missingHashes);
     }
@@ -1429,7 +1558,7 @@ public partial class LobbyManager : Node
 
     private void EmitDownloadProgress(float progress)
     {
-        if (progress == 0.0f)
+        if (progress == 0.0f && !string.IsNullOrEmpty(ActiveLobbyId))
         {
             ReportLocalMapReadyState(false);
         }
@@ -1438,7 +1567,10 @@ public partial class LobbyManager : Node
 
     private void EmitDownloadCompleted()
     {
-        ReportLocalMapReadyState(true);
+        if (!string.IsNullOrEmpty(ActiveLobbyId))
+        {
+            ReportLocalMapReadyState(true);
+        }
         MapDownloadCompleted?.Invoke();
     }
 

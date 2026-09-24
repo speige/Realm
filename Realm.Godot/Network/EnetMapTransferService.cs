@@ -38,6 +38,7 @@ public partial class EnetMapTransferService : Node
         public int ExpectedTotalChunks { get; set; }
         public int ReceivedChunks { get; set; }
         public long ReceivedBytes { get; set; }
+        public Action<float>? ProgressCallback { get; set; }
     }
 
     private readonly ConcurrentDictionary<string, HostTransferSession> _hostTransfers = new();
@@ -133,7 +134,8 @@ public partial class EnetMapTransferService : Node
             MapVersion = version,
             Manifest = manifest,
             TempFilePath = tempFilePath,
-            TempFileStream = new FileStream(tempFilePath, FileMode.Create, System.IO.FileAccess.Write, FileShare.None, ZstdAssetBundleHelper.ChunkSize, useAsync: true)
+            TempFileStream = new FileStream(tempFilePath, FileMode.Create, System.IO.FileAccess.Write, FileShare.None, ZstdAssetBundleHelper.ChunkSize, useAsync: true),
+            ProgressCallback = progressCallback
         };
 
         _currentClientTransfer = transferSession;
@@ -327,6 +329,7 @@ public partial class EnetMapTransferService : Node
             _currentClientTransfer.ExpectedTotalChunks = totalChunks;
             _currentClientTransfer.ReceivedChunks = 0;
             _currentClientTransfer.ReceivedBytes = 0;
+            _currentClientTransfer.ProgressCallback?.Invoke(0.0f);
             DownloadProgressChanged?.Invoke(0.0f);
         }
     }
@@ -345,6 +348,7 @@ public partial class EnetMapTransferService : Node
                 _currentClientTransfer.ReceivedBytes += chunkData.Length;
 
                 float progress = totalChunks > 0 ? Math.Clamp((float)_currentClientTransfer.ReceivedChunks / totalChunks, 0.0f, 1.0f) : 1.0f;
+                _currentClientTransfer.ProgressCallback?.Invoke(progress);
                 DownloadProgressChanged?.Invoke(progress);
 
                 if (_currentClientTransfer.ReceivedChunks >= totalChunks)
