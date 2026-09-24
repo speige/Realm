@@ -504,6 +504,143 @@ public class DistributionClient
         }
     }
 
+    public async Task<(bool Success, string? FailedAsset, string? ErrorMessage)> UploadMissingAssetsMultiThreadedAsync(
+        string workspace,
+        IReadOnlyList<string> missingHashes,
+        IReadOnlyDictionary<string, string> hashToRelativePath,
+        string currentUsername,
+        string authorPublicKey,
+        NSec.Cryptography.Key authorshipKey,
+        string mapTitle,
+        string mapVersion,
+        string? sessionId = null,
+        Action<int, int, string>? progressCallback = null,
+        int maximumConcurrency = 8,
+        CancellationToken cancellationToken = default)
+    {
+        int totalMissing = missingHashes.Count;
+        int completedCount = 0;
+        string? firstErrorAsset = null;
+        string? firstErrorMessage = null;
+        var errorLock = new object();
+
+        using var semaphore = new SemaphoreSlim(Math.Max(1, maximumConcurrency));
+
+        var tasks = missingHashes.Select(async missingHash =>
+        {
+            if (firstErrorAsset != null || cancellationToken.IsCancellationRequested) return;
+
+            if (!hashToRelativePath.TryGetValue(missingHash, out var relPath))
+            {
+                lock (errorLock)
+                {
+                    firstErrorAsset ??= missingHash;
+                    firstErrorMessage ??= $"Missing hash '{missingHash}' is not present in manifest file mapping.";
+                }
+                return;
+            }
+
+            string fullFilePath = Path.Combine(workspace, relPath);
+            if (!File.Exists(fullFilePath))
+            {
+                lock (errorLock)
+                {
+                    firstErrorAsset ??= relPath;
+                    firstErrorMessage ??= $"File '{relPath}' was not found on disk at '{fullFilePath}'.";
+                }
+                return;
+            }
+
+            await semaphore.WaitAsync(cancellationToken);
+            try
+            {
+                if (firstErrorAsset != null || cancellationToken.IsCancellationRequested) return;
+
+                byte[] fileBytes = await File.ReadAllBytesAsync(fullFilePath, cancellationToken);
+                byte[] hashBytes = Encoding.UTF8.GetBytes(missingHash);
+                byte[] signatureBytes = NSec.Cryptography.SignatureAlgorithm.Ed25519.Sign(authorshipKey, hashBytes);
+                string signatureStr = Convert.ToBase64String(signatureBytes);
+
+                bool success = false;
+                string? lastError = null;
+
+                for (int attempt = 0; attempt < 3 && !success && !cancellationToken.IsCancellationRequested; attempt++)
+                {
+                    if (attempt > 0)
+                    {
+                        await Task.Delay(200 * attempt, cancellationToken);
+                    }
+
+                    string url = $"{_registryServerUrl}/api/publish_map/upload_asset";
+                    using var form = new MultipartFormDataContent();
+                    form.Add(new StringContent(missingHash), "Hash");
+                    form.Add(new StringContent(signatureStr), "Signature");
+                    form.Add(new StringContent(currentUsername), "AuthorUsername");
+                    form.Add(new StringContent(authorPublicKey), "PublicKey");
+                    form.Add(new StringContent(mapTitle), "MapTitle");
+                    form.Add(new StringContent(mapVersion), "MapVersion");
+                    if (!string.IsNullOrEmpty(sessionId))
+                    {
+                        form.Add(new StringContent(sessionId), "SessionId");
+                    }
+
+                    var fileContent = new ByteArrayContent(fileBytes);
+                    form.Add(fileContent, "File", Path.GetFileName(fullFilePath));
+
+                    if (_throttle != null)
+                    {
+                        await _throttle.ConsumeAsync(fileBytes.Length, cancellationToken);
+                    }
+
+                    try
+                    {
+                        var response = await _httpClient.PostAsync(url, form, cancellationToken);
+                        if (response.IsSuccessStatusCode)
+                        {
+                            success = true;
+                        }
+                        else
+                        {
+                            string err = await response.Content.ReadAsStringAsync(cancellationToken);
+                            lastError = $"HTTP {(int)response.StatusCode}: {err}";
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        lastError = ex.Message;
+                    }
+                }
+
+                if (!success)
+                {
+                    lock (errorLock)
+                    {
+                        firstErrorAsset ??= relPath;
+                        firstErrorMessage ??= lastError ?? "Upload failed after retries.";
+                    }
+                }
+                else
+                {
+                    int done = Interlocked.Increment(ref completedCount);
+                    progressCallback?.Invoke(done, totalMissing, Path.GetFileName(fullFilePath));
+                }
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+
+        await Task.WhenAll(tasks);
+
+        if (firstErrorAsset != null)
+        {
+            return (false, firstErrorAsset, firstErrorMessage);
+        }
+
+        return (true, null, null);
+    }
+
     public async Task<List<ClusterEventDto>> GetClusterEventsAsync(DateTime? sinceUtc = null, int limit = 100, CancellationToken cancellationToken = default)
     {
         string url = $"{_registryServerUrl}/api/cluster/events?limit={limit}";
