@@ -193,8 +193,8 @@ public class MeshPlayerColorCliOptions
 	[Option("chroma_key", Required = false, Default = "#FF00FF", HelpText = "Chroma key color in hex (e.g. #FF00FF) or 'auto' to automatically detect the dominant vibrant chroma key.")]
 	public string ChromaKey { get; set; } = "#FF00FF";
 
-	[Option("auto_correct_chroma_key", Required = false, Default = "true", HelpText = "Auto-correct input chroma key to the closest matching color in the texture (true/false).")]
-	public string? AutoCorrectChromaKey { get; set; } = "true";
+	[Option("auto_correct_chroma_key", Required = false, Default = true, HelpText = "Auto-correct input chroma key to the closest matching color in the texture (true/false).")]
+	public bool AutoCorrectChromaKey { get; set; } = true;
 
 	[Option("core-threshold", Required = false, Default = 0.88f, HelpText = "Chromaticity dot-product threshold for high-confidence core texels (default: 0.88).")]
 	public float CoreThreshold { get; set; } = 0.88f;
@@ -263,56 +263,35 @@ public static class Program
 {
 	public static int Main(string[] args)
 	{
-		var processedArgs = new List<string>(args.Length);
-		for (int i = 0; i < args.Length; i++)
+		var unhandledArgs = new List<string>(args.Length);
+		for (int index = 0; index < args.Length; index++)
 		{
-			string arg = args[i];
-			if (string.Equals(arg, "--eula-accept", StringComparison.OrdinalIgnoreCase))
+			string argument = args[index];
+			if (string.Equals(argument, "--eula-accept", StringComparison.OrdinalIgnoreCase))
 			{
 				_assetAgreementAccepted = true;
 				continue;
 			}
 
-			if (string.Equals(arg, "--no-auto-correct-chroma-key", StringComparison.OrdinalIgnoreCase) ||
-			    string.Equals(arg, "--no-auto_correct_chroma_key", StringComparison.OrdinalIgnoreCase))
-			{
-				processedArgs.Add("--auto_correct_chroma_key");
-				processedArgs.Add("false");
-				continue;
-			}
-
-			if (arg.StartsWith("--auto-correct-chroma-key=", StringComparison.OrdinalIgnoreCase) ||
-			    arg.StartsWith("--auto_correct_chroma_key=", StringComparison.OrdinalIgnoreCase))
-			{
-				int eqIdx = arg.IndexOf('=');
-				string val = arg[(eqIdx + 1)..];
-				processedArgs.Add("--auto_correct_chroma_key");
-				processedArgs.Add(val);
-				continue;
-			}
-
-			if (string.Equals(arg, "--auto-correct-chroma-key", StringComparison.OrdinalIgnoreCase) ||
-			    string.Equals(arg, "--auto_correct_chroma_key", StringComparison.OrdinalIgnoreCase))
-			{
-				if (i + 1 < args.Length && !args[i + 1].StartsWith('-'))
-				{
-					processedArgs.Add("--auto_correct_chroma_key");
-					processedArgs.Add(args[i + 1]);
-					i++;
-				}
-				else
-				{
-					processedArgs.Add("--auto_correct_chroma_key");
-					processedArgs.Add("true");
-				}
-				continue;
-			}
-
-			processedArgs.Add(arg);
+			unhandledArgs.Add(argument);
 		}
-		args = processedArgs.ToArray();
 
-		return Parser.Default.ParseArguments<MeshConvertOptions, TextureConvertOptions, AudioConvertOptions, FbxToRanimOptions, RanimRenderOptions, MetadataOptions, Blake3Options, MeshPlayerColorCliOptions, RigHumanoidOptions, KeygenOptions>(args)
+		string[] originalArgs = unhandledArgs.ToArray();
+		string[] sanitizedArgs = CommandLineArgsHelper.SanitizeArgs(
+			originalArgs,
+			typeof(MeshConvertOptions),
+			typeof(TextureConvertOptions),
+			typeof(AudioConvertOptions),
+			typeof(FbxToRanimOptions),
+			typeof(RanimRenderOptions),
+			typeof(MetadataOptions),
+			typeof(Blake3Options),
+			typeof(MeshPlayerColorCliOptions),
+			typeof(RigHumanoidOptions),
+			typeof(KeygenOptions));
+
+		return Parser.Default.ParseArguments<MeshConvertOptions, TextureConvertOptions, AudioConvertOptions, FbxToRanimOptions, RanimRenderOptions, MetadataOptions, Blake3Options, MeshPlayerColorCliOptions, RigHumanoidOptions, KeygenOptions>(sanitizedArgs)
+			.WithParsed(options => CommandLineArgsHelper.ApplyBooleanOverrides(options, originalArgs))
 			.MapResult(
 				(MeshConvertOptions options) => ExecuteMeshConvert(options),
 				(TextureConvertOptions options) => ExecuteTextureConvert(options),
@@ -1205,26 +1184,10 @@ public static class Program
 			options.AssetType = canonical;
 		}
 
-		bool autoCorrect = true;
-		if (!string.IsNullOrWhiteSpace(options.AutoCorrectChromaKey))
-		{
-			if (bool.TryParse(options.AutoCorrectChromaKey, out bool parsedBool))
-			{
-				autoCorrect = parsedBool;
-			}
-			else if (string.Equals(options.AutoCorrectChromaKey, "0", StringComparison.OrdinalIgnoreCase) ||
-			         string.Equals(options.AutoCorrectChromaKey, "no", StringComparison.OrdinalIgnoreCase) ||
-			         string.Equals(options.AutoCorrectChromaKey, "off", StringComparison.OrdinalIgnoreCase) ||
-			         string.Equals(options.AutoCorrectChromaKey, "false", StringComparison.OrdinalIgnoreCase))
-			{
-				autoCorrect = false;
-			}
-		}
-
 		var processorOptions = new Realm.Shared.GlbPlayerColorOptions
 		{
 			ChromaKey = options.ChromaKey,
-			AutoCorrectChromaKey = autoCorrect,
+			AutoCorrectChromaKey = options.AutoCorrectChromaKey,
 			CoreThreshold = options.CoreThreshold,
 			FringeThreshold = options.FringeThreshold,
 			MinClusterFaces = options.MinClusterFaces,

@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using CommandLine;
 using NSec.Cryptography;
+using Realm.Shared;
 using Realm.Shared.Distribution;
 using Realm.Shared.Metadata;
 
@@ -134,7 +135,7 @@ public class AdminRemoveManifestOptions
 	public string? Server { get; set; }
 
 	[Option('p', "prune", Required = false, Default = true, HelpText = "Automatically trigger CAS prune after removing the manifest to clear orphaned files.")]
-	public bool Prune { get; set; }
+	public bool Prune { get; set; } = true;
 }
 
 public static class Program
@@ -142,7 +143,22 @@ public static class Program
 	public static int Main(string[] args)
 	{
 		Console.OutputEncoding = Encoding.UTF8;
-		return Parser.Default.ParseArguments<AdminGreenlightOptions, AdminStatusOptions, AdminUnlockNameOptions, AdminInfoOptions, AdminExportEventsOptions, AdminPruneCasOptions, AdminDigestOptions, AdminSnapshotOptions, AdminRestoreSnapshotOptions, AdminRemoveManifestOptions>(args)
+		string[] originalArgs = args;
+		string[] sanitizedArgs = CommandLineArgsHelper.SanitizeArgs(
+			args,
+			typeof(AdminGreenlightOptions),
+			typeof(AdminStatusOptions),
+			typeof(AdminUnlockNameOptions),
+			typeof(AdminInfoOptions),
+			typeof(AdminExportEventsOptions),
+			typeof(AdminPruneCasOptions),
+			typeof(AdminDigestOptions),
+			typeof(AdminSnapshotOptions),
+			typeof(AdminRestoreSnapshotOptions),
+			typeof(AdminRemoveManifestOptions));
+
+		return Parser.Default.ParseArguments<AdminGreenlightOptions, AdminStatusOptions, AdminUnlockNameOptions, AdminInfoOptions, AdminExportEventsOptions, AdminPruneCasOptions, AdminDigestOptions, AdminSnapshotOptions, AdminRestoreSnapshotOptions, AdminRemoveManifestOptions>(sanitizedArgs)
+			.WithParsed(options => CommandLineArgsHelper.ApplyBooleanOverrides(options, originalArgs))
 			.MapResult(
 				(AdminGreenlightOptions options) => ExecuteGreenlight(options),
 				(AdminStatusOptions options) => ExecuteStatus(options),
