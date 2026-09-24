@@ -251,18 +251,16 @@ public partial class GlbThumbnailRenderer : Node
 			Error err;
 			if (request.FilePath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
 			{
-				byte[] rmeshBytes = File.ReadAllBytes(request.FilePath);
 				string? chromaKey = null;
-				byte[] glbBytes;
-				if (Realm.Shared.ModelOptimization.RmeshFile.IsRmeshBytes(rmeshBytes))
+				byte[]? glbBytes = Realm.Shared.ModelOptimization.RmeshFile.GetGlbBytesFromFile(request.FilePath);
+				if (glbBytes != null)
 				{
-					var (meta, glbPayload, _) = Realm.Shared.ModelOptimization.RmeshFile.Parse(rmeshBytes);
+					string? meta = Realm.Shared.ModelOptimization.RmeshFile.ExtractMetadataFromFile(request.FilePath);
 					chromaKey = Realm.Shared.Metadata.RealmMetadataHelper.ExtractChromaKeyFromMetadataJson(meta);
-					glbBytes = glbPayload;
 				}
 				else
 				{
-					glbBytes = rmeshBytes;
+					glbBytes = File.ReadAllBytes(request.FilePath);
 				}
 
 				bool despill = GameHost.Instance != null && GameHost.Instance.GetModelDespillPlayerColor(request.FilePath);

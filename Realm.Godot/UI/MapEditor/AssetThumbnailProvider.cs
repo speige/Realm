@@ -161,15 +161,132 @@ public static class AssetThumbnailProvider
 
 		if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".webp" || ext == ".bmp" || ext == ".tga")
 		{
-			return LoadRasterImageThumbnail(asset.FilePath);
+			return LoadRasterImageThumbnail(asset.FilePath, asset.LastModifiedUtc);
 		}
 
 		if (ext == ".svg")
 		{
-			return LoadSvgThumbnail(asset.FilePath);
+			return LoadSvgThumbnail(asset.FilePath, asset.LastModifiedUtc);
 		}
 
 		return GetPlaceholderTexture(ext.TrimStart('.').ToUpperInvariant());
+	}
+
+	public static bool IsImageExtension(string extension)
+	{
+		if (string.IsNullOrEmpty(extension)) return false;
+		string ext = extension.ToLowerInvariant();
+		if (!ext.StartsWith(".")) ext = "." + ext;
+		return ext is ".rtex" or ".png" or ".jpg" or ".jpeg" or ".webp" or ".bmp" or ".tga" or ".svg";
+	}
+
+	private static string SanitizeFileName(string name)
+	{
+		var invalidChars = Path.GetInvalidFileNameChars();
+		var chars = name.ToCharArray();
+		for (int i = 0; i < chars.Length; i++)
+		{
+			if (Array.IndexOf(invalidChars, chars[i]) >= 0)
+			{
+				chars[i] = '_';
+			}
+		}
+		return new string(chars);
+	}
+
+	public static string GetDiskCachePath(string filePath, DateTime lastModifiedUtc)
+	{
+		string normPath = NormalizePath(filePath);
+		string ext = Path.GetExtension(normPath).ToLowerInvariant();
+		string cacheDir = ext == ".rtex"
+			? ProjectSettings.GlobalizePath("user://rtex_thumb_cache")
+			: ProjectSettings.GlobalizePath("user://image_thumb_cache");
+		string fileName = Path.GetFileNameWithoutExtension(normPath);
+		string pathHash = Math.Abs(normPath.ToLowerInvariant().GetHashCode()).ToString("X8");
+		string cacheKey = $"{SanitizeFileName(fileName)}_{pathHash}_{lastModifiedUtc.Ticks}";
+		return Path.Combine(cacheDir, $"{cacheKey}.png");
+	}
+
+	public static void EnsureDiskImageThumbnail(string filePath, DateTime lastModifiedUtc)
+	{
+		string normPath = NormalizePath(filePath);
+		if (string.IsNullOrEmpty(normPath) || !File.Exists(normPath)) return;
+
+		string ext = Path.GetExtension(normPath).ToLowerInvariant();
+		if (!IsImageExtension(ext)) return;
+
+		string cachedPngPath = GetDiskCachePath(normPath, lastModifiedUtc);
+		if (File.Exists(cachedPngPath))
+		{
+			return;
+		}
+
+		try
+		{
+			Image? img = null;
+
+			if (ext == ".rtex")
+			{
+				byte[]? layer0Bytes = Realm.Shared.Textures.RtexFile.GetLayerFromFile(normPath, 0);
+				if (layer0Bytes == null || layer0Bytes.Length == 0)
+				{
+					byte[] bytes = File.ReadAllBytes(normPath);
+					if (Realm.Shared.Textures.RtexFile.IsRtexBytes(bytes))
+					{
+						layer0Bytes = Realm.Shared.Textures.RtexFile.GetLayer(bytes, 0);
+					}
+					else
+					{
+						layer0Bytes = bytes;
+					}
+				}
+
+				if (layer0Bytes != null && layer0Bytes.Length > 0)
+				{
+					var decodedImg = Image.CreateEmpty(1, 1, false, Image.Format.Rgba8);
+					Error err = decodedImg.LoadWebpFromBuffer(layer0Bytes);
+					if (err != Error.Ok) err = decodedImg.LoadPngFromBuffer(layer0Bytes);
+					if (err != Error.Ok) err = decodedImg.LoadJpgFromBuffer(layer0Bytes);
+					if (err != Error.Ok) err = decodedImg.LoadTgaFromBuffer(layer0Bytes);
+					if (err != Error.Ok) err = decodedImg.LoadBmpFromBuffer(layer0Bytes);
+					if (err == Error.Ok)
+					{
+						img = decodedImg;
+					}
+				}
+			}
+			else if (ext == ".svg")
+			{
+				var svgImg = new Image();
+				if (svgImg.Load(normPath) == Error.Ok)
+				{
+					img = svgImg;
+				}
+			}
+			else
+			{
+				img = Image.LoadFromFile(normPath);
+			}
+
+			if (img != null && !img.IsEmpty())
+			{
+				if (img.GetWidth() > 128 || img.GetHeight() > 128)
+				{
+					img.Resize(128, 128, Image.Interpolation.Bilinear);
+				}
+
+				string? cacheDir = Path.GetDirectoryName(cachedPngPath);
+				if (!string.IsNullOrEmpty(cacheDir) && !Directory.Exists(cacheDir))
+				{
+					Directory.CreateDirectory(cacheDir);
+				}
+				img.SavePng(cachedPngPath);
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[AssetThumbnailProvider] EnsureDiskImageThumbnail error on {normPath}: {ex.Message}");
+		}
 	}
 
 	private static Texture2D? LoadGlbThumbnail(string glbPath, DateTime lastModifiedUtc)
@@ -186,22 +303,40 @@ public static class AssetThumbnailProvider
 
 	private static Texture2D? LoadRtexAlbedoThumbnail(string rtexPath, DateTime lastModifiedUtc)
 	{
-		if (!File.Exists(rtexPath))
+		string normPath = NormalizePath(rtexPath);
+		if (string.IsNullOrEmpty(normPath) || !File.Exists(normPath))
 		{
 			return null;
 		}
 
+		string cachedPngPath = GetDiskCachePath(normPath, lastModifiedUtc);
+		if (File.Exists(cachedPngPath))
+		{
+			try
+			{
+				var cachedImg = Image.LoadFromFile(cachedPngPath);
+				if (cachedImg != null && !cachedImg.IsEmpty())
+				{
+					return ImageTexture.CreateFromImage(cachedImg);
+				}
+			}
+			catch { }
+		}
+
 		try
 		{
-			byte[] bytes = File.ReadAllBytes(rtexPath);
-			byte[]? layer0Bytes = null;
-			if (Realm.Shared.Textures.RtexFile.IsRtexBytes(bytes))
+			byte[]? layer0Bytes = Realm.Shared.Textures.RtexFile.GetLayerFromFile(normPath, 0);
+			if (layer0Bytes == null || layer0Bytes.Length == 0)
 			{
-				layer0Bytes = Realm.Shared.Textures.RtexFile.GetLayer(bytes, 0);
-			}
-			else
-			{
-				layer0Bytes = bytes;
+				byte[] bytes = File.ReadAllBytes(normPath);
+				if (Realm.Shared.Textures.RtexFile.IsRtexBytes(bytes))
+				{
+					layer0Bytes = Realm.Shared.Textures.RtexFile.GetLayer(bytes, 0);
+				}
+				else
+				{
+					layer0Bytes = bytes;
+				}
 			}
 
 			if (layer0Bytes == null || layer0Bytes.Length == 0) return null;
@@ -234,6 +369,17 @@ public static class AssetThumbnailProvider
 				img.Resize(128, 128, Image.Interpolation.Bilinear);
 			}
 
+			try
+			{
+				string? cacheDir = Path.GetDirectoryName(cachedPngPath);
+				if (!string.IsNullOrEmpty(cacheDir) && !Directory.Exists(cacheDir))
+				{
+					Directory.CreateDirectory(cacheDir);
+				}
+				img.SavePng(cachedPngPath);
+			}
+			catch { }
+
 			return ImageTexture.CreateFromImage(img);
 		}
 		catch (Exception ex)
@@ -243,22 +389,49 @@ public static class AssetThumbnailProvider
 		}
 	}
 
-	private static Texture2D? LoadRasterImageThumbnail(string imagePath)
+	private static Texture2D? LoadRasterImageThumbnail(string imagePath, DateTime lastModifiedUtc)
 	{
-		if (!File.Exists(imagePath))
+		string normPath = NormalizePath(imagePath);
+		if (string.IsNullOrEmpty(normPath) || !File.Exists(normPath))
 		{
 			return null;
 		}
 
+		string cachedPngPath = GetDiskCachePath(normPath, lastModifiedUtc);
+		if (File.Exists(cachedPngPath))
+		{
+			try
+			{
+				var cachedImg = Image.LoadFromFile(cachedPngPath);
+				if (cachedImg != null && !cachedImg.IsEmpty())
+				{
+					return ImageTexture.CreateFromImage(cachedImg);
+				}
+			}
+			catch { }
+		}
+
 		try
 		{
-			var image = Image.LoadFromFile(imagePath);
-			if (image != null)
+			var image = Image.LoadFromFile(normPath);
+			if (image != null && !image.IsEmpty())
 			{
 				if (image.GetWidth() > 128 || image.GetHeight() > 128)
 				{
 					image.Resize(128, 128, Image.Interpolation.Bilinear);
 				}
+
+				try
+				{
+					string? cacheDir = Path.GetDirectoryName(cachedPngPath);
+					if (!string.IsNullOrEmpty(cacheDir) && !Directory.Exists(cacheDir))
+					{
+						Directory.CreateDirectory(cacheDir);
+					}
+					image.SavePng(cachedPngPath);
+				}
+				catch { }
+
 				return ImageTexture.CreateFromImage(image);
 			}
 		}
@@ -267,23 +440,50 @@ public static class AssetThumbnailProvider
 		return null;
 	}
 
-	private static Texture2D? LoadSvgThumbnail(string svgPath)
+	private static Texture2D? LoadSvgThumbnail(string svgPath, DateTime lastModifiedUtc)
 	{
-		if (!File.Exists(svgPath))
+		string normPath = NormalizePath(svgPath);
+		if (string.IsNullOrEmpty(normPath) || !File.Exists(normPath))
 		{
 			return null;
+		}
+
+		string cachedPngPath = GetDiskCachePath(normPath, lastModifiedUtc);
+		if (File.Exists(cachedPngPath))
+		{
+			try
+			{
+				var cachedImg = Image.LoadFromFile(cachedPngPath);
+				if (cachedImg != null && !cachedImg.IsEmpty())
+				{
+					return ImageTexture.CreateFromImage(cachedImg);
+				}
+			}
+			catch { }
 		}
 
 		try
 		{
 			var image = new Image();
-			var err = image.Load(svgPath);
-			if (err == Error.Ok)
+			var err = image.Load(normPath);
+			if (err == Error.Ok && !image.IsEmpty())
 			{
 				if (image.GetWidth() > 128 || image.GetHeight() > 128)
 				{
 					image.Resize(128, 128, Image.Interpolation.Bilinear);
 				}
+
+				try
+				{
+					string? cacheDir = Path.GetDirectoryName(cachedPngPath);
+					if (!string.IsNullOrEmpty(cacheDir) && !Directory.Exists(cacheDir))
+					{
+						Directory.CreateDirectory(cacheDir);
+					}
+					image.SavePng(cachedPngPath);
+				}
+				catch { }
+
 				return ImageTexture.CreateFromImage(image);
 			}
 		}

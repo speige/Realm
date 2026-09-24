@@ -680,15 +680,7 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 			_selectedMapNameFilter,
 			_selectedMapVersionFilter);
 
-		var seenBlake3 = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		foreach (var asset in searchResults)
-		{
-			string blake3 = AssetIndexService.GetCanonicalBlake3(asset);
-			if (string.IsNullOrEmpty(blake3) || seenBlake3.Add(blake3))
-			{
-				_matchingAssets.Add(asset);
-			}
-		}
+		_matchingAssets.AddRange(searchResults);
 
 		_lblResultsCount.Text = $"{_matchingAssets.Count} {TranslationServer.Translate("items found")}";
 		_lblEmptyState.Visible = _matchingAssets.Count == 0;

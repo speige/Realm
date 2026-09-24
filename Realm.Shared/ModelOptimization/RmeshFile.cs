@@ -80,9 +80,68 @@ public static class RmeshFile
 		return bytes.Slice(offset, (int)glbLength).ToArray();
 	}
 
+	public static byte[]? GetGlbBytes(Stream stream)
+	{
+		Span<byte> header = stackalloc byte[RealmContainerHeader.MinimumHeaderLength];
+		int bytesRead = 0;
+		while (bytesRead < RealmContainerHeader.MinimumHeaderLength)
+		{
+			int r = stream.Read(header.Slice(bytesRead, RealmContainerHeader.MinimumHeaderLength - bytesRead));
+			if (r <= 0) return null;
+			bytesRead += r;
+		}
+
+		if (!RealmContainerHeader.HasMagic(header, Magic)) return null;
+
+		uint metadataLength = BinaryPrimitives.ReadUInt32LittleEndian(header.Slice(8, 4));
+		if (metadataLength > 0)
+		{
+			stream.Seek(metadataLength, SeekOrigin.Current);
+		}
+
+		Span<byte> uintBuf = stackalloc byte[4];
+		if (stream.Read(uintBuf) < 4) return null;
+		uint glbLength = BinaryPrimitives.ReadUInt32LittleEndian(uintBuf);
+		if (glbLength == 0 || glbLength > 500 * 1024 * 1024) return null;
+
+		byte[] glbBytes = new byte[glbLength];
+		int read = 0;
+		while (read < glbLength)
+		{
+			int r = stream.Read(glbBytes, read, (int)glbLength - read);
+			if (r <= 0) return null;
+			read += r;
+		}
+		return glbBytes;
+	}
+
+	public static byte[]? GetGlbBytesFromFile(string filePath)
+	{
+		if (!File.Exists(filePath)) return null;
+		try
+		{
+			using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, bufferSize: 8192);
+			return GetGlbBytes(stream);
+		}
+		catch
+		{
+			return null;
+		}
+	}
+
 	public static string? ExtractMetadata(ReadOnlySpan<byte> bytes)
 	{
 		return RealmContainerHeader.ExtractMetadata(bytes, Magic);
+	}
+
+	public static string? ExtractMetadata(Stream stream)
+	{
+		return RealmContainerHeader.ExtractMetadata(stream, Magic);
+	}
+
+	public static string? ExtractMetadataFromFile(string filePath)
+	{
+		return RealmContainerHeader.ExtractMetadataFromFile(filePath, Magic);
 	}
 
 	public static byte[] SetMetadata(ReadOnlySpan<byte> bytes, string? newMetadataJson)

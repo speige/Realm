@@ -604,22 +604,46 @@ public static class RealmMetadataHelper
 	public static string? ExtractMetadataFromGlb(string filePath)
 	{
 		if (!File.Exists(filePath)) return null;
-		byte[] bytes = File.ReadAllBytes(filePath);
-		return ExtractMetadataFromGlbBytes(bytes);
+		try
+		{
+			using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, bufferSize: 4096);
+			Span<byte> header = stackalloc byte[20];
+			int bytesRead = 0;
+			while (bytesRead < 20)
+			{
+				int r = stream.Read(header.Slice(bytesRead, 20 - bytesRead));
+				if (r <= 0) return null;
+				bytesRead += r;
+			}
+
+			uint magic = BinaryPrimitives.ReadUInt32LittleEndian(header.Slice(0, 4));
+			if (magic != 0x46546C67) return null;
+
+			uint chunk0Length = BinaryPrimitives.ReadUInt32LittleEndian(header.Slice(12, 4));
+			uint chunk0Type = BinaryPrimitives.ReadUInt32LittleEndian(header.Slice(16, 4));
+			if (chunk0Type != 0x4E4F534A) return null;
+			if (chunk0Length == 0 || chunk0Length > 20 * 1024 * 1024) return null;
+
+			byte[] jsonBytes = new byte[chunk0Length];
+			int jsonRead = 0;
+			while (jsonRead < chunk0Length)
+			{
+				int r = stream.Read(jsonBytes, jsonRead, (int)chunk0Length - jsonRead);
+				if (r <= 0) return null;
+				jsonRead += r;
+			}
+
+			string jsonText = Encoding.UTF8.GetString(jsonBytes);
+			return ParseRealmFromGlbJson(jsonText);
+		}
+		catch
+		{
+			return null;
+		}
 	}
 
-	public static string? ExtractMetadataFromGlbBytes(ReadOnlySpan<byte> bytes)
+	private static string? ParseRealmFromGlbJson(string jsonText)
 	{
-		if (bytes.Length < 20) return null;
-		uint magic = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(0, 4));
-		if (magic != 0x46546C67) return null;
-
-		uint chunk0Length = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(12, 4));
-		uint chunk0Type = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(16, 4));
-		if (chunk0Type != 0x4E4F534A) return null;
-		if (bytes.Length < 20 + chunk0Length) return null;
-
-		string jsonText = Encoding.UTF8.GetString(bytes.Slice(20, (int)chunk0Length));
 		try
 		{
 			using var doc = JsonDocument.Parse(jsonText);
@@ -641,6 +665,21 @@ public static class RealmMetadataHelper
 		}
 		catch { }
 		return null;
+	}
+
+	public static string? ExtractMetadataFromGlbBytes(ReadOnlySpan<byte> bytes)
+	{
+		if (bytes.Length < 20) return null;
+		uint magic = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(0, 4));
+		if (magic != 0x46546C67) return null;
+
+		uint chunk0Length = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(12, 4));
+		uint chunk0Type = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(16, 4));
+		if (chunk0Type != 0x4E4F534A) return null;
+		if (bytes.Length < 20 + chunk0Length) return null;
+
+		string jsonText = Encoding.UTF8.GetString(bytes.Slice(20, (int)chunk0Length));
+		return ParseRealmFromGlbJson(jsonText);
 	}
 
 	public static void AddMetadataToGlb(string filePath, string realmMetadataJson)
@@ -793,9 +832,7 @@ public static class RealmMetadataHelper
 
 	public static string? ExtractMetadataFromRmesh(string filePath)
 	{
-		if (!File.Exists(filePath)) return null;
-		byte[] bytes = File.ReadAllBytes(filePath);
-		return RmeshFile.ExtractMetadata(bytes);
+		return RmeshFile.ExtractMetadataFromFile(filePath);
 	}
 
 	public static void AddMetadataToRmesh(string filePath, string realmMetadataJson)
@@ -814,9 +851,7 @@ public static class RealmMetadataHelper
 
 	public static string? ExtractMetadataFromRaud(string filePath)
 	{
-		if (!File.Exists(filePath)) return null;
-		byte[] bytes = File.ReadAllBytes(filePath);
-		return RaudFile.ExtractMetadata(bytes);
+		return RaudFile.ExtractMetadataFromFile(filePath);
 	}
 
 	public static void AddMetadataToRaud(string filePath, string realmMetadataJson)
@@ -835,9 +870,7 @@ public static class RealmMetadataHelper
 
 	public static string? ExtractMetadataFromRtex(string filePath)
 	{
-		if (!File.Exists(filePath)) return null;
-		byte[] bytes = File.ReadAllBytes(filePath);
-		return Realm.Shared.Textures.RtexFile.ExtractMetadata(bytes);
+		return Realm.Shared.Textures.RtexFile.ExtractMetadataFromFile(filePath);
 	}
 
 	public static void AddMetadataToRtex(string filePath, string realmMetadataJson)
@@ -856,9 +889,7 @@ public static class RealmMetadataHelper
 
 	public static string? ExtractMetadataFromRkey(string filePath)
 	{
-		if (!File.Exists(filePath)) return null;
-		byte[] bytes = File.ReadAllBytes(filePath);
-		return RkeyFile.ExtractMetadata(bytes);
+		return RkeyFile.ExtractMetadataFromFile(filePath);
 	}
 
 	public static void AddMetadataToRkey(string filePath, string realmMetadataJson)
@@ -878,8 +909,64 @@ public static class RealmMetadataHelper
 	public static string? ExtractMetadataFromRanim(string filePath)
 	{
 		if (!File.Exists(filePath)) return null;
-		byte[] bytes = File.ReadAllBytes(filePath);
-		return ExtractMetadataFromRanimBytes(bytes);
+		try
+		{
+			using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, bufferSize: 4096);
+			if (stream.Length == 0) return null;
+
+			int firstByte = stream.ReadByte();
+			if (firstByte == '{' || firstByte == '[')
+			{
+				stream.Position = 0;
+				using var reader = new StreamReader(stream, Encoding.UTF8);
+				string jsonText = reader.ReadToEnd();
+				try
+				{
+					using var doc = JsonDocument.Parse(jsonText);
+					if (doc.RootElement.TryGetProperty("Realm", out var realmProp) || doc.RootElement.TryGetProperty("realm", out realmProp))
+					{
+						return realmProp.ValueKind == JsonValueKind.String ? realmProp.GetString() : realmProp.GetRawText();
+					}
+					return jsonText;
+				}
+				catch { }
+				return null;
+			}
+
+			if (stream.Length >= 8)
+			{
+				stream.Seek(-8, SeekOrigin.End);
+				Span<byte> trailer = stackalloc byte[8];
+				if (stream.Read(trailer) == 8)
+				{
+					if (trailer[4] == (byte)'R' && trailer[5] == (byte)'M' && trailer[6] == (byte)'E' && trailer[7] == (byte)'T')
+					{
+						uint metaLen = BinaryPrimitives.ReadUInt32LittleEndian(trailer.Slice(0, 4));
+						if (metaLen > 0 && stream.Length >= 8 + metaLen && metaLen <= 10 * 1024 * 1024)
+						{
+							stream.Seek(-8 - (long)metaLen, SeekOrigin.End);
+							byte[] metaBytes = new byte[metaLen];
+							int read = 0;
+							while (read < metaLen)
+							{
+								int r = stream.Read(metaBytes, read, (int)metaLen - read);
+								if (r <= 0) break;
+								read += r;
+							}
+							if (read == (int)metaLen)
+							{
+								return Encoding.UTF8.GetString(metaBytes);
+							}
+						}
+					}
+				}
+			}
+			return null;
+		}
+		catch
+		{
+			return null;
+		}
 	}
 
 	public static string? ExtractMetadataFromRanimBytes(ReadOnlySpan<byte> bytes)
@@ -1452,8 +1539,24 @@ public static class RealmMetadataHelper
 	public static string? ExtractMetadataFromOgg(string filePath)
 	{
 		if (!File.Exists(filePath)) return null;
-		byte[] bytes = File.ReadAllBytes(filePath);
-		return ExtractMetadataFromOggBytes(bytes);
+		try
+		{
+			using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024);
+			int maxRead = (int)Math.Min(stream.Length, 256 * 1024);
+			byte[] buffer = new byte[maxRead];
+			int read = 0;
+			while (read < maxRead)
+			{
+				int r = stream.Read(buffer, read, maxRead - read);
+				if (r <= 0) break;
+				read += r;
+			}
+			return ExtractMetadataFromOggBytes(buffer.AsSpan(0, read));
+		}
+		catch
+		{
+			return null;
+		}
 	}
 
 	public static string? ExtractMetadataFromOggBytes(ReadOnlySpan<byte> bytes)

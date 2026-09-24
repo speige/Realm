@@ -96,9 +96,82 @@ public static class RtexFile
 		return null;
 	}
 
+	public static byte[]? GetLayer(Stream stream, int layerIndex = 0)
+	{
+		Span<byte> header = stackalloc byte[RealmContainerHeader.MinimumHeaderLength];
+		int bytesRead = 0;
+		while (bytesRead < RealmContainerHeader.MinimumHeaderLength)
+		{
+			int r = stream.Read(header.Slice(bytesRead, RealmContainerHeader.MinimumHeaderLength - bytesRead));
+			if (r <= 0) return null;
+			bytesRead += r;
+		}
+
+		if (!RealmContainerHeader.HasMagic(header, Magic)) return null;
+
+		uint metadataLength = BinaryPrimitives.ReadUInt32LittleEndian(header.Slice(8, 4));
+		if (metadataLength > 0)
+		{
+			stream.Seek(metadataLength, SeekOrigin.Current);
+		}
+
+		Span<byte> uintBuf = stackalloc byte[4];
+		if (stream.Read(uintBuf) < 4) return null;
+		uint layerCount = BinaryPrimitives.ReadUInt32LittleEndian(uintBuf);
+		if (layerIndex < 0 || layerIndex >= layerCount) return null;
+
+		for (int i = 0; i < layerCount; i++)
+		{
+			if (stream.Read(uintBuf) < 4) return null;
+			uint layerLength = BinaryPrimitives.ReadUInt32LittleEndian(uintBuf);
+			if (layerLength > 100 * 1024 * 1024) return null;
+
+			if (i == layerIndex)
+			{
+				byte[] layerBytes = new byte[layerLength];
+				int read = 0;
+				while (read < layerLength)
+				{
+					int r = stream.Read(layerBytes, read, (int)layerLength - read);
+					if (r <= 0) return null;
+					read += r;
+				}
+				return layerBytes;
+			}
+
+			stream.Seek(layerLength, SeekOrigin.Current);
+		}
+
+		return null;
+	}
+
+	public static byte[]? GetLayerFromFile(string filePath, int layerIndex = 0)
+	{
+		if (!File.Exists(filePath)) return null;
+		try
+		{
+			using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, bufferSize: 8192);
+			return GetLayer(stream, layerIndex);
+		}
+		catch
+		{
+			return null;
+		}
+	}
+
 	public static string? ExtractMetadata(ReadOnlySpan<byte> bytes)
 	{
 		return RealmContainerHeader.ExtractMetadata(bytes, Magic);
+	}
+
+	public static string? ExtractMetadata(Stream stream)
+	{
+		return RealmContainerHeader.ExtractMetadata(stream, Magic);
+	}
+
+	public static string? ExtractMetadataFromFile(string filePath)
+	{
+		return RealmContainerHeader.ExtractMetadataFromFile(filePath, Magic);
 	}
 
 	public static byte[] SetMetadata(ReadOnlySpan<byte> bytes, string? newMetadataJson)
