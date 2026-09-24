@@ -142,7 +142,8 @@ public static class MapArchiveHelper
 
     private static (string? ManifestJson, string RootPrefix) ReadManifestFrom7z(string archiveFilePath)
     {
-        using var archive = SevenZipArchive.OpenArchive(archiveFilePath, new ReaderOptions());
+        using var fileStream = new FileStream(archiveFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
+        using var archive = SevenZipArchive.OpenArchive(fileStream, new ReaderOptions());
         var manifestEntries = archive.Entries.Where(e =>
         {
             if (e.IsDirectory || string.IsNullOrWhiteSpace(e.Key))
@@ -212,7 +213,8 @@ public static class MapArchiveHelper
         }
         else
         {
-            using var archive = SevenZipArchive.OpenArchive(archiveFilePath, new ReaderOptions());
+            using var fileStream = new FileStream(archiveFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
+            using var archive = SevenZipArchive.OpenArchive(fileStream, new ReaderOptions());
             foreach (var entry in archive.Entries)
             {
                 if (entry.IsDirectory || string.IsNullOrWhiteSpace(entry.Key))
@@ -248,7 +250,8 @@ public static class MapArchiveHelper
             Directory.CreateDirectory(targetDirectory);
         }
 
-        using var archive = SevenZipArchive.OpenArchive(archiveFilePath, new ReaderOptions());
+        using var fileStream = new FileStream(archiveFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
+        using var archive = SevenZipArchive.OpenArchive(fileStream, new ReaderOptions());
         foreach (var entry in archive.Entries)
         {
             if (entry.IsDirectory)
@@ -270,8 +273,8 @@ public static class MapArchiveHelper
             }
 
             using var entryStream = entry.OpenEntryStream();
-            using var outStream = File.Create(destinationPath);
-            entryStream.CopyTo(outStream);
+            using var outStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536);
+            entryStream.CopyTo(outStream, 65536);
         }
     }
 
@@ -303,8 +306,8 @@ public static class MapArchiveHelper
             }
 
             using var entryStream = entry.Open();
-            using var outStream = File.Create(destinationPath);
-            entryStream.CopyTo(outStream);
+            using var outStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536);
+            entryStream.CopyTo(outStream, 65536);
         }
     }
 

@@ -572,7 +572,7 @@ public class MapStorageService
 
         string manifestBlake3 = MapAssetManager.ComputeManifestBlake3(manifest);
         byte[] manifestBytes = Encoding.UTF8.GetBytes(manifest.ToJson());
-        MapAssetManager.Storage.StoreAsset(manifestBytes, ".json");
+        MapAssetManager.Storage.StoreAsset(manifestBytes, ".json", precomputedBlake3: manifestBlake3);
 
         string targetDirectory = Path.Combine(MapAssetManager.GlobalArchiveDirectory, mapTitle, mapVersion, manifestBlake3);
         Directory.CreateDirectory(targetDirectory);
@@ -582,6 +582,20 @@ public class MapStorageService
 
         int totalFiles = manifest.Files != null ? manifest.Files.Count : 0;
         int processed = 0;
+        long lastProgressReportTicks = 0;
+
+        var fileNameToHash = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (manifest.Files != null)
+        {
+            foreach (var kvp in manifest.Files)
+            {
+                string fn = Path.GetFileName(kvp.Key);
+                if (!string.IsNullOrEmpty(fn) && !fileNameToHash.ContainsKey(fn))
+                {
+                    fileNameToHash[fn] = kvp.Value;
+                }
+            }
+        }
 
         MapArchiveHelper.ProcessArchiveCandidates(archivePath, manifest, rootPrefix, (relPath, entryStream) =>
         {
@@ -598,23 +612,16 @@ public class MapStorageService
             }
 
             string? matchingHash = null;
-            if (manifest.Files != null)
+            if (manifest.Files != null && manifest.Files.TryGetValue(relPath, out var hash))
             {
-                if (manifest.Files.TryGetValue(relPath, out var hash))
+                matchingHash = hash;
+            }
+            else
+            {
+                string fileName = Path.GetFileName(relPath);
+                if (!string.IsNullOrEmpty(fileName) && fileNameToHash.TryGetValue(fileName, out var fallbackHash))
                 {
-                    matchingHash = hash;
-                }
-                else
-                {
-                    string fileName = Path.GetFileName(relPath);
-                    foreach (var kvp in manifest.Files)
-                    {
-                        if (string.Equals(Path.GetFileName(kvp.Key), fileName, StringComparison.OrdinalIgnoreCase))
-                        {
-                            matchingHash = kvp.Value;
-                            break;
-                        }
-                    }
+                    matchingHash = fallbackHash;
                 }
             }
 
@@ -626,10 +633,10 @@ public class MapStorageService
                 if (casFilePath == null || !File.Exists(casFilePath))
                 {
                     using var ms = new MemoryStream();
-                    entryStream.CopyTo(ms);
+                    entryStream.CopyTo(ms, 81920);
                     byte[] assetBytes = ms.ToArray();
                     string ext = Path.GetExtension(relPath).ToLowerInvariant();
-                    MapAssetManager.Storage.StoreAsset(assetBytes, ext);
+                    MapAssetManager.Storage.StoreAsset(assetBytes, ext, precomputedBlake3: normHash);
                     casFilePath = MapAssetManager.Storage.FindAssetFilePath(normHash);
                 }
 
@@ -639,20 +646,25 @@ public class MapStorageService
                 }
                 else
                 {
-                    using var outStream = File.Create(destFilePath);
-                    entryStream.CopyTo(outStream);
+                    using var outStream = new FileStream(destFilePath, System.IO.FileMode.Create, System.IO.FileAccess.Write, System.IO.FileShare.None, 81920);
+                    entryStream.CopyTo(outStream, 81920);
                 }
 
                 processed++;
                 if (totalFiles > 0)
                 {
-                    progressCallback?.Invoke((float)processed / totalFiles);
+                    long now = System.Environment.TickCount64;
+                    if (now - lastProgressReportTicks >= 100 || processed == totalFiles)
+                    {
+                        lastProgressReportTicks = now;
+                        progressCallback?.Invoke((float)processed / totalFiles);
+                    }
                 }
             }
             else
             {
-                using var outStream = File.Create(destFilePath);
-                entryStream.CopyTo(outStream);
+                using var outStream = new FileStream(destFilePath, System.IO.FileMode.Create, System.IO.FileAccess.Write, System.IO.FileShare.None, 81920);
+                entryStream.CopyTo(outStream, 81920);
             }
         });
 
@@ -732,7 +744,7 @@ public class MapStorageService
 
         string manifestBlake3 = MapAssetManager.ComputeManifestBlake3(manifest);
         byte[] manifestBytes = Encoding.UTF8.GetBytes(manifest.ToJson());
-        MapAssetManager.Storage.StoreAsset(manifestBytes, ".json");
+        MapAssetManager.Storage.StoreAsset(manifestBytes, ".json", precomputedBlake3: manifestBlake3);
 
         string targetDirectory = Path.Combine(MapAssetManager.GlobalArchiveDirectory, mapTitle, mapVersion, manifestBlake3);
         Directory.CreateDirectory(targetDirectory);
@@ -742,6 +754,7 @@ public class MapStorageService
 
         int totalFiles = manifest.Files != null ? manifest.Files.Count : 0;
         int processed = 0;
+        long lastProgressReportTicks = 0;
 
         if (manifest.Files != null)
         {
@@ -771,7 +784,7 @@ public class MapStorageService
                 {
                     byte[] assetBytes = File.ReadAllBytes(candidateFilePath);
                     string ext = Path.GetExtension(candidateFilePath).ToLowerInvariant();
-                    MapAssetManager.Storage.StoreAsset(assetBytes, ext);
+                    MapAssetManager.Storage.StoreAsset(assetBytes, ext, precomputedBlake3: normHash);
                     casFilePath = MapAssetManager.Storage.FindAssetFilePath(normHash);
                 }
 
@@ -794,7 +807,12 @@ public class MapStorageService
                 processed++;
                 if (totalFiles > 0)
                 {
-                    progressCallback?.Invoke((float)processed / totalFiles);
+                    long now = System.Environment.TickCount64;
+                    if (now - lastProgressReportTicks >= 100 || processed == totalFiles)
+                    {
+                        lastProgressReportTicks = now;
+                        progressCallback?.Invoke((float)processed / totalFiles);
+                    }
                 }
             }
         }

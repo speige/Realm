@@ -11,6 +11,7 @@ namespace Realm.Shared.Distribution;
 public class MapManifest
 {
     private Dictionary<string, string> _files = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string>? _fileNamesSet;
 
     public string MapName { get; set; } = string.Empty;
     public string Author { get; set; } = string.Empty;
@@ -32,6 +33,7 @@ public class MapManifest
         set
         {
             _files = value ?? new(StringComparer.OrdinalIgnoreCase);
+            _fileNamesSet = null;
         }
     }
 
@@ -43,7 +45,27 @@ public class MapManifest
         if (Assets != null && _files.Count == 0)
         {
             FlattenAssetsInto(_files, Assets);
+            _fileNamesSet = null;
         }
+    }
+
+    public bool HasFileName(string fileName)
+    {
+        if (_fileNamesSet == null)
+        {
+            EnsureFilesFromAssets();
+            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var key in _files.Keys)
+            {
+                string fn = Path.GetFileName(key);
+                if (!string.IsNullOrEmpty(fn))
+                {
+                    set.Add(fn);
+                }
+            }
+            _fileNamesSet = set;
+        }
+        return _fileNamesSet.Contains(fileName);
     }
 
     public static void FlattenAssetsInto(Dictionary<string, string> destinationFiles, JsonObject assets)
@@ -521,7 +543,7 @@ public class MapManifest
             return false;
         }
 
-        if (Files.Keys.Any(k => string.Equals(Path.GetFileName(k), fileName, StringComparison.OrdinalIgnoreCase)))
+        if (HasFileName(fileName))
         {
             return true;
         }
