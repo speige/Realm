@@ -1098,6 +1098,29 @@ app.MapPost("/api/publish_map/initiate", (PublishMapInitiateRequest req, DataSto
             });
         }
 
+        var oversizedAssets = new List<string>();
+        if (root.TryGetProperty("FileSizes", out var fileSizesProp) && fileSizesProp.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var prop in fileSizesProp.EnumerateObject())
+            {
+                if (prop.Value.TryGetInt64(out long size) && size > ContentAddressableStorage.MaximumAssetSizeBytes)
+                {
+                    double sizeMb = (double)size / (1024 * 1024);
+                    double maxMb = (double)ContentAddressableStorage.MaximumAssetSizeBytes / (1024 * 1024);
+                    oversizedAssets.Add($"'{prop.Name}' ({sizeMb:F2} MB > {maxMb:F0} MB limit)");
+                }
+            }
+        }
+        if (oversizedAssets.Count > 0)
+        {
+            return Results.BadRequest(new PublishMapInitiateResponse
+            {
+                Success = false,
+                Status = "OversizedAssets",
+                Message = $"Publish rejected: {oversizedAssets.Count} asset(s) exceed the maximum per-asset file size limit of {ContentAddressableStorage.MaximumAssetSizeBytes / (1024 * 1024)} MB:\n{string.Join("\n", oversizedAssets)}"
+            });
+        }
+
         var referencedHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (req.ReferencedHashes != null)
         {
@@ -1225,7 +1248,8 @@ app.MapPost("/api/publish_map/finalize", (PublishMapFinalizeRequest req, DataSto
             {
                 Success = false,
                 Status = "MissingAssets",
-                Message = $"Cannot finalize publish: {missingHashes.Count} assets are still missing on the server."
+                Message = $"Cannot finalize publish: {missingHashes.Count} assets are still missing on the server.",
+                MissingHashes = missingHashes
             });
         }
 
@@ -1952,59 +1976,82 @@ app.MapPost("/api/publish_map/upload_asset", async (HttpRequest request, DataSto
     string mapVersion = form.TryGetValue("MapVersion", out var mv) ? mv.ToString() : "1.0";
     string sessionId = form.TryGetValue("SessionId", out var sid) ? sid.ToString() : "";
     
-    if (!string.IsNullOrEmpty(mapTitle))
+    bool isSessionValid = !string.IsNullOrWhiteSpace(sessionId) && db.Get<JsonDocument>("publish_sessions", sessionId) != null;
+    if (!isSessionValid && !string.IsNullOrEmpty(mapTitle))
     {
         string compositeKey = $"{mapTitle}_{(string.IsNullOrEmpty(mapVersion) ? "1.0" : mapVersion)}";
-        var stats = db.Get<MapStats>("map_stats", compositeKey) ?? db.Get<MapStats>("map_stats", mapTitle);
+        string authorStatsKey = !string.IsNullOrEmpty(publicKey) ? $"{mapTitle}_{mapVersion}_{publicKey}" : compositeKey;
+        var mapLevelStats = db.Get<MapStats>("map_stats", mapTitle);
+        var stats = db.Get<MapStats>("map_stats", authorStatsKey)
+            ?? (!string.IsNullOrEmpty(publicKey) ? db.Get<MapStats>("map_stats", $"{mapTitle}_{publicKey}") : null)
+            ?? db.Get<MapStats>("map_stats", compositeKey)
+            ?? mapLevelStats;
         if (stats == null || !stats.IsGreenlit)
         {
             return Results.Json(new { Message = $"Cannot upload asset: map '{mapTitle}' is not greenlit." }, statusCode: StatusCodes.Status403Forbidden);
         }
     }
     
-    if (string.IsNullOrEmpty(hash) || hash.Contains('/') || hash.Contains('\\')) return Results.BadRequest("Invalid Hash.");
+    string normalizedHash = ContentAddressableStorage.NormalizeBlake3Hash(hash);
+    if (string.IsNullOrEmpty(normalizedHash) || normalizedHash.Contains('/') || normalizedHash.Contains('\\')) return Results.BadRequest("Invalid Hash.");
 
     try {
         byte[] pubKeyBytes = Convert.FromBase64String(publicKey);
         byte[] sigBytes = Convert.FromBase64String(signature);
         var pubKey = NSec.Cryptography.PublicKey.Import(NSec.Cryptography.SignatureAlgorithm.Ed25519, pubKeyBytes, NSec.Cryptography.KeyBlobFormat.RawPublicKey);
-        byte[] hashBytes = System.Text.Encoding.UTF8.GetBytes(hash);
-        if (!NSec.Cryptography.SignatureAlgorithm.Ed25519.Verify(pubKey, hashBytes, sigBytes)) {
+        byte[] hashBytes = Encoding.UTF8.GetBytes(hash);
+        byte[] normalizedHashBytes = Encoding.UTF8.GetBytes(normalizedHash);
+        if (!NSec.Cryptography.SignatureAlgorithm.Ed25519.Verify(pubKey, hashBytes, sigBytes) &&
+            !NSec.Cryptography.SignatureAlgorithm.Ed25519.Verify(pubKey, normalizedHashBytes, sigBytes)) {
             return Results.BadRequest("Invalid asset signature.");
         }
     } catch {
         return Results.BadRequest("Invalid asset signature format.");
     }
     
-    var existingMeta = db.Get<JsonDocument>("asset_signatures", hash);
+    var existingMeta = db.Get<JsonDocument>("asset_signatures", normalizedHash) ?? db.Get<JsonDocument>("asset_signatures", hash);
     if (existingMeta == null) {
         var metaDoc = JsonSerializer.SerializeToDocument(new { 
             Signature = signature, 
             AuthorUsername = authorUsername,
             PublicKey = publicKey,
-            Hash = hash
+            Hash = normalizedHash
         });
+        db.Upsert("asset_signatures", normalizedHash, metaDoc);
         db.Upsert("asset_signatures", hash, metaDoc);
     }
     
     var file = form.Files.GetFile("File");
-    if (file != null && file.Length > 0)
+    if (file == null || file.Length == 0)
     {
-        using var ms = new MemoryStream();
-        await file.CopyToAsync(ms);
-        byte[] fileBytes = ms.ToArray();
-        string ext = Path.GetExtension(file.FileName);
-        cas.StoreAsset(fileBytes, ext, null, publicKey, signature);
+        return Results.BadRequest("Asset file payload is missing or empty.");
+    }
 
-        string archiveDir = ".data/assets";
-        if (!Directory.Exists(archiveDir))
-            Directory.CreateDirectory(archiveDir);
-            
-        string filePath = Path.Combine(archiveDir, hash);
-        if (!File.Exists(filePath))
-        {
-            await File.WriteAllBytesAsync(filePath, fileBytes);
-        }
+    if (file.Length > ContentAddressableStorage.MaximumAssetSizeBytes)
+    {
+        double sizeMb = (double)file.Length / (1024 * 1024);
+        double maxMb = (double)ContentAddressableStorage.MaximumAssetSizeBytes / (1024 * 1024);
+        return Results.BadRequest($"Asset '{file.FileName}' ({sizeMb:F2} MB) exceeds maximum allowed size of {maxMb:F0} MB per asset.");
+    }
+
+    using var ms = new MemoryStream();
+    await file.CopyToAsync(ms);
+    byte[] fileBytes = ms.ToArray();
+    string ext = Path.GetExtension(file.FileName);
+    var storeResult = cas.StoreAsset(fileBytes, ext, null, publicKey, signature);
+    if (!storeResult.Success)
+    {
+        return Results.BadRequest($"Failed to store asset in CAS: {storeResult.Message}");
+    }
+
+    string archiveDir = ".data/assets";
+    if (!Directory.Exists(archiveDir))
+        Directory.CreateDirectory(archiveDir);
+        
+    string filePath = Path.Combine(archiveDir, normalizedHash);
+    if (!File.Exists(filePath))
+    {
+        await File.WriteAllBytesAsync(filePath, fileBytes);
     }
     
     return Results.Ok(new { Status = "Asset registered" });

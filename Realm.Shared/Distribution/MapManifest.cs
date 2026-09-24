@@ -353,13 +353,34 @@ public class MapManifest
                 relativePath.StartsWith(".vscode/", StringComparison.OrdinalIgnoreCase) ||
                 relativePath.StartsWith(".godot/", StringComparison.OrdinalIgnoreCase) ||
                 relativePath.StartsWith(".sidecarcache/", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.StartsWith(".backups/", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(relativePath, "manifest.json", StringComparison.OrdinalIgnoreCase) ||
-                relativePath.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
+                relativePath.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.EndsWith(".7z", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.EndsWith(".rar", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.EndsWith(".tar", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.EndsWith(".bak", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.EndsWith(".backup", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.EndsWith(".rkey", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(Path.GetFileName(relativePath), "authorship_key.pem", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var fileInfo = new FileInfo(filePath);
+            if (!fileInfo.Exists || fileInfo.Length == 0)
             {
                 continue;
             }
 
             byte[] fileBytes = File.ReadAllBytes(filePath);
+            if (fileBytes.Length == 0)
+            {
+                continue;
+            }
+
             string extension = Path.GetExtension(filePath).ToLowerInvariant();
             string canonicalBlake3 = RealmMetadataHelper.ComputeBlake3(fileBytes, extension);
             string assetKey = string.IsNullOrEmpty(extension) ? canonicalBlake3 : $"{canonicalBlake3}{extension}";

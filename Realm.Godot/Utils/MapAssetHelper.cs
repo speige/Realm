@@ -267,6 +267,54 @@ public static class MapAssetHelper
 		return (distinctMissing.Count == 0, distinctMissing);
 	}
 
+	public static (bool IsValid, List<(string RelativePath, long SizeBytes, double SizeMB)> OversizedFiles) ValidateWorkspaceAssetSizes(string workspacePath, long maxSizeBytes = ContentAddressableStorage.MaximumAssetSizeBytes)
+	{
+		var oversized = new List<(string RelativePath, long SizeBytes, double SizeMB)>();
+		if (string.IsNullOrEmpty(workspacePath) || !Directory.Exists(workspacePath))
+		{
+			return (true, oversized);
+		}
+
+		string fullDirectoryPath = Path.GetFullPath(workspacePath);
+		string[] allFiles = Directory.GetFiles(fullDirectoryPath, "*.*", SearchOption.AllDirectories);
+
+		foreach (string filePath in allFiles)
+		{
+			string relativePath = Path.GetRelativePath(fullDirectoryPath, filePath).Replace('\\', '/');
+
+			if ((relativePath.StartsWith("bin/", StringComparison.OrdinalIgnoreCase) && !relativePath.EndsWith(".wasm", StringComparison.OrdinalIgnoreCase)) ||
+				relativePath.StartsWith("obj/", StringComparison.OrdinalIgnoreCase) ||
+				relativePath.StartsWith(".git/", StringComparison.OrdinalIgnoreCase) ||
+				relativePath.StartsWith(".vscode/", StringComparison.OrdinalIgnoreCase) ||
+				relativePath.StartsWith(".godot/", StringComparison.OrdinalIgnoreCase) ||
+				relativePath.StartsWith(".sidecarcache/", StringComparison.OrdinalIgnoreCase) ||
+				relativePath.StartsWith(".backups/", StringComparison.OrdinalIgnoreCase) ||
+				string.Equals(relativePath, "manifest.json", StringComparison.OrdinalIgnoreCase) ||
+				relativePath.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase) ||
+				relativePath.EndsWith(".7z", StringComparison.OrdinalIgnoreCase) ||
+				relativePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
+				relativePath.EndsWith(".rar", StringComparison.OrdinalIgnoreCase) ||
+				relativePath.EndsWith(".tar", StringComparison.OrdinalIgnoreCase) ||
+				relativePath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase) ||
+				relativePath.EndsWith(".bak", StringComparison.OrdinalIgnoreCase) ||
+				relativePath.EndsWith(".backup", StringComparison.OrdinalIgnoreCase) ||
+				relativePath.EndsWith(".rkey", StringComparison.OrdinalIgnoreCase) ||
+				string.Equals(Path.GetFileName(relativePath), "authorship_key.pem", StringComparison.OrdinalIgnoreCase))
+			{
+				continue;
+			}
+
+			var fileInfo = new FileInfo(filePath);
+			if (fileInfo.Exists && fileInfo.Length > maxSizeBytes)
+			{
+				double sizeMb = fileInfo.Length / (1024.0 * 1024.0);
+				oversized.Add((relativePath, fileInfo.Length, sizeMb));
+			}
+		}
+
+		return (oversized.Count == 0, oversized);
+	}
+
 	public static void SaveAssetsToManifest(string mapDirectory, JsonObject assets, bool removeFromMetadata = true)
 	{
 		if (assets == null) return;

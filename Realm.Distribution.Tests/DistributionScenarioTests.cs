@@ -330,12 +330,12 @@ public class DistributionScenarioTests
     [Test]
     public async Task Scenario5_FullAssetPackage_EndToEndDistribution()
     {
-        string assetPackageDirectory = @"C:\temp\asset_package";
+        string assetPackageDirectory = Directory.Exists(@"C:\temp\Asset_Pack") ? @"C:\temp\Asset_Pack" : @"C:\temp\asset_package";
         string manifestPath = Path.Combine(assetPackageDirectory, "manifest.json");
 
         if (!Directory.Exists(assetPackageDirectory) || !File.Exists(manifestPath))
         {
-            Assert.Ignore("C:\\temp\\asset_package or manifest.json not found.");
+            Assert.Ignore("Asset package directory or manifest.json not found.");
             return;
         }
 
@@ -558,5 +558,142 @@ public class DistributionScenarioTests
         Assert.That(s2UpdatedMeta, Does.Contain("new_author_tag"));
         Assert.That(s2UpdatedMeta, Does.Contain("2.0"));
         Assert.That(s2UpdatedMeta, Does.Not.Contain("old_tag"));
+    }
+
+    [Test]
+    public async Task Scenario8_AssetPack_PublishLifecycle_ReplicationAndDiagnostics()
+    {
+        string assetPackageDirectory = Directory.Exists(@"C:\temp\Asset_Pack") ? @"C:\temp\Asset_Pack" : @"C:\temp\asset_package";
+        bool isActualDirectory = Directory.Exists(assetPackageDirectory);
+
+        string testWorkspace = isActualDirectory
+            ? assetPackageDirectory
+            : Path.Combine(_scenarioRoot, "mock_asset_pack");
+
+        if (!isActualDirectory)
+        {
+            Directory.CreateDirectory(testWorkspace);
+            Directory.CreateDirectory(Path.Combine(testWorkspace, "Assets", "models", "props"));
+            Directory.CreateDirectory(Path.Combine(testWorkspace, "Assets", "textures"));
+
+            File.WriteAllText(Path.Combine(testWorkspace, "metadata.json"), "{\"MapTitle\":\"Asset_Pack\",\"MapVersion\":\"1.0.0\"}");
+            File.WriteAllText(Path.Combine(testWorkspace, "terrain.json"), "{}");
+            File.WriteAllBytes(Path.Combine(testWorkspace, "Assets", "models", "props", "rock.rmesh"), Encoding.UTF8.GetBytes("sample_rock_rmesh_bytes"));
+            File.WriteAllBytes(Path.Combine(testWorkspace, "Assets", "textures", "stone.rtex"), Encoding.UTF8.GetBytes("sample_stone_rtex_bytes"));
+            File.WriteAllBytes(Path.Combine(testWorkspace, "test ASSET_PACK_1.0.1_4cc8.7z"), Array.Empty<byte>());
+            File.WriteAllBytes(Path.Combine(testWorkspace, "empty_dummy.bin"), Array.Empty<byte>());
+        }
+
+        Console.WriteLine($"[DIAGNOSTICS] Testing workspace directory: {testWorkspace}");
+        var allDiskFiles = Directory.GetFiles(testWorkspace, "*.*", SearchOption.AllDirectories);
+        Console.WriteLine($"[DIAGNOSTICS] Total files on disk: {allDiskFiles.Length}");
+
+        var zeroByteFiles = allDiskFiles.Where(f => new FileInfo(f).Length == 0).ToList();
+        Console.WriteLine($"[DIAGNOSTICS] Zero-byte files found on disk ({zeroByteFiles.Count}):");
+        foreach (var zf in zeroByteFiles)
+        {
+            Console.WriteLine($"  - {Path.GetRelativePath(testWorkspace, zf)} (0 bytes)");
+        }
+
+        var (authorshipKey, keyData, keyPath, _) = AuthorshipKeyHelper.GetOrGenerateKeyInfo(defaultUserName: "Realm");
+        string authorPublicKey = Convert.ToBase64String(authorshipKey.PublicKey.Export(NSec.Cryptography.KeyBlobFormat.RawPublicKey));
+        Console.WriteLine($"[DIAGNOSTICS] Authorship Key Path: {keyPath}");
+        Console.WriteLine($"[DIAGNOSTICS] Authorship Key UserName: {keyData.UserName}, PublicKey: {authorPublicKey}");
+
+        var manifest = MapManifest.CreateFromDirectory(
+            testWorkspace,
+            "Asset_Pack",
+            keyData.UserName ?? "Realm",
+            "1.0.0",
+            "Asset Pack",
+            new List<string> { "AssetPack" }
+        );
+
+        Console.WriteLine($"[DIAGNOSTICS] Files indexed into manifest: {manifest.Files.Count}");
+        foreach (var zf in zeroByteFiles)
+        {
+            string rel = Path.GetRelativePath(testWorkspace, zf).Replace('\\', '/');
+            Assert.That(manifest.Files.ContainsKey(rel), Is.False, $"Zero-byte file '{rel}' must NOT be included in manifest.Files.");
+        }
+
+        foreach (var filePair in manifest.Files)
+        {
+            string relPath = filePair.Key;
+            string assetKey = filePair.Value;
+            string fullPath = Path.Combine(testWorkspace, relPath);
+
+            Assert.That(File.Exists(fullPath), Is.True, $"Manifest file '{relPath}' must exist on disk.");
+            long length = new FileInfo(fullPath).Length;
+            Assert.That(length, Is.GreaterThan(0), $"Manifest file '{relPath}' must have non-zero size.");
+            Assert.That(relPath.EndsWith(".7z", StringComparison.OrdinalIgnoreCase), Is.False, $"Archive file '{relPath}' must not be in manifest.");
+            Assert.That(relPath.EndsWith(".rkey", StringComparison.OrdinalIgnoreCase), Is.False, $"Key file '{relPath}' must not be in manifest.");
+        }
+
+        string serverCasDir = Path.Combine(_scenarioRoot, "server_cas");
+        var serverCas = new ContentAddressableStorage(serverCasDir);
+        int serverPort = GetAvailablePort();
+
+        var (adminPriv, adminPub) = AdminBypassAuth.GenerateAdminKeyPair();
+        var server = new DistributionServer(serverCas, "registry_seed_node", 100, null, adminPub, null);
+        server.Start(serverPort);
+        _runningServers.Add(server);
+
+        string serverUrl = $"http://127.0.0.1:{serverPort}";
+        var client = new DistributionClient(serverUrl);
+
+        var testManifest = manifest;
+        if (manifest.Files.Count > 50)
+        {
+            testManifest = new MapManifest
+            {
+                MapName = manifest.MapName,
+                Author = manifest.Author,
+                Version = manifest.Version,
+                Description = manifest.Description,
+                Tags = manifest.Tags
+            };
+            foreach (var pair in manifest.Files.Take(50))
+            {
+                testManifest.Files[pair.Key] = pair.Value;
+                testManifest.FileSizes![pair.Key] = manifest.FileSizes!.TryGetValue(pair.Key, out long sz) ? sz : 0;
+            }
+        }
+
+        string bypassToken = AdminBypassAuth.CreateBypassToken(adminPriv, testManifest.MapName, testManifest.Version);
+        var initialPublishResult = await client.PublishManifestAsync(testManifest, bypassToken);
+
+        Console.WriteLine($"[DIAGNOSTICS] Initial publish initiate result: Success={initialPublishResult.Success}, MissingHashes={initialPublishResult.MissingAssetHashes.Count}");
+        Assert.That(initialPublishResult.Success, Is.True, $"Initial publish failed: {initialPublishResult.Message}");
+        Assert.That(initialPublishResult.MissingAssetHashes.Count, Is.EqualTo(testManifest.Files.Count));
+
+        var hashToRelativePath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in testManifest.Files)
+        {
+            string norm = ContentAddressableStorage.NormalizeBlake3Hash(pair.Value);
+            hashToRelativePath[norm] = pair.Key;
+            hashToRelativePath[pair.Value] = pair.Key;
+        }
+
+        var (uploadSuccess, failedAsset, errorMsg) = await client.UploadMissingAssetsMultiThreadedAsync(
+            testWorkspace,
+            initialPublishResult.MissingAssetHashes,
+            hashToRelativePath,
+            keyData.UserName ?? "Realm",
+            authorPublicKey,
+            authorshipKey,
+            testManifest.MapName,
+            testManifest.Version,
+            sessionId: null,
+            maximumConcurrency: 8
+        );
+
+        Console.WriteLine($"[DIAGNOSTICS] Upload result: Success={uploadSuccess}, FailedAsset={failedAsset}, ErrorMsg={errorMsg}");
+        Assert.That(uploadSuccess, Is.True, $"UploadMissingAssets failed for '{failedAsset}': {errorMsg}");
+
+        var finalizePublishResult = await client.PublishManifestAsync(testManifest, bypassToken);
+        Console.WriteLine($"[DIAGNOSTICS] Finalize publish result: Success={finalizePublishResult.Success}, MissingHashes={finalizePublishResult.MissingAssetHashes.Count}, Message={finalizePublishResult.Message}");
+
+        Assert.That(finalizePublishResult.Success, Is.True, $"Finalize publish failed: {finalizePublishResult.Message}");
+        Assert.That(finalizePublishResult.MissingAssetHashes.Count, Is.EqualTo(0), $"Expected 0 missing assets on finalize but got: {string.Join(", ", finalizePublishResult.MissingAssetHashes)}");
     }
 }

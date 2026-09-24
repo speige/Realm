@@ -71,10 +71,27 @@ public static class MapArchiveHelper
                 relativePath.Contains("/obj/", StringComparison.OrdinalIgnoreCase) ||
                 relativePath.StartsWith(".godot/", StringComparison.OrdinalIgnoreCase) ||
                 relativePath.StartsWith(".sidecarcache/", StringComparison.OrdinalIgnoreCase) ||
-                relativePath.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
+                relativePath.StartsWith(".vscode/", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.EndsWith(".7z", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.EndsWith(".rar", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.EndsWith(".tar", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.EndsWith(".bak", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.EndsWith(".backup", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.EndsWith(".rkey", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(Path.GetFileName(relativePath), "authorship_key.pem", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
+
+            var fileInfo = new FileInfo(file);
+            if (!fileInfo.Exists || fileInfo.Length == 0)
+            {
+                continue;
+            }
+
             filesToArchive.Add(file);
         }
 

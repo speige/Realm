@@ -105,6 +105,18 @@ public class DistributionClient
         string canonicalBlake3 = RealmMetadataHelper.ComputeBlake3(assetBytes, extension);
         string normalizedHash = ContentAddressableStorage.NormalizeBlake3Hash(canonicalBlake3);
 
+        if (assetBytes.Length > ContentAddressableStorage.MaximumAssetSizeBytes)
+        {
+            double sizeMb = (double)assetBytes.Length / (1024 * 1024);
+            double maxMb = (double)ContentAddressableStorage.MaximumAssetSizeBytes / (1024 * 1024);
+            return new AssetUploadResponseDto
+            {
+                Success = false,
+                Message = $"Upload rejected: Asset size ({sizeMb:F2} MB) exceeds maximum allowed size of {maxMb:F0} MB per asset.",
+                Blake3Hash = normalizedHash
+            };
+        }
+
         string url = $"{targetServerBaseUrl.TrimEnd('/')}/api/assets/{normalizedHash}";
 
         using var content = new MultipartFormDataContent();
@@ -482,8 +494,10 @@ public class DistributionClient
         string url = $"{_registryServerUrl}/api/assets/{normalized}";
         try
         {
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
             using var request = new HttpRequestMessage(HttpMethod.Head, url);
-            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token);
             return response.IsSuccessStatusCode;
         }
         catch
@@ -504,6 +518,11 @@ public class DistributionClient
         string? sessionId = null,
         CancellationToken cancellationToken = default)
     {
+        if (fileBytes.Length == 0 || fileBytes.Length > ContentAddressableStorage.MaximumAssetSizeBytes)
+        {
+            return false;
+        }
+
         if (await CheckAssetExistsAsync(hash, cancellationToken))
         {
             return true;
@@ -593,6 +612,29 @@ public class DistributionClient
             {
                 if (firstErrorAsset != null || cancellationToken.IsCancellationRequested) return;
 
+                byte[] fileBytes = await File.ReadAllBytesAsync(fullFilePath, cancellationToken);
+                if (fileBytes.Length == 0)
+                {
+                    lock (errorLock)
+                    {
+                        firstErrorAsset ??= relPath;
+                        firstErrorMessage ??= $"File '{relPath}' is empty (0 bytes) and cannot be published as an asset.";
+                    }
+                    return;
+                }
+
+                if (fileBytes.Length > ContentAddressableStorage.MaximumAssetSizeBytes)
+                {
+                    lock (errorLock)
+                    {
+                        double sizeMb = (double)fileBytes.Length / (1024 * 1024);
+                        double maxMb = (double)ContentAddressableStorage.MaximumAssetSizeBytes / (1024 * 1024);
+                        firstErrorAsset ??= relPath;
+                        firstErrorMessage ??= $"Asset '{relPath}' ({sizeMb:F2} MB) exceeds maximum allowed size of {maxMb:F0} MB per asset.";
+                    }
+                    return;
+                }
+
                 if (await CheckAssetExistsAsync(missingHash, cancellationToken))
                 {
                     int done = Interlocked.Increment(ref completedCount);
@@ -600,7 +642,6 @@ public class DistributionClient
                     return;
                 }
 
-                byte[] fileBytes = await File.ReadAllBytesAsync(fullFilePath, cancellationToken);
                 byte[] hashBytes = Encoding.UTF8.GetBytes(missingHash);
                 byte[] signatureBytes = NSec.Cryptography.SignatureAlgorithm.Ed25519.Sign(authorshipKey, hashBytes);
                 string signatureStr = Convert.ToBase64String(signatureBytes);

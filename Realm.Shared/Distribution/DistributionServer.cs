@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Realm.Shared.Metadata;
 
 namespace Realm.Shared.Distribution;
 
@@ -119,6 +120,12 @@ public class DistributionServer
             {
                 string hash = path.Substring("/api/assets/".Length);
                 await HandleAssetEndpointAsync(context, method, hash);
+                return;
+            }
+
+            if (path.Equals("/api/publish_map/upload_asset", StringComparison.OrdinalIgnoreCase))
+            {
+                await HandleAssetEndpointAsync(context, method, string.Empty);
                 return;
             }
 
@@ -258,6 +265,10 @@ public class DistributionServer
                         fileExtension ??= parsedExt;
                     }
                 }
+                if (string.IsNullOrEmpty(normalizedHash) && !string.IsNullOrEmpty(parsedForm.Hash))
+                {
+                    normalizedHash = ContentAddressableStorage.NormalizeBlake3Hash(parsedForm.Hash);
+                }
             }
             else
             {
@@ -267,6 +278,12 @@ public class DistributionServer
             }
 
             fileExtension ??= ".bin";
+
+            if (string.IsNullOrEmpty(normalizedHash) && assetBytes.Length > 0)
+            {
+                string computedBlake3 = RealmMetadataHelper.ComputeBlake3(assetBytes, fileExtension);
+                normalizedHash = ContentAddressableStorage.NormalizeBlake3Hash(computedBlake3);
+            }
 
             var storeResult = _storage.StoreAsset(assetBytes, fileExtension, metadataJson, authorPublicKey, authorSignature);
 
@@ -715,7 +732,7 @@ public class DistributionServer
         response.Close();
     }
 
-    private async Task<(byte[]? FileBytes, string? FileName, string? MetadataJson, string? AuthorPublicKey, string? AuthorSignature)> ParseMultipartFormAsync(HttpListenerRequest request)
+    private async Task<(byte[]? FileBytes, string? FileName, string? MetadataJson, string? AuthorPublicKey, string? AuthorSignature, string? Hash)> ParseMultipartFormAsync(HttpListenerRequest request)
     {
         using var memoryStream = new MemoryStream();
         await request.InputStream.CopyToAsync(memoryStream);
@@ -725,7 +742,7 @@ public class DistributionServer
         int boundaryIndex = contentType.IndexOf("boundary=", StringComparison.OrdinalIgnoreCase);
         if (boundaryIndex < 0)
         {
-            return (body, null, null, null, null);
+            return (body, null, null, null, null, null);
         }
 
         string rawBoundary = contentType.Substring(boundaryIndex + 9).Split(';')[0].Trim().Trim('"');
@@ -736,6 +753,7 @@ public class DistributionServer
         string? metadataJson = null;
         string? authorPublicKey = null;
         string? authorSignature = null;
+        string? hash = null;
 
         var sections = SplitBytesByBoundary(body, boundaryBytes);
         foreach (var section in sections)
@@ -787,17 +805,21 @@ public class DistributionServer
             {
                 metadataJson = Encoding.UTF8.GetString(contentBytes);
             }
-            else if (string.Equals(partName, "authorPublicKey", StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(partName, "authorPublicKey", StringComparison.OrdinalIgnoreCase) || string.Equals(partName, "PublicKey", StringComparison.OrdinalIgnoreCase))
             {
                 authorPublicKey = Encoding.UTF8.GetString(contentBytes);
             }
-            else if (string.Equals(partName, "authorSignature", StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(partName, "authorSignature", StringComparison.OrdinalIgnoreCase) || string.Equals(partName, "Signature", StringComparison.OrdinalIgnoreCase))
             {
                 authorSignature = Encoding.UTF8.GetString(contentBytes);
             }
+            else if (string.Equals(partName, "Hash", StringComparison.OrdinalIgnoreCase) || string.Equals(partName, "hash", StringComparison.OrdinalIgnoreCase))
+            {
+                hash = Encoding.UTF8.GetString(contentBytes);
+            }
         }
 
-        return (fileBytes ?? body, fileName, metadataJson, authorPublicKey, authorSignature);
+        return (fileBytes ?? body, fileName, metadataJson, authorPublicKey, authorSignature, hash);
     }
 
     private static string? ExtractHeaderParameter(string headers, string parameterName)

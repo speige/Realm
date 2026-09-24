@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using NUnit.Framework;
 using Realm.Shared.Distribution;
 using Realm.Shared.Metadata;
@@ -41,11 +42,10 @@ public class DistributionCoreTests
         Assert.That(privateKey, Is.Not.Null.And.Not.Empty);
         Assert.That(publicKey, Is.Not.Null.And.Not.Empty);
 
-        string solutionDirectory = @"D:\git\Realm\Realm";
-        string privateKeyFilePath = Path.Combine(solutionDirectory, "admin_private.key");
+        string privateKeyFilePath = Path.Combine(_testDirectory, "admin_private.key");
         File.WriteAllText(privateKeyFilePath, privateKey);
 
-        string appSettingsPath = Path.Combine(solutionDirectory, "Realm.Lobby", "appsettings.json");
+        string appSettingsPath = Path.Combine(_testDirectory, "appsettings.json");
         string appSettingsJson = $"{{\n  \"AdminPublicKey\": \"{publicKey}\",\n  \"StorageDirectory\": \".data/cas\",\n  \"CapacityPercentage\": 100\n}}\n";
         File.WriteAllText(appSettingsPath, appSettingsJson);
 
@@ -57,16 +57,16 @@ public class DistributionCoreTests
     [Test]
     public void GenerateAssetPackageManifest()
     {
-        string assetPackageDirectory = @"C:\temp\asset_package";
+        string assetPackageDirectory = Directory.Exists(@"C:\temp\Asset_Pack") ? @"C:\temp\Asset_Pack" : @"C:\temp\asset_package";
         if (!Directory.Exists(assetPackageDirectory))
         {
-            Assert.Ignore("C:\\temp\\asset_package does not exist on this machine.");
+            Assert.Ignore("Asset package directory does not exist on this machine.");
             return;
         }
 
         var manifest = MapManifest.CreateFromDirectory(
             assetPackageDirectory,
-            "asset_package",
+            "Asset_Pack",
             "Realm",
             "1.0.0",
             "Asset Package containing categorized 2D, 3D, animations, and audio dependencies.",
@@ -81,6 +81,37 @@ public class DistributionCoreTests
         Assert.That(loadedManifest, Is.Not.Null);
         Assert.That(loadedManifest!.Files.Count, Is.EqualTo(manifest.Files.Count));
         Assert.That(loadedManifest.Tags, Contains.Item("AssetPack"));
+    }
+
+    [Test]
+    public void MapManifest_Excludes_Archives_Backups_Keys_And_ZeroByteFiles()
+    {
+        string mockDir = Path.Combine(_testDirectory, "mock_workspace");
+        Directory.CreateDirectory(mockDir);
+        Directory.CreateDirectory(Path.Combine(mockDir, "Assets", "models"));
+        Directory.CreateDirectory(Path.Combine(mockDir, ".backups"));
+
+        File.WriteAllText(Path.Combine(mockDir, "terrain.json"), "{}");
+        File.WriteAllBytes(Path.Combine(mockDir, "Assets", "models", "tree.rmesh"), Encoding.UTF8.GetBytes("tree_mesh_data"));
+        File.WriteAllBytes(Path.Combine(mockDir, "archive.7z"), Encoding.UTF8.GetBytes("7z_data"));
+        File.WriteAllBytes(Path.Combine(mockDir, "pack.zip"), Encoding.UTF8.GetBytes("zip_data"));
+        File.WriteAllBytes(Path.Combine(mockDir, "backup.bak"), Encoding.UTF8.GetBytes("bak_data"));
+        File.WriteAllBytes(Path.Combine(mockDir, "authorship_key_DO-NOT-SHARE.rkey"), Encoding.UTF8.GetBytes("key_data"));
+        File.WriteAllBytes(Path.Combine(mockDir, "authorship_key.pem"), Encoding.UTF8.GetBytes("pem_data"));
+        File.WriteAllBytes(Path.Combine(mockDir, ".backups", "old_terrain.json"), Encoding.UTF8.GetBytes("old_data"));
+        File.WriteAllBytes(Path.Combine(mockDir, "empty.bin"), Array.Empty<byte>());
+
+        var manifest = MapManifest.CreateFromDirectory(mockDir, "test_map", "Author", "1.0.0");
+
+        Assert.That(manifest.Files.ContainsKey("terrain.json"), Is.True);
+        Assert.That(manifest.Files.ContainsKey("Assets/models/tree.rmesh"), Is.True);
+        Assert.That(manifest.Files.ContainsKey("archive.7z"), Is.False);
+        Assert.That(manifest.Files.ContainsKey("pack.zip"), Is.False);
+        Assert.That(manifest.Files.ContainsKey("backup.bak"), Is.False);
+        Assert.That(manifest.Files.ContainsKey("authorship_key_DO-NOT-SHARE.rkey"), Is.False);
+        Assert.That(manifest.Files.ContainsKey("authorship_key.pem"), Is.False);
+        Assert.That(manifest.Files.ContainsKey(".backups/old_terrain.json"), Is.False);
+        Assert.That(manifest.Files.ContainsKey("empty.bin"), Is.False);
     }
 
     [Test]
@@ -175,7 +206,11 @@ public class DistributionCoreTests
     [Test]
     public async Task Isolated_RanimUpload_MatchesBlake3()
     {
-        string filePath = @"C:\temp\asset_package\Animations\180 Turn W Briefcase - Female 180 Turn With Briefcase.ranim";
+        string filePath = @"C:\temp\Asset_Pack\Assets\animations\180 Turn W Briefcase - Female 180 Turn With Briefcase.ranim";
+        if (!File.Exists(filePath))
+        {
+            filePath = @"C:\temp\asset_package\Animations\180 Turn W Briefcase - Female 180 Turn With Briefcase.ranim";
+        }
         if (!File.Exists(filePath))
         {
             Assert.Ignore("File not found");
@@ -187,7 +222,10 @@ public class DistributionCoreTests
 
         var serverCas = new ContentAddressableStorage(Path.Combine(_testDirectory, "server_cas"));
         var server = new DistributionServer(serverCas, "test_seeder", 100);
-        int port = 50555;
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        int port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
         server.Start(port);
 
         try
@@ -204,4 +242,50 @@ public class DistributionCoreTests
             server.Stop();
         }
     }
+
+    [Test]
+    public async Task DistributionClient_UploadAssetAsync_RejectsOversizedPayload()
+    {
+        var client = new DistributionClient("http://127.0.0.1:9999");
+        byte[] oversizedBytes = new byte[ContentAddressableStorage.MaximumAssetSizeBytes + 512];
+
+        var response = await client.UploadAssetAsync("http://127.0.0.1:9999", oversizedBytes, ".glb");
+        Assert.That(response.Success, Is.False);
+        Assert.That(response.Message, Does.Contain("exceeds maximum allowed size"));
+    }
+
+    [Test]
+    public async Task DistributionClient_UploadMissingAssetsMultiThreadedAsync_RejectsOversizedFiles()
+    {
+        string mockWorkspace = Path.Combine(_testDirectory, "oversized_ws");
+        Directory.CreateDirectory(mockWorkspace);
+        string bigFilePath = Path.Combine(mockWorkspace, "huge_texture.png");
+
+        byte[] fakeOversizedData = new byte[ContentAddressableStorage.MaximumAssetSizeBytes + 1024];
+        await File.WriteAllBytesAsync(bigFilePath, fakeOversizedData);
+
+        var (authorKey, keyData, _, _) = AuthorshipKeyHelper.GetOrGenerateKeyInfo(Path.Combine(_testDirectory, "keys"), "TestUser");
+        string authorPub = Convert.ToBase64String(authorKey.PublicKey.Export(NSec.Cryptography.KeyBlobFormat.RawPublicKey));
+
+        var client = new DistributionClient("http://127.0.0.1:9999");
+        string fakeHash = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
+        var missingHashes = new List<string> { fakeHash };
+        var mapping = new Dictionary<string, string> { [fakeHash] = "huge_texture.png" };
+
+        var (success, failedAsset, errorMsg) = await client.UploadMissingAssetsMultiThreadedAsync(
+            mockWorkspace,
+            missingHashes,
+            mapping,
+            "TestUser",
+            authorPub,
+            authorKey,
+            "TestMap",
+            "1.0.0"
+        );
+
+        Assert.That(success, Is.False);
+        Assert.That(failedAsset, Is.EqualTo("huge_texture.png"));
+        Assert.That(errorMsg, Does.Contain("exceeds maximum allowed size"));
+    }
 }
+

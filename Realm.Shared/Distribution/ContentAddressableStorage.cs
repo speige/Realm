@@ -346,10 +346,6 @@ public class ContentAddressableStorage
         try
         {
             string path = GetSidecarCachePath(normalizedHash);
-            if (File.Exists(path))
-            {
-                return;
-            }
             File.WriteAllText(path, metadataJson, Encoding.UTF8);
         }
         catch

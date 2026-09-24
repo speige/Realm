@@ -2083,6 +2083,15 @@ public partial class MapEditorHUD : Control
 			return;
 		}
 
+		var (sizesValid, oversizedAssets) = MapAssetHelper.ValidateWorkspaceAssetSizes(wsPath);
+		if (!sizesValid)
+		{
+			string oversizedSummary = string.Join("\n", oversizedAssets.Take(4).Select(o => $"• {o.RelativePath} ({o.SizeMB:F2} MB > 15 MB)")) + (oversizedAssets.Count > 4 ? "\n..." : "");
+			ShowFeedback(string.Format(TranslationServer.Translate("Publish failed: Assets exceed maximum 15 MB size limit:\n{0}"), oversizedSummary));
+			AppendWasmConsoleLog($"[ERROR] Publish failed. Assets exceed maximum 15 MB size limit:\n{string.Join("\n", oversizedAssets.Select(o => $"  {o.RelativePath} ({o.SizeMB:F2} MB)"))}");
+			return;
+		}
+
 		var overlay = new ColorRect();
 		overlay.Name = "PublishInstructionsOverlay";
 		overlay.Color = new Color(0, 0, 0, 0.7f);
@@ -3860,6 +3869,15 @@ public partial class MapEditorHUD : Control
 			return;
 		}
 
+		var (sizesValid, oversizedAssets) = MapAssetHelper.ValidateWorkspaceAssetSizes(workspace);
+		if (!sizesValid)
+		{
+			string oversizedSummary = string.Join("\n", oversizedAssets.Take(4).Select(o => $"• {o.RelativePath} ({o.SizeMB:F2} MB > 15 MB)")) + (oversizedAssets.Count > 4 ? "\n..." : "");
+			ShowFeedback(string.Format(TranslationServer.Translate("Publish failed: Assets exceed maximum 15 MB size limit:\n{0}"), oversizedSummary));
+			AppendWasmConsoleLog($"[ERROR] Publish failed. Assets exceed maximum 15 MB size limit:\n{string.Join("\n", oversizedAssets.Select(o => $"  {o.RelativePath} ({o.SizeMB:F2} MB)"))}");
+			return;
+		}
+
 		string mapTitle = GetMapNameFromMetadata();
 		if (string.IsNullOrWhiteSpace(mapTitle) || mapTitle.Equals("Untitled Map", StringComparison.OrdinalIgnoreCase))
 		{
@@ -3882,14 +3900,14 @@ public partial class MapEditorHUD : Control
 		AddChild(popup);
 
 		var cardPanel = new Panel();
-		cardPanel.CustomMinimumSize = new Vector2(560, 260);
+		cardPanel.CustomMinimumSize = new Vector2(580, 280);
 		cardPanel.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
 		cardPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateStonePanel(true));
 		popup.AddChild(cardPanel);
 
 		var vbox = new VBoxContainer();
 		vbox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-		vbox.CustomMinimumSize = new Vector2(520, 220);
+		vbox.CustomMinimumSize = new Vector2(540, 240);
 		vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		vbox.SizeFlagsVertical = SizeFlags.ExpandFill;
 		vbox.AddThemeConstantOverride("separation", 10);
@@ -3923,6 +3941,7 @@ public partial class MapEditorHUD : Control
 		statusLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		statusLabel.AddThemeFontSizeOverride("font_size", 13);
 		statusLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
+		statusLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
 		vbox.AddChild(statusLabel);
 
 		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 5) });
@@ -4036,6 +4055,19 @@ public partial class MapEditorHUD : Control
 				return;
 			}
 
+			(sizesValid, oversizedAssets) = MapAssetHelper.ValidateWorkspaceAssetSizes(workspace);
+			if (!sizesValid)
+			{
+				progressBar.Value = 100;
+				statusLabel.Text = "❌ " + TranslationServer.Translate("Asset exceeds 15 MB size limit. Publish aborted.");
+				statusLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.3f, 0.3f));
+				closeBtn.Visible = true;
+				string oversizedSummary = string.Join("\n", oversizedAssets.Take(4).Select(o => $"• {o.RelativePath} ({o.SizeMB:F2} MB > 15 MB)")) + (oversizedAssets.Count > 4 ? "\n..." : "");
+				ShowFeedback(string.Format(TranslationServer.Translate("Publish failed: Assets exceed maximum 15 MB size limit:\n{0}"), oversizedSummary));
+				AppendWasmConsoleLog($"[ERROR] Publish aborted. Assets exceed maximum 15 MB size limit:\n{string.Join("\n", oversizedAssets.Select(o => $"  {o.RelativePath} ({o.SizeMB:F2} MB)"))}");
+				return;
+			}
+
 			progressBar.Value = 20;
 			statusLabel.Text = TranslationServer.Translate("Compiling WASM map script...");
 			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
@@ -4141,6 +4173,14 @@ public partial class MapEditorHUD : Control
 			string manifestJsonContent = manifest.ToJson();
 			System.IO.File.WriteAllText(manifestJsonPath, manifestJsonContent);
 
+			var hashToRelativePath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+			foreach (var pair in manifest.Files)
+			{
+				string norm = ContentAddressableStorage.NormalizeBlake3Hash(pair.Value);
+				hashToRelativePath[norm] = pair.Key;
+				hashToRelativePath[pair.Value] = pair.Key;
+			}
+
 			byte[] manifestBytes = System.Text.Encoding.UTF8.GetBytes(manifestJsonContent);
 			string manifestBlake3 = RealmMetadataHelper.ComputeBlake3(manifestBytes, ".json");
 			string manifestHash = $"{manifestBlake3}.json";
@@ -4168,23 +4208,25 @@ public partial class MapEditorHUD : Control
 			if (!initRes.Success)
 			{
 				progressBar.Value = 100;
-				statusLabel.Text = "❌ " + string.Format(TranslationServer.Translate("Failed to initiate publish: {0}"), initRes.Message);
+				string baseMsg = !string.IsNullOrEmpty(initRes.Message) ? initRes.Message : TranslationServer.Translate("Failed to initiate publish.");
+				string errorText = "❌ " + string.Format(TranslationServer.Translate("Failed to initiate publish: {0}"), baseMsg);
+				if (initRes.MissingHashes != null && initRes.MissingHashes.Count > 0)
+				{
+					string firstMissingHash = initRes.MissingHashes[0];
+					string firstMissingName = hashToRelativePath.TryGetValue(firstMissingHash, out var rel) || hashToRelativePath.TryGetValue(ContentAddressableStorage.NormalizeBlake3Hash(firstMissingHash), out rel)
+						? rel
+						: firstMissingHash;
+					errorText += "\n" + string.Format(TranslationServer.Translate("Missing asset: {0}"), firstMissingName);
+				}
+				statusLabel.Text = errorText;
 				statusLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.3f, 0.3f));
 				closeBtn.Visible = true;
-				ShowFeedback("Failed to initiate publish: " + initRes.Message);
+				ShowFeedback(errorText.Replace("❌ ", ""));
 				return;
 			}
 
 			if (initRes.MissingHashes.Count > 0)
 			{
-				var hashToRelativePath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-				foreach (var pair in manifest.Files)
-				{
-					string norm = ContentAddressableStorage.NormalizeBlake3Hash(pair.Value);
-					hashToRelativePath[norm] = pair.Key;
-					hashToRelativePath[pair.Value] = pair.Key;
-				}
-
 				long lastProgressTicks = 0;
 				var (uploadSuccess, failedAsset, errorMsg) = await distClient.UploadMissingAssetsMultiThreadedAsync(
 					workspace,
@@ -4265,10 +4307,20 @@ public partial class MapEditorHUD : Control
 			else
 			{
 				progressBar.Value = 100;
-				statusLabel.Text = "❌ " + string.Format(TranslationServer.Translate("Failed to finalize publish: {0}"), finalRes.Message);
+				string baseMsg = !string.IsNullOrEmpty(finalRes.Message) ? finalRes.Message : TranslationServer.Translate("Failed to finalize publish.");
+				string errorText = "❌ " + string.Format(TranslationServer.Translate("Failed to finalize publish: {0}"), baseMsg);
+				if (finalRes.MissingHashes != null && finalRes.MissingHashes.Count > 0)
+				{
+					string firstMissingHash = finalRes.MissingHashes[0];
+					string firstMissingName = hashToRelativePath.TryGetValue(firstMissingHash, out var rel) || hashToRelativePath.TryGetValue(ContentAddressableStorage.NormalizeBlake3Hash(firstMissingHash), out rel)
+						? rel
+						: firstMissingHash;
+					errorText += "\n" + string.Format(TranslationServer.Translate("Missing asset: {0}"), firstMissingName);
+				}
+				statusLabel.Text = errorText;
 				statusLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.3f, 0.3f));
 				closeBtn.Visible = true;
-				ShowFeedback("Failed to finalize publish: " + finalRes.Message);
+				ShowFeedback(errorText.Replace("❌ ", ""));
 			}
 		}
 		catch (Exception ex)
@@ -9103,6 +9155,15 @@ public partial class MapEditorHUD : Control
 			return;
 		}
 
+		var (sizesValid, oversizedAssets) = MapAssetHelper.ValidateWorkspaceAssetSizes(wsPath);
+		if (!sizesValid)
+		{
+			string oversizedSummary = string.Join("\n", oversizedAssets.Take(4).Select(o => $"• {o.RelativePath} ({o.SizeMB:F2} MB > 15 MB)")) + (oversizedAssets.Count > 4 ? "\n..." : "");
+			ShowFeedback(string.Format(TranslationServer.Translate("Export failed: Assets exceed maximum 15 MB size limit:\n{0}"), oversizedSummary));
+			AppendWasmConsoleLog($"[ERROR] Export failed. Assets exceed maximum 15 MB size limit:\n{string.Join("\n", oversizedAssets.Select(o => $"  {o.RelativePath} ({o.SizeMB:F2} MB)"))}");
+			return;
+		}
+
 		string mapTitle = GetMapNameFromMetadata();
 		string cleanMapName = string.Join("_", mapTitle.Split(System.IO.Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries)).Trim();
 		if (string.IsNullOrEmpty(cleanMapName) || cleanMapName.Equals("Untitled Map", StringComparison.OrdinalIgnoreCase)) cleanMapName = "MapExport";
@@ -9276,6 +9337,19 @@ public partial class MapEditorHUD : Control
 				closeBtn.Visible = true;
 				ShowFeedback(string.Format(TranslationServer.Translate("Export failed: Map is missing required asset files:\n{0}"), string.Join(", ", missingAssets.Take(4)) + (missingAssets.Count > 4 ? "..." : "")));
 				AppendWasmConsoleLog($"[ERROR] Export aborted. Missing required asset files:\n  {string.Join("\n  ", missingAssets)}");
+				return;
+			}
+
+			var (sizesValid, oversizedAssets) = MapAssetHelper.ValidateWorkspaceAssetSizes(_tempWorkspacePath);
+			if (!sizesValid)
+			{
+				progressBar.Value = 100;
+				statusLabel.Text = "❌ " + TranslationServer.Translate("Asset exceeds 15 MB size limit. Export aborted.");
+				statusLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.3f, 0.3f));
+				closeBtn.Visible = true;
+				string oversizedSummary = string.Join("\n", oversizedAssets.Take(4).Select(o => $"• {o.RelativePath} ({o.SizeMB:F2} MB > 15 MB)")) + (oversizedAssets.Count > 4 ? "\n..." : "");
+				ShowFeedback(string.Format(TranslationServer.Translate("Export failed: Assets exceed maximum 15 MB size limit:\n{0}"), oversizedSummary));
+				AppendWasmConsoleLog($"[ERROR] Export aborted. Assets exceed maximum 15 MB size limit:\n{string.Join("\n", oversizedAssets.Select(o => $"  {o.RelativePath} ({o.SizeMB:F2} MB)"))}");
 				return;
 			}
 
