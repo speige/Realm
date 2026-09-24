@@ -167,7 +167,15 @@ public static class GlbInMemoryColorPreprocessor
 			string effectiveChromaKey = chromaKeyHex ?? string.Empty;
 			if (string.IsNullOrWhiteSpace(effectiveChromaKey) || string.Equals(effectiveChromaKey, "auto", StringComparison.OrdinalIgnoreCase))
 			{
-				effectiveChromaKey = GlbPlayerColorProcessor.AutoDetectChromaKey(albedoImg);
+				effectiveChromaKey = "#FF00FF";
+			}
+			else
+			{
+				effectiveChromaKey = effectiveChromaKey.Trim();
+				if (!effectiveChromaKey.StartsWith('#'))
+				{
+					effectiveChromaKey = "#" + effectiveChromaKey;
+				}
 			}
 
 			ApplyAnalyticalChromaDespill(albedoImg, ormImg, effectiveChromaKey);
