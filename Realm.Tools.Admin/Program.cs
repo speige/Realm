@@ -555,9 +555,45 @@ public static class Program
 				Console.WriteLine("Realm Registry Server Admin Info");
 				Console.WriteLine("=================================================");
 				var node = JsonNode.Parse(json);
-				Console.WriteLine($"Admin Username:      {node?["adminUsername"]?.ToString() ?? "N/A"}");
-				Console.WriteLine($"Admin Public Key:    {node?["adminPublicKey"]?.ToString() ?? "N/A"}");
+				string adminUsername = node?["adminUsername"]?.ToString()
+					?? (node?["admins"] is JsonArray adminArr && adminArr.Count > 0 ? adminArr[0]?["username"]?.ToString() ?? adminArr[0]?["Username"]?.ToString() : null)
+					?? "N/A";
+				string adminPublicKey = node?["adminPublicKey"]?.ToString()
+					?? (node?["adminPublicKeys"] is JsonArray keyArr && keyArr.Count > 0 ? keyArr[0]?.ToString() : null)
+					?? (node?["admins"] is JsonArray adminArr2 && adminArr2.Count > 0 ? adminArr2[0]?["publicKey"]?.ToString() ?? adminArr2[0]?["PublicKey"]?.ToString() : null)
+					?? "N/A";
+
+				Console.WriteLine($"Admin Username:      {adminUsername}");
+				Console.WriteLine($"Admin Public Key:    {adminPublicKey}");
 				Console.WriteLine($"Is Graduated Admin:  {node?["isGraduatedAdmin"]?.ToString() ?? "N/A"}");
+				Console.WriteLine($"Data Directory:      {node?["dataDirectory"]?.ToString() ?? "N/A"}");
+
+				string? casFormatted = node?["casTotalSizeFormatted"]?.ToString();
+				long? casBytes = null;
+				if (node?["casTotalSizeBytes"] != null && long.TryParse(node["casTotalSizeBytes"]!.ToString(), out long parsedBytes))
+				{
+					casBytes = parsedBytes;
+				}
+
+				string casDiskSpaceText;
+				if (!string.IsNullOrWhiteSpace(casFormatted) && casBytes.HasValue)
+				{
+					casDiskSpaceText = $"{casFormatted} ({casBytes.Value:N0} bytes)";
+				}
+				else if (!string.IsNullOrWhiteSpace(casFormatted))
+				{
+					casDiskSpaceText = casFormatted;
+				}
+				else if (casBytes.HasValue)
+				{
+					casDiskSpaceText = $"{ContentAddressableStorage.FormatByteSize(casBytes.Value)} ({casBytes.Value:N0} bytes)";
+				}
+				else
+				{
+					casDiskSpaceText = "N/A";
+				}
+
+				Console.WriteLine($"CAS Used Disk Space: {casDiskSpaceText}");
 				Console.WriteLine("=================================================");
 				return 0;
 			}

@@ -2612,9 +2612,12 @@ app.MapGet("/api/discovery/maps", (DataStoreService db, ContentAddressableStorag
     return Results.Ok(discoveryList);
 });
 
-app.MapGet("/api/admin/info", (DataStoreService db) =>
+app.MapGet("/api/admin/info", (DataStoreService db, ContentAddressableStorage cas) =>
 {
     var adminsList = new List<object>();
+    string? primaryAdminUsername = null;
+    string? primaryAdminPublicKey = adminPublicKeys.FirstOrDefault();
+
     foreach (var key in adminPublicKeys)
     {
         string username = "Admin";
@@ -2624,14 +2627,26 @@ app.MapGet("/api/admin/info", (DataStoreService db) =>
             string? name = uProp.GetString();
             if (!string.IsNullOrEmpty(name)) username = name;
         }
+        if (primaryAdminUsername == null && string.Equals(key, primaryAdminPublicKey, StringComparison.OrdinalIgnoreCase))
+        {
+            primaryAdminUsername = username;
+        }
         adminsList.Add(new { PublicKey = key, Username = username });
     }
 
+    long casTotalBytes = cas.GetTotalUsedBytes();
+    string dataDirectory = db.DataDirectory;
+
     return Results.Ok(new
     {
+        AdminUsername = primaryAdminUsername ?? (adminsList.Count > 0 ? "Admin" : "N/A"),
+        AdminPublicKey = primaryAdminPublicKey ?? "N/A",
         AdminPublicKeys = adminPublicKeys.ToList(),
         Admins = adminsList,
-        IsGraduatedAdmin = adminPublicKeys.Count > 0
+        IsGraduatedAdmin = adminPublicKeys.Count > 0,
+        DataDirectory = dataDirectory,
+        CasTotalSizeBytes = casTotalBytes,
+        CasTotalSizeFormatted = ContentAddressableStorage.FormatByteSize(casTotalBytes)
     });
 });
 

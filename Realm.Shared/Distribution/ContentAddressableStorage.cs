@@ -425,4 +425,41 @@ public class ContentAddressableStorage
 
         return hashes;
     }
+
+    public long GetTotalUsedBytes()
+    {
+        if (!Directory.Exists(_rootDirectory))
+        {
+            return 0;
+        }
+
+        long totalBytes = 0;
+        try
+        {
+            var directoryInfo = new DirectoryInfo(_rootDirectory);
+            foreach (var file in directoryInfo.EnumerateFiles("*", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    totalBytes += file.Length;
+                }
+                catch
+                {
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return totalBytes;
+    }
+
+    public static string FormatByteSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        if (bytes < 1024 * 1024 * 1024) return $"{bytes / (1024.0 * 1024.0):F1} MB";
+        return $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB";
+    }
 }

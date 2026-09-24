@@ -1,4 +1,5 @@
 using DBreeze;
+using System.IO;
 using System.Text.Json;
 
 namespace Realm.Lobby.Services;
@@ -6,11 +7,19 @@ namespace Realm.Lobby.Services;
 public class DataStoreService : IDisposable
 {
     private readonly DBreezeEngine _engine;
+    private readonly string _dataDirectory;
 
-    public DataStoreService()
+    public string DataDirectory => _dataDirectory;
+
+    public DataStoreService() : this(".data")
     {
-        Directory.CreateDirectory(".data");
-        _engine = new DBreezeEngine(".data");
+    }
+
+    public DataStoreService(string dataDirectory)
+    {
+        _dataDirectory = Path.GetFullPath(dataDirectory);
+        Directory.CreateDirectory(_dataDirectory);
+        _engine = new DBreezeEngine(_dataDirectory);
     }
 
     public T? Get<T>(string collection, string id)
