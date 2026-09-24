@@ -9,6 +9,38 @@ namespace Realm.Shared.Distribution;
 public class ZstdAssetBundleHelper
 {
     public const int ChunkSize = 64 * 1024;
+    public const int PacketChunkSize = 64 * 1024;
+    public const int MaxBundleChunkSize = 100 * 1024 * 1024;
+
+    public static List<List<(string AssetKey, byte[] Data, string? Metadata)>> PartitionAssetsIntoChunks(
+        IEnumerable<(string AssetKey, byte[] Data, string? Metadata)> assets,
+        long maxChunkBytes = MaxBundleChunkSize)
+    {
+        var result = new List<List<(string AssetKey, byte[] Data, string? Metadata)>>();
+        var currentChunk = new List<(string AssetKey, byte[] Data, string? Metadata)>();
+        long currentChunkBytes = 0;
+
+        foreach (var item in assets)
+        {
+            long estimatedAssetBytes = (item.Data?.Length ?? 0) + (item.AssetKey?.Length ?? 0) * 2 + (item.Metadata?.Length ?? 0) * 2 + 16;
+            if (currentChunk.Count > 0 && currentChunkBytes + estimatedAssetBytes > maxChunkBytes)
+            {
+                result.Add(currentChunk);
+                currentChunk = new List<(string AssetKey, byte[] Data, string? Metadata)>();
+                currentChunkBytes = 0;
+            }
+
+            currentChunk.Add(item);
+            currentChunkBytes += estimatedAssetBytes;
+        }
+
+        if (currentChunk.Count > 0)
+        {
+            result.Add(currentChunk);
+        }
+
+        return result;
+    }
 
     public static void CreateBundleToFile(
         string destinationFilePath,

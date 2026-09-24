@@ -53,7 +53,7 @@ public partial class PeerSeederManager : Node
         try
         {
             _enetPeer = new ENetMultiplayerPeer();
-            var err = _enetPeer.CreateServer(localPort, 16);
+            var err = _enetPeer.CreateServer(localPort, 1);
             if (err != Error.Ok)
             {
                 GD.PrintErr($"[PeerSeeder] Failed to create ENet Seeder server on port {localPort}: {err}");
