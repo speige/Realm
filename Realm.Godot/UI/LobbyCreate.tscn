@@ -83,10 +83,10 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -410.0
-offset_top = -324.0
-offset_right = 410.0
-offset_bottom = 324.0
+offset_left = -440.0
+offset_top = -350.0
+offset_right = 440.0
+offset_bottom = 350.0
 grow_horizontal = 2
 grow_vertical = 2
 
@@ -112,7 +112,7 @@ size_flags_horizontal = 4
 focus_mode = 0
 
 [node name="BriefingPanel" type="PanelContainer" parent="CentralPanel/ContentContainer"]
-custom_minimumSize = Vector2(800, 240)
+custom_minimumSize = Vector2(820, 280)
 layout_mode = 2
 size_flags_horizontal = 4
 

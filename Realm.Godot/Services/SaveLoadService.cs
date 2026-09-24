@@ -2180,7 +2180,7 @@ public class SaveLoadService
 			string assetsDir = Path.Combine(mapDirectory, "Assets");
 
 			var includedRelativePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-			var assetsToSync = new List<(string RelativePath, JsonNode? EntryNode, JsonObject ParentObj, string PropertyKey)>();
+			var assetsToSync = new List<(string RelativePath, JsonNode? EntryNode, JsonObject ParentObj, string PropertyKey, string Category, string? SubCategory)>();
 
 			foreach (var categoryKvp in assetsObj)
 			{
@@ -2197,7 +2197,7 @@ public class SaveLoadService
 								string fileName = itemKvp.Key;
 								string relPath = Path.Combine("Assets", "models", subCategory, fileName).Replace('\\', '/');
 								includedRelativePaths.Add(relPath);
-								assetsToSync.Add((relPath, itemKvp.Value, subCatObj, fileName));
+								assetsToSync.Add((relPath, itemKvp.Value, subCatObj, fileName, "glb", subCategory));
 							}
 						}
 					}
@@ -2230,7 +2230,7 @@ public class SaveLoadService
 							includedRelativePaths.Add(Path.Combine("Assets", "audio", subFolder, fileName).Replace('\\', '/'));
 						}
 
-						assetsToSync.Add((relPath, itemKvp.Value, catObj, fileName));
+						assetsToSync.Add((relPath, itemKvp.Value, catObj, fileName, category, null));
 					}
 				}
 			}
@@ -2254,16 +2254,37 @@ public class SaveLoadService
 				DeleteEmptyDirectoriesRecursive(assetsDir);
 			}
 
-			foreach (var (relPath, entryNode, parentObj, propertyKey) in assetsToSync)
+			var nonExistentAssets = new List<(JsonObject ParentObj, string PropertyKey)>();
+
+			foreach (var (relPath, entryNode, parentObj, propertyKey, category, subCategory) in assetsToSync)
 			{
 				string fullDiskPath = Path.Combine(mapDirectory, relPath);
 				if (!File.Exists(fullDiskPath))
 				{
 					string fileName = Path.GetFileName(relPath);
-					string? altPath = FindAssetFileByName(assetsDir, fileName);
-					if (altPath != null && File.Exists(altPath))
+					if (category == "glb")
 					{
-						fullDiskPath = altPath;
+						string? modelDisk = MapAssetHelper.FindModelOnDisk(mapDirectory, subCategory, fileName);
+						if (!string.IsNullOrEmpty(modelDisk) && File.Exists(modelDisk))
+						{
+							fullDiskPath = modelDisk;
+						}
+					}
+					else
+					{
+						string? altPath = FindAssetFileByName(assetsDir, fileName);
+						if (altPath != null && File.Exists(altPath))
+						{
+							fullDiskPath = altPath;
+						}
+						else
+						{
+							string directMapPath = Path.Combine(mapDirectory, fileName);
+							if (File.Exists(directMapPath))
+							{
+								fullDiskPath = directMapPath;
+							}
+						}
 					}
 				}
 
@@ -2292,6 +2313,15 @@ public class SaveLoadService
 						RealmMetadataHelper.SyncBlake3Metadata(fullDiskPath);
 					}
 				}
+				else
+				{
+					nonExistentAssets.Add((parentObj, propertyKey));
+				}
+			}
+
+			foreach (var (parentObj, propertyKey) in nonExistentAssets)
+			{
+				parentObj.Remove(propertyKey);
 			}
 
 			MapAssetHelper.SaveAssetsToManifest(mapDirectory, assetsObj, removeFromMetadata: true);

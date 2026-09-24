@@ -70,6 +70,203 @@ public static class MapAssetHelper
 		return unionedAssets;
 	}
 
+	public static (bool IsValid, List<string> MissingFiles) ValidateWorkspaceAssets(string workspacePath)
+	{
+		var missingFiles = new List<string>();
+		if (string.IsNullOrEmpty(workspacePath) || !Directory.Exists(workspacePath))
+		{
+			missingFiles.Add(string.IsNullOrEmpty(workspacePath) ? "Workspace path is empty" : $"Workspace directory does not exist: {workspacePath}");
+			return (false, missingFiles);
+		}
+
+		string assetsDir = Path.Combine(workspacePath, "Assets");
+		string manifestPath = Path.Combine(workspacePath, "manifest.json");
+		string metadataPath = Path.Combine(workspacePath, "metadata.json");
+
+		if (File.Exists(manifestPath))
+		{
+			try
+			{
+				string manifestJson = File.ReadAllText(manifestPath);
+				var manifestDoc = JsonNode.Parse(manifestJson)?.AsObject();
+				if (manifestDoc != null)
+				{
+					if (manifestDoc["Assets"] is JsonObject manifestAssets)
+					{
+						var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+						MapManifest.FlattenAssetsInto(dict, manifestAssets);
+						foreach (var kvp in dict)
+						{
+							string relPath = kvp.Key.TrimStart('/', '\\');
+							string fullPath = Path.Combine(workspacePath, relPath);
+							if (!File.Exists(fullPath))
+							{
+								string fileName = Path.GetFileName(relPath);
+								string? resolvedModel = FindModelOnDisk(workspacePath, null, fileName);
+								if (string.IsNullOrEmpty(resolvedModel) || !File.Exists(resolvedModel))
+								{
+									missingFiles.Add(relPath);
+								}
+							}
+						}
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"[MapAssetHelper] ValidateWorkspaceAssets error reading manifest: {ex.Message}");
+			}
+		}
+
+		if (File.Exists(metadataPath))
+		{
+			try
+			{
+				string metadataJson = File.ReadAllText(metadataPath);
+				var metadataRoot = JsonNode.Parse(metadataJson)?.AsObject();
+				if (metadataRoot != null)
+				{
+					var arrayMappings = new (string ArrayKey, string SubCategory)[]
+					{
+						("CustomUnits", "units"),
+						("CustomBuildings", "buildings"),
+						("CustomResources", "resources"),
+						("CustomProps", "props"),
+						("CustomAttachments", "attachments"),
+						("CustomWeapons", "weapons")
+					};
+
+					foreach (var (arrayKey, subCat) in arrayMappings)
+					{
+						if (metadataRoot.TryGetPropertyValue(arrayKey, out var arrNode) && arrNode is JsonArray arr)
+						{
+							foreach (var itemNode in arr)
+							{
+								if (itemNode is JsonObject entityObj)
+								{
+									string modelPath = arrayKey switch
+									{
+										"CustomWeapons" => entityObj["ProjectileModelPath"]?.ToString() ?? entityObj["ModelPath"]?.ToString() ?? "",
+										_ => entityObj["ModelPath"]?.ToString() ?? ""
+									};
+
+									if (!string.IsNullOrWhiteSpace(modelPath) && !modelPath.StartsWith("res://", StringComparison.OrdinalIgnoreCase) && !modelPath.StartsWith("user://", StringComparison.OrdinalIgnoreCase))
+									{
+										string fileName = Path.GetFileName(modelPath);
+										string? diskPath = FindModelOnDisk(workspacePath, subCat, fileName);
+										if (string.IsNullOrEmpty(diskPath) || !File.Exists(diskPath))
+										{
+											string expectedRel = $"Assets/models/{subCat}/{fileName}".Replace('\\', '/');
+											if (!expectedRel.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
+											{
+												expectedRel = Path.ChangeExtension(expectedRel, ".rmesh");
+											}
+											missingFiles.Add(expectedRel);
+										}
+									}
+
+									string portraitModel = entityObj["PortraitModelPath"]?.ToString() ?? "";
+									if (!string.IsNullOrWhiteSpace(portraitModel) && !portraitModel.StartsWith("res://", StringComparison.OrdinalIgnoreCase) && !portraitModel.StartsWith("user://", StringComparison.OrdinalIgnoreCase))
+									{
+										string fileName = Path.GetFileName(portraitModel);
+										string? diskPath = FindModelOnDisk(workspacePath, subCat, fileName);
+										if (string.IsNullOrEmpty(diskPath) || !File.Exists(diskPath))
+										{
+											string expectedRel = $"Assets/models/{subCat}/{fileName}".Replace('\\', '/');
+											if (!expectedRel.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase)) expectedRel = Path.ChangeExtension(expectedRel, ".rmesh");
+											missingFiles.Add(expectedRel);
+										}
+									}
+
+									string deadModel = entityObj["DeadModelPath"]?.ToString() ?? "";
+									if (!string.IsNullOrWhiteSpace(deadModel) && !deadModel.StartsWith("res://", StringComparison.OrdinalIgnoreCase) && !deadModel.StartsWith("user://", StringComparison.OrdinalIgnoreCase))
+									{
+										string fileName = Path.GetFileName(deadModel);
+										string? diskPath = FindModelOnDisk(workspacePath, subCat, fileName);
+										if (string.IsNullOrEmpty(diskPath) || !File.Exists(diskPath))
+										{
+											string expectedRel = $"Assets/models/{subCat}/{fileName}".Replace('\\', '/');
+											if (!expectedRel.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase)) expectedRel = Path.ChangeExtension(expectedRel, ".rmesh");
+											missingFiles.Add(expectedRel);
+										}
+									}
+
+									string placementModel = entityObj["PlacementModelPath"]?.ToString() ?? "";
+									if (!string.IsNullOrWhiteSpace(placementModel) && !placementModel.StartsWith("res://", StringComparison.OrdinalIgnoreCase) && !placementModel.StartsWith("user://", StringComparison.OrdinalIgnoreCase))
+									{
+										string fileName = Path.GetFileName(placementModel);
+										string? diskPath = FindModelOnDisk(workspacePath, subCat, fileName);
+										if (string.IsNullOrEmpty(diskPath) || !File.Exists(diskPath))
+										{
+											string expectedRel = $"Assets/models/{subCat}/{fileName}".Replace('\\', '/');
+											if (!expectedRel.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase)) expectedRel = Path.ChangeExtension(expectedRel, ".rmesh");
+											missingFiles.Add(expectedRel);
+										}
+									}
+								}
+							}
+						}
+					}
+
+					string[] categoryKeys = new[] { "textures", "decals", "vfx_spritesheets", "noise_textures", "icons", "skyboxes", "ribbons", "animations", "sfx", "music", "other" };
+					foreach (var cat in categoryKeys)
+					{
+						if (metadataRoot.TryGetPropertyValue(cat, out var catNode) && catNode is JsonObject catObj)
+						{
+							string subFolder = cat switch
+							{
+								"vfx_spritesheets" => "vfx",
+								"animations" => "animations",
+								"sfx" => "audio/sfx",
+								"music" => "audio/music",
+								"icons" => "icons",
+								"decals" => "decals",
+								"ribbons" => "ribbons",
+								"noise_textures" => "noise",
+								"skyboxes" => "skyboxes",
+								"other" => "other",
+								_ => "textures"
+							};
+
+							foreach (var itemPair in catObj)
+							{
+								string fileName = itemPair.Key;
+								if (string.IsNullOrWhiteSpace(fileName)) continue;
+
+								string diskPath = subFolder == "other" ? Path.Combine(workspacePath, fileName) : Path.Combine(assetsDir, subFolder, fileName);
+								if (!File.Exists(diskPath) && subFolder is "audio/sfx" or "audio/music")
+								{
+									diskPath = Path.Combine(assetsDir, subFolder.Substring(6), fileName);
+								}
+								if (!File.Exists(diskPath))
+								{
+									diskPath = Path.Combine(assetsDir, fileName);
+								}
+								if (!File.Exists(diskPath))
+								{
+									diskPath = Path.Combine(workspacePath, fileName);
+								}
+
+								if (!File.Exists(diskPath))
+								{
+									string expectedRel = subFolder == "other" ? fileName : $"Assets/{subFolder}/{fileName}".Replace('\\', '/');
+									missingFiles.Add(expectedRel);
+								}
+							}
+						}
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"[MapAssetHelper] ValidateWorkspaceAssets error reading metadata: {ex.Message}");
+			}
+		}
+
+		var distinctMissing = missingFiles.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+		return (distinctMissing.Count == 0, distinctMissing);
+	}
+
 	public static void SaveAssetsToManifest(string mapDirectory, JsonObject assets, bool removeFromMetadata = true)
 	{
 		if (assets == null) return;
@@ -230,6 +427,192 @@ public static class MapAssetHelper
 		RemoveAssetFromMetadata(targetDirectory, categoryKey, fileName);
 	}
 
+	public static void PruneNonExistentAssetsFromManifest(string mapDirectory)
+	{
+		string targetDirectory = string.IsNullOrEmpty(mapDirectory)
+			? MapWorkspaceService.GetActiveWorkspacePath()
+			: mapDirectory;
+
+		if (!Directory.Exists(targetDirectory)) return;
+
+		string manifestPath = Path.Combine(targetDirectory, "manifest.json");
+		if (!File.Exists(manifestPath)) return;
+
+		try
+		{
+			string manifestJson = File.ReadAllText(manifestPath);
+			var manifestDoc = JsonNode.Parse(manifestJson)?.AsObject();
+			if (manifestDoc == null) return;
+
+			string assetsDir = Path.Combine(targetDirectory, "Assets");
+
+			if (manifestDoc["Assets"] is JsonObject assetsObj)
+			{
+				var categoriesToRemove = new List<string>();
+
+				foreach (var categoryKvp in assetsObj)
+				{
+					string category = categoryKvp.Key.ToLowerInvariant();
+					if (category == "glb" && categoryKvp.Value is JsonObject glbObj)
+					{
+						var subCategoriesToRemove = new List<string>();
+						foreach (var subKvp in glbObj)
+						{
+							string subCategory = NormalizeGlbSubCategory(subKvp.Key);
+							if (subKvp.Value is JsonObject subCatObj)
+							{
+								var itemsToRemove = new List<string>();
+								foreach (var itemKvp in subCatObj)
+								{
+									string fileName = itemKvp.Key;
+									string? diskPath = FindModelOnDisk(targetDirectory, subCategory, fileName);
+									if (string.IsNullOrEmpty(diskPath) || !File.Exists(diskPath))
+									{
+										itemsToRemove.Add(fileName);
+									}
+									else
+									{
+										string hash = RealmMetadataHelper.ComputeBlake3(diskPath);
+										if (!string.IsNullOrEmpty(hash))
+										{
+											if (itemKvp.Value is JsonObject itemObj)
+											{
+												itemObj["hash"] = hash;
+											}
+											else
+											{
+												subCatObj[fileName] = hash;
+											}
+										}
+									}
+								}
+								foreach (var item in itemsToRemove)
+								{
+									subCatObj.Remove(item);
+								}
+								if (subCatObj.Count == 0)
+								{
+									subCategoriesToRemove.Add(subKvp.Key);
+								}
+							}
+						}
+						foreach (var sub in subCategoriesToRemove)
+						{
+							glbObj.Remove(sub);
+						}
+						if (glbObj.Count == 0)
+						{
+							categoriesToRemove.Add(categoryKvp.Key);
+						}
+					}
+					else if (categoryKvp.Value is JsonObject catObj)
+					{
+						string subFolder = category switch
+						{
+							"vfx" or "vfx_spritesheets" => "vfx",
+							"animations" => "animations",
+							"sfx" => "audio/sfx",
+							"music" => "audio/music",
+							"icons" => "icons",
+							"decals" => "decals",
+							"ribbons" or "ribbon_textures" => "ribbons",
+							"noise" or "noise_textures" => "noise",
+							"skyboxes" => "skyboxes",
+							"textures" => "textures",
+							"other" => "other",
+							_ => category
+						};
+
+						var itemsToRemove = new List<string>();
+						foreach (var itemKvp in catObj)
+						{
+							string fileName = itemKvp.Key;
+							string diskPath = subFolder == "other" ? Path.Combine(targetDirectory, fileName) : Path.Combine(assetsDir, subFolder, fileName);
+							if (!File.Exists(diskPath) && subFolder is "audio/sfx" or "audio/music")
+							{
+								diskPath = Path.Combine(assetsDir, subFolder.Substring(6), fileName);
+							}
+							if (!File.Exists(diskPath))
+							{
+								diskPath = Path.Combine(assetsDir, fileName);
+							}
+							if (!File.Exists(diskPath))
+							{
+								diskPath = Path.Combine(targetDirectory, fileName);
+							}
+
+							if (!File.Exists(diskPath))
+							{
+								itemsToRemove.Add(fileName);
+							}
+							else
+							{
+								string hash = RealmMetadataHelper.ComputeBlake3(diskPath);
+								if (!string.IsNullOrEmpty(hash))
+								{
+									if (itemKvp.Value is JsonObject itemObj)
+									{
+										itemObj["hash"] = hash;
+									}
+									else
+									{
+										catObj[fileName] = hash;
+									}
+								}
+							}
+						}
+						foreach (var item in itemsToRemove)
+						{
+							catObj.Remove(item);
+						}
+						if (catObj.Count == 0)
+						{
+							categoriesToRemove.Add(categoryKvp.Key);
+						}
+					}
+				}
+
+				foreach (var cat in categoriesToRemove)
+				{
+					assetsObj.Remove(cat);
+				}
+			}
+
+			if (manifestDoc["Files"] is JsonObject filesObj)
+			{
+				var filesToRemove = new List<string>();
+				foreach (var fileKvp in filesObj)
+				{
+					string relPath = fileKvp.Key.TrimStart('/', '\\');
+					string fullPath = Path.Combine(targetDirectory, relPath);
+					if (!File.Exists(fullPath))
+					{
+						string fileName = Path.GetFileName(relPath);
+						string? modelDisk = FindModelOnDisk(targetDirectory, null, fileName);
+						if (string.IsNullOrEmpty(modelDisk) || !File.Exists(modelDisk))
+						{
+							filesToRemove.Add(fileKvp.Key);
+						}
+					}
+				}
+				foreach (var f in filesToRemove)
+				{
+					filesObj.Remove(f);
+					if (manifestDoc["FileSizes"] is JsonObject sizesObj)
+					{
+						sizesObj.Remove(f);
+					}
+				}
+			}
+
+			SaveAssetsToManifest(targetDirectory, manifestDoc["Assets"]?.AsObject() ?? new JsonObject(), removeFromMetadata: true);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapAssetHelper] PruneNonExistentAssetsFromManifest error: {ex.Message}");
+		}
+	}
+
 	public static void EnsureManifestJson(string directory)
 	{
 		if (string.IsNullOrEmpty(directory)) return;
@@ -295,11 +678,10 @@ public static class MapAssetHelper
 						foreach (var itemKeyValuePair in subCategoryObject)
 						{
 							string hash = ExtractHashString(itemKeyValuePair.Value);
-							if (string.IsNullOrEmpty(hash))
+							if (!string.IsNullOrEmpty(hash))
 							{
-								hash = RealmMetadataHelper.ComputeBlake3(System.Text.Encoding.UTF8.GetBytes(itemKeyValuePair.Key), Path.GetExtension(itemKeyValuePair.Key));
+								cleanSub[itemKeyValuePair.Key] = hash;
 							}
-							cleanSub[itemKeyValuePair.Key] = hash;
 						}
 					}
 				}
@@ -312,11 +694,10 @@ public static class MapAssetHelper
 				foreach (var itemKeyValuePair in categoryObject)
 				{
 					string hash = ExtractHashString(itemKeyValuePair.Value);
-					if (string.IsNullOrEmpty(hash))
+					if (!string.IsNullOrEmpty(hash))
 					{
-						hash = RealmMetadataHelper.ComputeBlake3(System.Text.Encoding.UTF8.GetBytes(itemKeyValuePair.Key), Path.GetExtension(itemKeyValuePair.Key));
+						cleanCategory[itemKeyValuePair.Key] = hash;
 					}
-					cleanCategory[itemKeyValuePair.Key] = hash;
 				}
 			}
 		}
@@ -632,10 +1013,28 @@ public static class MapAssetHelper
 				{
 					if (itemNode is JsonObject entityObj)
 					{
-						string modelPath = entityObj["ModelPath"]?.ToString() ?? "";
+						string modelPath = arrayKey switch
+						{
+							"CustomWeapons" => entityObj["ProjectileModelPath"]?.ToString() ?? entityObj["ModelPath"]?.ToString() ?? "",
+							_ => entityObj["ModelPath"]?.ToString() ?? ""
+						};
+
 						if (string.IsNullOrEmpty(modelPath))
 						{
-							modelPath = entityObj["UnitId"]?.ToString() ?? entityObj["AttachmentId"]?.ToString() ?? entityObj["WeaponId"]?.ToString() ?? "";
+							string fallbackId = arrayKey switch
+							{
+								"CustomUnits" => entityObj["UnitId"]?.ToString() ?? "",
+								"CustomAttachments" => entityObj["AttachmentId"]?.ToString() ?? "",
+								_ => ""
+							};
+							if (!string.IsNullOrEmpty(fallbackId))
+							{
+								string? diskCheck = FindModelOnDisk(targetDirectory, subCat, fallbackId, out _);
+								if (!string.IsNullOrEmpty(diskCheck))
+								{
+									modelPath = fallbackId;
+								}
+							}
 						}
 
 						if (!string.IsNullOrEmpty(modelPath))
@@ -645,14 +1044,28 @@ public static class MapAssetHelper
 							if (!string.IsNullOrEmpty(diskPath))
 							{
 								fileName = Path.GetFileName(diskPath);
+								EnsureGlbEntryExists(unionedAssets, subCat, fileName, diskPath);
 							}
-							else if (!fileName.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
-							{
-								fileName = Path.ChangeExtension(fileName, ".rmesh");
-							}
-
-							EnsureGlbEntryExists(unionedAssets, subCat, fileName, diskPath);
 						}
+
+						void TryAttachModel(string? path)
+						{
+							if (string.IsNullOrWhiteSpace(path) || path.StartsWith("res://", StringComparison.OrdinalIgnoreCase) || path.StartsWith("user://", StringComparison.OrdinalIgnoreCase))
+							{
+								return;
+							}
+							string fileName = Path.GetFileName(path);
+							string? diskPath = FindModelOnDisk(targetDirectory, subCat, fileName, out string resolvedSub);
+							if (!string.IsNullOrEmpty(diskPath))
+							{
+								fileName = Path.GetFileName(diskPath);
+								EnsureGlbEntryExists(unionedAssets, subCat, fileName, diskPath);
+							}
+						}
+
+						TryAttachModel(entityObj["PortraitModelPath"]?.ToString());
+						TryAttachModel(entityObj["DeadModelPath"]?.ToString());
+						TryAttachModel(entityObj["PlacementModelPath"]?.ToString());
 					}
 				}
 			}
@@ -775,7 +1188,7 @@ public static class MapAssetHelper
 		}
 	}
 
-	private static string? FindModelOnDisk(string targetDirectory, string? preferredSubCategory, string fileName, out string resolvedSubCategory)
+	public static string? FindModelOnDisk(string targetDirectory, string? preferredSubCategory, string fileName, out string resolvedSubCategory)
 	{
 		resolvedSubCategory = !string.IsNullOrEmpty(preferredSubCategory) ? preferredSubCategory : "props";
 		if (string.IsNullOrEmpty(targetDirectory) || !Directory.Exists(targetDirectory))
@@ -839,7 +1252,7 @@ public static class MapAssetHelper
 		return null;
 	}
 
-	private static string? FindModelOnDisk(string targetDirectory, string? preferredSubCategory, string fileName)
+	public static string? FindModelOnDisk(string targetDirectory, string? preferredSubCategory, string fileName)
 	{
 		return FindModelOnDisk(targetDirectory, preferredSubCategory, fileName, out _);
 	}
@@ -895,18 +1308,17 @@ public static class MapAssetHelper
 								{
 									hash = RealmMetadataHelper.ComputeBlake3(diskPath);
 								}
-								else
-								{
-									hash = RealmMetadataHelper.ComputeBlake3(System.Text.Encoding.UTF8.GetBytes(fileName), Path.GetExtension(fileName));
-								}
 
-								if (itemPair.Value is JsonObject itemObj)
+								if (!string.IsNullOrEmpty(hash))
 								{
-									itemObj["hash"] = hash;
-								}
-								else
-								{
-									subObj[fileName] = hash;
+									if (itemPair.Value is JsonObject itemObj)
+									{
+										itemObj["hash"] = hash;
+									}
+									else
+									{
+										subObj[fileName] = hash;
+									}
 								}
 							}
 						}
@@ -953,18 +1365,17 @@ public static class MapAssetHelper
 						{
 							hash = RealmMetadataHelper.ComputeBlake3(diskPath);
 						}
-						else
-						{
-							hash = RealmMetadataHelper.ComputeBlake3(System.Text.Encoding.UTF8.GetBytes(fileName), Path.GetExtension(fileName));
-						}
 
-						if (itemPair.Value is JsonObject itemObj)
+						if (!string.IsNullOrEmpty(hash))
 						{
-							itemObj["hash"] = hash;
-						}
-						else
-						{
-							catObj[fileName] = hash;
+							if (itemPair.Value is JsonObject itemObj)
+							{
+								itemObj["hash"] = hash;
+							}
+							else
+							{
+								catObj[fileName] = hash;
+							}
 						}
 					}
 				}

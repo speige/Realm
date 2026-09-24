@@ -201,6 +201,7 @@ public class MapEditorMinimap
 					}
 
 					viewport = new SubViewport();
+					viewport.TransparentBg = true;
 					viewport.Size = new Vector2I(viewportWidth, viewportHeight);
 					viewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Once;
 					viewport.DebugDraw = Viewport.DebugDrawEnum.Unshaded;
@@ -211,7 +212,7 @@ public class MapEditorMinimap
 					camera.KeepAspect = Camera3D.KeepAspectEnum.Height;
 					camera.Size = physicalDepth;
 					camera.Far = 200f;
-					camera.Position = new Vector3(0, 100, 0);
+					camera.Position = new Vector3(-0.5f * quadSize, 100f, -0.5f * quadSize);
 					camera.RotationDegrees = new Vector3(-90, 0, 0);
 					viewport.AddChild(camera);
 
@@ -304,8 +305,21 @@ public class MapEditorMinimap
 			float physicalWidth = (GameHost.Instance?.GroundTerrain?.Width - 1 ?? 125) * quadSize;
 			float physicalDepth = (GameHost.Instance?.GroundTerrain?.Depth - 1 ?? 125) * quadSize;
 
+			int viewportWidth = 512;
+			int viewportHeight = 512;
+
+			if (physicalWidth >= physicalDepth && physicalWidth > 0.0f)
+			{
+				viewportHeight = Mathf.Max(32, Mathf.RoundToInt(512f * physicalDepth / physicalWidth));
+			}
+			else if (physicalDepth > physicalWidth && physicalDepth > 0.0f)
+			{
+				viewportWidth = Mathf.Max(32, Mathf.RoundToInt(512f * physicalWidth / physicalDepth));
+			}
+
 			viewport = new SubViewport();
-			viewport.Size = new Vector2I(512, 512);
+			viewport.TransparentBg = true;
+			viewport.Size = new Vector2I(viewportWidth, viewportHeight);
 			viewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Once;
 			viewport.DebugDraw = Viewport.DebugDrawEnum.Unshaded;
 			_hudNode.AddChild(viewport);
@@ -315,7 +329,7 @@ public class MapEditorMinimap
 			camera.KeepAspect = Camera3D.KeepAspectEnum.Height;
 			camera.Size = physicalDepth;
 			camera.Far = 200f;
-			camera.Position = new Vector3(0, 100, 0);
+			camera.Position = new Vector3(-0.5f * quadSize, 100f, -0.5f * quadSize);
 			camera.RotationDegrees = new Vector3(-90, 0, 0);
 			viewport.AddChild(camera);
 

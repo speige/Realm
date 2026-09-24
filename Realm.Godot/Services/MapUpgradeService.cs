@@ -854,25 +854,70 @@ public class MapUpgradeService
 	{
 		try
 		{
-			string timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
-			string backupDir = Path.Combine(mapDirectory, ".backups", $"backup_{currentVersion}_{timestamp}");
-			Directory.CreateDirectory(backupDir);
-
-			string metadataPath = Path.Combine(mapDirectory, "metadata.json");
-			if (File.Exists(metadataPath))
+			string loadedFolderName = Path.GetFileName(mapDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+			if (string.IsNullOrEmpty(loadedFolderName))
 			{
-				File.Copy(metadataPath, Path.Combine(backupDir, "metadata.json"), overwrite: true);
+				loadedFolderName = "map";
 			}
 
-			string manifestPath = Path.Combine(mapDirectory, "manifest.json");
-			if (File.Exists(manifestPath))
+			string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+			string userDataDir;
+			try
 			{
-				File.Copy(manifestPath, Path.Combine(backupDir, "manifest.json"), overwrite: true);
+				userDataDir = OS.GetUserDataDir();
+				if (string.IsNullOrEmpty(userDataDir))
+				{
+					userDataDir = ProjectSettings.GlobalizePath("user://");
+				}
 			}
+			catch
+			{
+				string appData = System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData);
+				userDataDir = Path.Combine(appData, "Godot", "app_userdata", "Realm");
+			}
+
+			string upgradeBackupsRoot = Path.Combine(userDataDir, "map_upgrades");
+			string targetBackupDir = Path.Combine(upgradeBackupsRoot, $"{loadedFolderName}_{timestamp}");
+
+			CopyDirectoryContentsSafe(mapDirectory, targetBackupDir, upgradeBackupsRoot);
 		}
 		catch (Exception ex)
 		{
 			GD.PrintErr($"[MapUpgradeService] Warning: Failed to create map backup: {ex.Message}");
+		}
+	}
+
+	private static void CopyDirectoryContentsSafe(string sourceDir, string targetDir, string? backupsRoot = null)
+	{
+		var source = new DirectoryInfo(sourceDir);
+		if (!source.Exists) return;
+
+		var excludedFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+		{
+			".git", "bin", "obj", ".godot", ".vs", ".vscode", "map_upgrades", "map_backups", ".backups", ".dotnet", ".wasi", ".sidecarcache", ".cache"
+		};
+
+		Directory.CreateDirectory(targetDir);
+
+		foreach (var file in source.GetFiles())
+		{
+			if (file.Extension.Equals(".tmp", StringComparison.OrdinalIgnoreCase)) continue;
+			string destFile = Path.Combine(targetDir, file.Name);
+			file.CopyTo(destFile, true);
+		}
+
+		foreach (var dir in source.GetDirectories())
+		{
+			if (excludedFolders.Contains(dir.Name)) continue;
+			if (!string.IsNullOrEmpty(backupsRoot) &&
+				(string.Equals(dir.FullName, backupsRoot, StringComparison.OrdinalIgnoreCase) ||
+				 dir.FullName.StartsWith(backupsRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
+			{
+				continue;
+			}
+
+			string destSubDir = Path.Combine(targetDir, dir.Name);
+			CopyDirectoryContentsSafe(dir.FullName, destSubDir, backupsRoot);
 		}
 	}
 }

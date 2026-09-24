@@ -113,10 +113,37 @@ public partial class LobbyCreate : Control
 		_createButton.GetParent().MoveChild(spacer, _createButton.GetIndex());
 
 		_mapThumbnail = GetNode<TextureRect>("CentralPanel/ContentContainer/BriefingPanel/MapThumbnail");
-		_mapThumbnail.Texture = UIStyle.EmptyBlackTexture;
+
+		var briefingHBox = new HBoxContainer();
+		briefingHBox.Name = "BriefingHBox";
+		briefingHBox.AddThemeConstantOverride("separation", 16);
+		briefingHBox.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		briefingHBox.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+
+		_briefingPanel.RemoveChild(_mapThumbnail);
+		_briefingPanel.RemoveChild(textPanelWrapper);
+
+		var thumbFrame = new PanelContainer();
+		thumbFrame.Name = "ThumbnailFrame";
+		thumbFrame.CustomMinimumSize = new Vector2(256, 256);
+		thumbFrame.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
+		thumbFrame.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+		thumbFrame.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
+
+		_mapThumbnail.CustomMinimumSize = new Vector2(240, 240);
 		_mapThumbnail.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 		_mapThumbnail.StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered;
-		_mapThumbnail.Modulate = new Color(0.8f, 0.8f, 0.8f, 0.9f);
+		_mapThumbnail.Modulate = Colors.White;
+		_mapThumbnail.Texture = UIStyle.EmptyBlackTexture;
+
+		thumbFrame.AddChild(_mapThumbnail);
+		briefingHBox.AddChild(thumbFrame);
+
+		textPanelWrapper.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		textPanelWrapper.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+		briefingHBox.AddChild(textPanelWrapper);
+
+		_briefingPanel.AddChild(briefingHBox);
 
 		_titleLabel = GetNode<Label>("Title");
 		_mapSelectLabel = GetNode<Label>("CentralPanel/ContentContainer/MapSelectLabel");
@@ -557,6 +584,7 @@ public partial class LobbyCreate : Control
 					if (img != null && !img.IsEmpty())
 					{
 						_mapThumbnail.Texture = ImageTexture.CreateFromImage(img);
+						_mapThumbnail.Modulate = Colors.White;
 					}
 					else
 					{
