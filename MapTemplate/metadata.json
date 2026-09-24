@@ -268,7 +268,7 @@
 			"DeathShader": null,
 			"Description": "",
 			"DespawnShader": null,
-			"DespillPlayerColor": false,
+			"DespillPlayerColor": true,
 			"GoldBounty": 0,
 			"IgnorePlayerColor": false,
 			"IsHero": false,
@@ -392,27 +392,29 @@
 	"Models": {
 		"chad.rmesh": {
 			"Brightness": 0.5,
-			"CollisionCircleRatios": 0,
+			"CollisionCircleRatios": 0.75,
 			"ColorTint": "#ffffff",
-			"DespillPlayerColor": false,
+			"DespillPlayerColor": true,
 			"IgnorePlayerColor": false,
 			"NormalizeLuminance": true,
-			"Offsets": 0.8367,
+			"Offsets": 0.85000014,
 			"Scales": 1
 		},
 		"clock_tower_building.rmesh": {
-			"CollisionCircleRatios": 0,
+			"CollisionCircleRatios": 0.8,
 			"DespillPlayerColor": false,
+			"IgnorePlayerColor": false,
+			"NormalizeLuminance": true,
 			"Scales": 1.5
 		},
 		"clocktower.rmesh": {
 			"Brightness": 0.5,
-			"CollisionCircleRatios": 0,
+			"CollisionCircleRatios": 0.8,
 			"ColorTint": "#ffffff",
 			"DespillPlayerColor": false,
 			"IgnorePlayerColor": false,
 			"NormalizeLuminance": true,
-			"Offsets": 1.5021,
+			"Offsets": 1.5000001,
 			"Scales": 1.5
 		},
 		"coniferous_tree_1.rmesh": {
@@ -422,7 +424,7 @@
 			"DespillPlayerColor": false,
 			"IgnorePlayerColor": true,
 			"NormalizeLuminance": true,
-			"Offsets": 2.7491,
+			"Offsets": 2.7500002,
 			"Scales": 2.75
 		},
 		"crystal_cluster_29.rmesh": {
@@ -436,8 +438,10 @@
 			"Scales": 1.25
 		},
 		"fantasy_warrior_unit_1.rmesh": {
-			"CollisionCircleRatios": 0,
+			"CollisionCircleRatios": 0.65000004,
 			"DespillPlayerColor": false,
+			"IgnorePlayerColor": false,
+			"NormalizeLuminance": true,
 			"Scales": 1
 		},
 		"ice_castle_1.rmesh": {
@@ -445,17 +449,19 @@
 		},
 		"kevin.rmesh": {
 			"Brightness": 0.5,
-			"CollisionCircleRatios": 0,
+			"CollisionCircleRatios": 0.65000004,
 			"ColorTint": "#ffffff",
 			"DespillPlayerColor": false,
 			"IgnorePlayerColor": false,
 			"NormalizeLuminance": true,
-			"Offsets": 0.909,
+			"Offsets": 0.90000015,
 			"Scales": 1
 		},
 		"orc_warrior_7.rmesh": {
-			"CollisionCircleRatios": 0,
-			"DespillPlayerColor": false,
+			"CollisionCircleRatios": 0.75,
+			"DespillPlayerColor": true,
+			"IgnorePlayerColor": false,
+			"NormalizeLuminance": true,
 			"Scales": 1
 		},
 		"ornate_spear_1.rmesh": {
@@ -468,7 +474,7 @@
 			"DespillPlayerColor": false,
 			"IgnorePlayerColor": true,
 			"NormalizeLuminance": true,
-			"Offsets": 2.7498,
+			"Offsets": 2.7500002,
 			"Scales": 2.75
 		},
 		"spiked_wooden_stake.rmesh": {

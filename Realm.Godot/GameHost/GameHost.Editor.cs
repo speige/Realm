@@ -479,6 +479,42 @@ public partial class GameHost
 		if (string.IsNullOrEmpty(norm)) return;
 
 		ModelDespillPlayerColor[norm] = despillPlayerColor;
+
+		string modelAsset = GetModelAssetKey(assetKey);
+		string normModel = !string.IsNullOrEmpty(modelAsset) ? NormalizeModelAssetKey(modelAsset) : null;
+		if (!string.IsNullOrEmpty(normModel) && !normModel.Equals(norm, StringComparison.OrdinalIgnoreCase))
+		{
+			ModelDespillPlayerColor[normModel] = despillPlayerColor;
+		}
+
+		string primaryKey = GetSelectedEntityOrAssetKey(assetKey);
+		string normPrimary = !string.IsNullOrEmpty(primaryKey) ? NormalizeModelAssetKey(primaryKey) : null;
+		if (!string.IsNullOrEmpty(normPrimary) && !normPrimary.Equals(norm, StringComparison.OrdinalIgnoreCase))
+		{
+			ModelDespillPlayerColor[normPrimary] = despillPlayerColor;
+		}
+
+		if (UnitRegistry.TryGetValue(assetKey, out var unitMeta))
+		{
+			unitMeta.DespillPlayerColor = despillPlayerColor;
+			UnitRegistry[assetKey] = unitMeta;
+		}
+		if (BuildingRegistry.TryGetValue(assetKey, out var bldMeta))
+		{
+			bldMeta.DespillPlayerColor = despillPlayerColor;
+			BuildingRegistry[assetKey] = bldMeta;
+		}
+		if (ResourceRegistry.TryGetValue(assetKey, out var resMeta))
+		{
+			resMeta.DespillPlayerColor = despillPlayerColor;
+			ResourceRegistry[assetKey] = resMeta;
+		}
+		if (PropRegistry.TryGetValue(assetKey, out var propMeta))
+		{
+			propMeta.DespillPlayerColor = despillPlayerColor;
+			PropRegistry[assetKey] = propMeta;
+		}
+
 		UpdateMaterialOverridesForAsset(norm);
 
 		_modelYOffsetSavePending = true;
@@ -514,6 +550,42 @@ public partial class GameHost
 		if (string.IsNullOrEmpty(norm)) return;
 
 		ModelNormalizeLuminance[norm] = normalizeLuminance;
+
+		string modelAsset = GetModelAssetKey(assetKey);
+		string normModel = !string.IsNullOrEmpty(modelAsset) ? NormalizeModelAssetKey(modelAsset) : null;
+		if (!string.IsNullOrEmpty(normModel) && !normModel.Equals(norm, StringComparison.OrdinalIgnoreCase))
+		{
+			ModelNormalizeLuminance[normModel] = normalizeLuminance;
+		}
+
+		string primaryKey = GetSelectedEntityOrAssetKey(assetKey);
+		string normPrimary = !string.IsNullOrEmpty(primaryKey) ? NormalizeModelAssetKey(primaryKey) : null;
+		if (!string.IsNullOrEmpty(normPrimary) && !normPrimary.Equals(norm, StringComparison.OrdinalIgnoreCase))
+		{
+			ModelNormalizeLuminance[normPrimary] = normalizeLuminance;
+		}
+
+		if (UnitRegistry.TryGetValue(assetKey, out var unitMeta))
+		{
+			unitMeta.NormalizeLuminance = normalizeLuminance;
+			UnitRegistry[assetKey] = unitMeta;
+		}
+		if (BuildingRegistry.TryGetValue(assetKey, out var bldMeta))
+		{
+			bldMeta.NormalizeLuminance = normalizeLuminance;
+			BuildingRegistry[assetKey] = bldMeta;
+		}
+		if (ResourceRegistry.TryGetValue(assetKey, out var resMeta))
+		{
+			resMeta.NormalizeLuminance = normalizeLuminance;
+			ResourceRegistry[assetKey] = resMeta;
+		}
+		if (PropRegistry.TryGetValue(assetKey, out var propMeta))
+		{
+			propMeta.NormalizeLuminance = normalizeLuminance;
+			PropRegistry[assetKey] = propMeta;
+		}
+
 		UpdateMaterialOverridesForAsset(norm);
 
 		_modelYOffsetSavePending = true;
@@ -808,6 +880,42 @@ public partial class GameHost
 		if (string.IsNullOrEmpty(norm)) return;
 
 		ModelIgnorePlayerColor[norm] = ignorePlayerColor;
+
+		string modelAsset = GetModelAssetKey(assetKey);
+		string normModel = !string.IsNullOrEmpty(modelAsset) ? NormalizeModelAssetKey(modelAsset) : null;
+		if (!string.IsNullOrEmpty(normModel) && !normModel.Equals(norm, StringComparison.OrdinalIgnoreCase))
+		{
+			ModelIgnorePlayerColor[normModel] = ignorePlayerColor;
+		}
+
+		string primaryKey = GetSelectedEntityOrAssetKey(assetKey);
+		string normPrimary = !string.IsNullOrEmpty(primaryKey) ? NormalizeModelAssetKey(primaryKey) : null;
+		if (!string.IsNullOrEmpty(normPrimary) && !normPrimary.Equals(norm, StringComparison.OrdinalIgnoreCase))
+		{
+			ModelIgnorePlayerColor[normPrimary] = ignorePlayerColor;
+		}
+
+		if (UnitRegistry.TryGetValue(assetKey, out var unitMeta))
+		{
+			unitMeta.IgnorePlayerColor = ignorePlayerColor;
+			UnitRegistry[assetKey] = unitMeta;
+		}
+		if (BuildingRegistry.TryGetValue(assetKey, out var bldMeta))
+		{
+			bldMeta.IgnorePlayerColor = ignorePlayerColor;
+			BuildingRegistry[assetKey] = bldMeta;
+		}
+		if (ResourceRegistry.TryGetValue(assetKey, out var resMeta))
+		{
+			resMeta.IgnorePlayerColor = ignorePlayerColor;
+			ResourceRegistry[assetKey] = resMeta;
+		}
+		if (PropRegistry.TryGetValue(assetKey, out var propMeta))
+		{
+			propMeta.IgnorePlayerColor = ignorePlayerColor;
+			PropRegistry[assetKey] = propMeta;
+		}
+
 		_modelYOffsetSavePending = true;
 		EditorHasUnsavedChanges = true;
 		UpdateMaterialOverridesForAsset(norm);
@@ -1128,61 +1236,6 @@ public partial class GameHost
 			ModelSpawnShaders.Clear();
 			ModelDeathShaders.Clear();
 
-			if (metadata.Models != null)
-			{
-				foreach (var kvp in metadata.Models)
-				{
-					string normKey = NormalizeModelAssetKey(kvp.Key);
-					var model = kvp.Value;
-					if (model == null) continue;
-
-					if (!string.IsNullOrWhiteSpace(model.SpawnShaders))
-					{
-						ModelSpawnShaders[normKey] = model.SpawnShaders.Trim();
-					}
-					if (!string.IsNullOrWhiteSpace(model.DeathShaders))
-					{
-						ModelDeathShaders[normKey] = model.DeathShaders.Trim();
-					}
-					if (model.Offsets.HasValue && IsValidModelYOffset(kvp.Key, model.Offsets.Value))
-					{
-						ModelYOffsets[normKey] = model.Offsets.Value;
-					}
-					if (model.Scales.HasValue && IsValidModelScale(kvp.Key, model.Scales.Value))
-					{
-						ModelScales[normKey] = model.Scales.Value;
-					}
-					if (model.CollisionCircleRatios.HasValue && IsValidModelCollisionRatio(kvp.Key, model.CollisionCircleRatios.Value))
-					{
-						ModelCollisionCircleRatios[normKey] = model.CollisionCircleRatios.Value;
-					}
-					if (model.ObstacleRadii.HasValue && model.ObstacleRadii.Value > 0f)
-					{
-						ModelObstacleRadii[normKey] = model.ObstacleRadii.Value;
-					}
-					if (model.Brightness.HasValue)
-					{
-						ModelBrightness[normKey] = model.Brightness.Value;
-					}
-					if (!string.IsNullOrWhiteSpace(model.ColorTint) && Color.HtmlIsValid(model.ColorTint))
-					{
-						ModelColorTint[normKey] = Color.FromHtml(model.ColorTint);
-					}
-					if (model.DespillPlayerColor.HasValue)
-					{
-						ModelDespillPlayerColor[normKey] = model.DespillPlayerColor.Value;
-					}
-					if (model.NormalizeLuminance.HasValue)
-					{
-						ModelNormalizeLuminance[normKey] = model.NormalizeLuminance.Value;
-					}
-					if (model.IgnorePlayerColor.HasValue)
-					{
-						ModelIgnorePlayerColor[normKey] = model.IgnorePlayerColor.Value;
-					}
-				}
-			}
-
 			void ProcessEntities<T>(IEnumerable<T> items, float defaultScale, Func<T, string> getId, Func<T, string> getModelPath, Func<T, float> getYOffset, Func<T, float> getScale, Func<T, float> getCollisionCircle, Func<T, float> getBrightness, Func<T, string> getTint, Func<T, bool> getDespillPlayerColor, Func<T, bool> getNormalizeLuminance)
 			{
 				if (items == null) return;
@@ -1341,6 +1394,61 @@ public partial class GameHost
 				}
 			}
 
+			if (metadata.Models != null)
+			{
+				foreach (var kvp in metadata.Models)
+				{
+					string normKey = NormalizeModelAssetKey(kvp.Key);
+					var model = kvp.Value;
+					if (model == null) continue;
+
+					if (!string.IsNullOrWhiteSpace(model.SpawnShaders))
+					{
+						ModelSpawnShaders[normKey] = model.SpawnShaders.Trim();
+					}
+					if (!string.IsNullOrWhiteSpace(model.DeathShaders))
+					{
+						ModelDeathShaders[normKey] = model.DeathShaders.Trim();
+					}
+					if (model.Offsets.HasValue && IsValidModelYOffset(kvp.Key, model.Offsets.Value))
+					{
+						ModelYOffsets[normKey] = model.Offsets.Value;
+					}
+					if (model.Scales.HasValue && IsValidModelScale(kvp.Key, model.Scales.Value))
+					{
+						ModelScales[normKey] = model.Scales.Value;
+					}
+					if (model.CollisionCircleRatios.HasValue && IsValidModelCollisionRatio(kvp.Key, model.CollisionCircleRatios.Value))
+					{
+						ModelCollisionCircleRatios[normKey] = model.CollisionCircleRatios.Value;
+					}
+					if (model.ObstacleRadii.HasValue && model.ObstacleRadii.Value > 0f)
+					{
+						ModelObstacleRadii[normKey] = model.ObstacleRadii.Value;
+					}
+					if (model.Brightness.HasValue)
+					{
+						ModelBrightness[normKey] = model.Brightness.Value;
+					}
+					if (!string.IsNullOrWhiteSpace(model.ColorTint) && Color.HtmlIsValid(model.ColorTint))
+					{
+						ModelColorTint[normKey] = Color.FromHtml(model.ColorTint);
+					}
+					if (model.DespillPlayerColor.HasValue)
+					{
+						ModelDespillPlayerColor[normKey] = model.DespillPlayerColor.Value;
+					}
+					if (model.NormalizeLuminance.HasValue)
+					{
+						ModelNormalizeLuminance[normKey] = model.NormalizeLuminance.Value;
+					}
+					if (model.IgnorePlayerColor.HasValue)
+					{
+						ModelIgnorePlayerColor[normKey] = model.IgnorePlayerColor.Value;
+					}
+				}
+			}
+
 			foreach (var key in ModelBrightness.Keys
 				.Concat(ModelColorTint.Keys)
 				.Concat(ModelDespillPlayerColor.Keys)
@@ -1483,7 +1591,7 @@ public partial class GameHost
 					if (ModelDeathShaders.TryGetValue(key, out string? dsVal) && !string.IsNullOrWhiteSpace(dsVal)) modelMeta.DeathShaders = dsVal;
 				}
 
-				void UpdateEntityShaders(List<GameHost.UnitMetadata> entities)
+				void UpdateEntityOverrides(List<GameHost.UnitMetadata> entities)
 				{
 					if (entities == null) return;
 					for (int i = 0; i < entities.Count; i++)
@@ -1492,6 +1600,15 @@ public partial class GameHost
 						if (string.IsNullOrEmpty(entity.UnitId)) continue;
 						string normKey = NormalizeModelAssetKey(entity.UnitId);
 						string normModel = !string.IsNullOrEmpty(entity.ModelPath) ? NormalizeModelAssetKey(entity.ModelPath) : "";
+
+						if (ModelDespillPlayerColor.TryGetValue(normKey, out bool dVal1)) entity.DespillPlayerColor = dVal1;
+						else if (!string.IsNullOrEmpty(normModel) && ModelDespillPlayerColor.TryGetValue(normModel, out bool dVal2)) entity.DespillPlayerColor = dVal2;
+
+						if (ModelNormalizeLuminance.TryGetValue(normKey, out bool nVal1)) entity.NormalizeLuminance = nVal1;
+						else if (!string.IsNullOrEmpty(normModel) && ModelNormalizeLuminance.TryGetValue(normModel, out bool nVal2)) entity.NormalizeLuminance = nVal2;
+
+						if (ModelIgnorePlayerColor.TryGetValue(normKey, out bool iVal1)) entity.IgnorePlayerColor = iVal1;
+						else if (!string.IsNullOrEmpty(normModel) && ModelIgnorePlayerColor.TryGetValue(normModel, out bool iVal2)) entity.IgnorePlayerColor = iVal2;
 
 						string sVal = "";
 						if (!string.IsNullOrEmpty(normKey) && ModelSpawnShaders.TryGetValue(normKey, out string sv1)) sVal = sv1;
@@ -1510,8 +1627,8 @@ public partial class GameHost
 					}
 				}
 
-				UpdateEntityShaders(meta.CustomUnits);
-				UpdateEntityShaders(meta.CustomBuildings);
+				UpdateEntityOverrides(meta.CustomUnits);
+				UpdateEntityOverrides(meta.CustomBuildings);
 
 				if (meta.CustomResources != null)
 				{
@@ -1521,6 +1638,16 @@ public partial class GameHost
 						if (string.IsNullOrEmpty(res.UnitId)) continue;
 						string normKey = NormalizeModelAssetKey(res.UnitId);
 						string normModel = !string.IsNullOrEmpty(res.ModelPath) ? NormalizeModelAssetKey(res.ModelPath) : "";
+
+						if (ModelDespillPlayerColor.TryGetValue(normKey, out bool dVal1)) res.DespillPlayerColor = dVal1;
+						else if (!string.IsNullOrEmpty(normModel) && ModelDespillPlayerColor.TryGetValue(normModel, out bool dVal2)) res.DespillPlayerColor = dVal2;
+
+						if (ModelNormalizeLuminance.TryGetValue(normKey, out bool nVal1)) res.NormalizeLuminance = nVal1;
+						else if (!string.IsNullOrEmpty(normModel) && ModelNormalizeLuminance.TryGetValue(normModel, out bool nVal2)) res.NormalizeLuminance = nVal2;
+
+						if (ModelIgnorePlayerColor.TryGetValue(normKey, out bool iVal1)) res.IgnorePlayerColor = iVal1;
+						else if (!string.IsNullOrEmpty(normModel) && ModelIgnorePlayerColor.TryGetValue(normModel, out bool iVal2)) res.IgnorePlayerColor = iVal2;
+
 						string sVal = !string.IsNullOrEmpty(normKey) && ModelSpawnShaders.TryGetValue(normKey, out string sv1) ? sv1 : (!string.IsNullOrEmpty(normModel) && ModelSpawnShaders.TryGetValue(normModel, out string sv2) ? sv2 : GetModelSpawnShader(res.UnitId));
 						string dVal = !string.IsNullOrEmpty(normKey) && ModelDeathShaders.TryGetValue(normKey, out string dv1) ? dv1 : (!string.IsNullOrEmpty(normModel) && ModelDeathShaders.TryGetValue(normModel, out string dv2) ? dv2 : GetModelDeathShader(res.UnitId));
 						res.SpawnShader = !string.IsNullOrWhiteSpace(sVal) ? sVal : null;
@@ -1537,6 +1664,16 @@ public partial class GameHost
 						if (string.IsNullOrEmpty(prop.UnitId)) continue;
 						string normKey = NormalizeModelAssetKey(prop.UnitId);
 						string normModel = !string.IsNullOrEmpty(prop.ModelPath) ? NormalizeModelAssetKey(prop.ModelPath) : "";
+
+						if (ModelDespillPlayerColor.TryGetValue(normKey, out bool dVal1)) prop.DespillPlayerColor = dVal1;
+						else if (!string.IsNullOrEmpty(normModel) && ModelDespillPlayerColor.TryGetValue(normModel, out bool dVal2)) prop.DespillPlayerColor = dVal2;
+
+						if (ModelNormalizeLuminance.TryGetValue(normKey, out bool nVal1)) prop.NormalizeLuminance = nVal1;
+						else if (!string.IsNullOrEmpty(normModel) && ModelNormalizeLuminance.TryGetValue(normModel, out bool nVal2)) prop.NormalizeLuminance = nVal2;
+
+						if (ModelIgnorePlayerColor.TryGetValue(normKey, out bool iVal1)) prop.IgnorePlayerColor = iVal1;
+						else if (!string.IsNullOrEmpty(normModel) && ModelIgnorePlayerColor.TryGetValue(normModel, out bool iVal2)) prop.IgnorePlayerColor = iVal2;
+
 						string sVal = !string.IsNullOrEmpty(normKey) && ModelSpawnShaders.TryGetValue(normKey, out string sv1) ? sv1 : (!string.IsNullOrEmpty(normModel) && ModelSpawnShaders.TryGetValue(normModel, out string sv2) ? sv2 : GetModelSpawnShader(prop.UnitId));
 						string dVal = !string.IsNullOrEmpty(normKey) && ModelDeathShaders.TryGetValue(normKey, out string dv1) ? dv1 : (!string.IsNullOrEmpty(normModel) && ModelDeathShaders.TryGetValue(normModel, out string dv2) ? dv2 : GetModelDeathShader(prop.UnitId));
 						prop.SpawnShader = !string.IsNullOrWhiteSpace(sVal) ? sVal : null;
