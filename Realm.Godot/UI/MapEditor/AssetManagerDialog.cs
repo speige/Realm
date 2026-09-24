@@ -716,14 +716,19 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			string sub = subCategoryOrFolder switch
 			{
 				"vfx_spritesheets" => "vfx",
-				"vfx_radial" or "vfx_radials" => "vfx",
-				"vfx_vertical" or "vfx_verticals" => "vfx",
+				"vfx_radial" or "vfx_radials" => "vfx_radial",
+				"vfx_vertical" or "vfx_verticals" => "vfx_vertical",
 				"ribbon_textures" or "ribbons" => "ribbons",
-				"noise_textures" => "noise",
+				"noise_textures" or "noise" => "noise",
 				_ => subCategoryOrFolder
 			};
 			string path = Path.Combine(wsPath, "Assets", sub, fileName);
 			if (File.Exists(path)) return path;
+			foreach (var altSub in new[] { "textures", "vfx_radial", "vfx_vertical", "vfx", "icons", "decals", "ribbons", "noise", "skyboxes" })
+			{
+				string p = Path.Combine(wsPath, "Assets", altSub, fileName);
+				if (File.Exists(p)) return p;
+			}
 			return path;
 		}
 		else if (ext == ".ranim")
@@ -1630,12 +1635,14 @@ public partial class AssetManagerDialog : FloatingDialogBase
 		string subFolder = category switch
 		{
 			"textures" => "textures",
+			"vfx_radial" or "vfx_radials" => "vfx_radial",
+			"vfx_vertical" or "vfx_verticals" => "vfx_vertical",
 			"icons" => "icons",
 			"decals" => "decals",
 			"ribbons" or "ribbon_textures" => "ribbons",
-			"noise_textures" => "noise",
+			"noise_textures" or "noise" => "noise",
 			"skyboxes" => "skyboxes",
-			_ => "textures"
+			_ => category
 		};
 
 		string filePath = ResolveAssetFilePath(wsPath, key, subFolder);
@@ -2132,10 +2139,10 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				"decals" => "decals",
 				"icons" => "icons",
 				"vfx_spritesheets" => "vfx",
-				"vfx_radial" => "vfx",
-				"vfx_vertical" => "vfx",
+				"vfx_radial" or "vfx_radials" => "vfx_radial",
+				"vfx_vertical" or "vfx_verticals" => "vfx_vertical",
 				"ribbons" or "ribbon_textures" => "ribbons",
-				"noise_textures" => "noise",
+				"noise_textures" or "noise" => "noise",
 				"skyboxes" => "skyboxes",
 				_ => "textures"
 			};
@@ -3074,10 +3081,13 @@ public partial class AssetManagerDialog : FloatingDialogBase
 			{
 				string sub = _currentCategory switch
 				{
+					"vfx_spritesheets" => "vfx",
+					"vfx_radial" or "vfx_radials" => "vfx_radial",
+					"vfx_vertical" or "vfx_verticals" => "vfx_vertical",
 					"decals" => "decals",
 					"icons" => "icons",
 					"ribbons" or "ribbon_textures" => "ribbons",
-					"noise_textures" => "noise",
+					"noise_textures" or "noise" => "noise",
 					"skyboxes" => "skyboxes",
 					_ => _currentCategory
 				};
@@ -3498,6 +3508,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 						string sub = category switch
 						{
 							"vfx_spritesheets" => "vfx",
+							"vfx_radial" or "vfx_radials" => "vfx_radial",
+							"vfx_vertical" or "vfx_verticals" => "vfx_vertical",
 							"animations" => "animations",
 							"sfx" => "sfx",
 							"music" => "music",
@@ -3873,6 +3885,8 @@ public partial class AssetManagerDialog : FloatingDialogBase
 					string subDir = _currentCategory switch
 					{
 						"vfx_spritesheets" => "vfx",
+						"vfx_radial" or "vfx_radials" => "vfx_radial",
+						"vfx_vertical" or "vfx_verticals" => "vfx_vertical",
 						"animations" => "animations",
 						"sfx" => "sfx",
 						"music" => "music",
