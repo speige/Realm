@@ -31,7 +31,7 @@ public static class AssetThumbnailProvider
 
 	static AssetThumbnailProvider()
 	{
-		GlbThumbnailRenderer.Instance.ThumbnailGenerated += OnGlbThumbnailGenerated;
+		GlbThumbnailRenderer.ThumbnailGenerated += OnGlbThumbnailGenerated;
 	}
 
 	private static void OnGlbThumbnailGenerated(string filePath, Texture2D texture)
@@ -45,7 +45,7 @@ public static class AssetThumbnailProvider
 		ThumbnailGenerated?.Invoke(normPath, texture);
 	}
 
-	public static Texture2D? GetThumbnail(IndexedAsset asset)
+	public static Texture2D? GetThumbnail(IndexedAsset asset, bool isHighPriority = true)
 	{
 		if (asset == null || string.IsNullOrEmpty(asset.FilePath))
 		{
@@ -73,7 +73,7 @@ public static class AssetThumbnailProvider
 			}
 		}
 
-		Texture2D? generatedTexture = GenerateThumbnailDirect(asset);
+		Texture2D? generatedTexture = GenerateThumbnailDirect(asset, isHighPriority);
 		if (generatedTexture != null)
 		{
 			lock (_thumbnailCache)
@@ -98,8 +98,14 @@ public static class AssetThumbnailProvider
 	public static AnimatedThumbnail? GetAnimatedThumbnail(IndexedAsset asset)
 	{
 		if (asset == null || string.IsNullOrEmpty(asset.FilePath)) return null;
+		return GetAnimatedThumbnail(asset.FilePath, asset.Blake3);
+	}
 
-		string normPath = NormalizePath(asset.FilePath);
+	public static AnimatedThumbnail? GetAnimatedThumbnail(string filePath, string? blake3 = null)
+	{
+		if (string.IsNullOrEmpty(filePath)) return null;
+
+		string normPath = NormalizePath(filePath);
 		lock (_animatedThumbnailCache)
 		{
 			if (_animatedThumbnailCache.TryGetValue(normPath, out var cachedAnim) && cachedAnim != null)
@@ -108,11 +114,26 @@ public static class AssetThumbnailProvider
 			}
 		}
 
-		if (!File.Exists(asset.FilePath)) return null;
+		if (!File.Exists(normPath)) return null;
+
+		string cachedPngPath = GetDiskCachePath(normPath, blake3);
+		Texture2D? diskPrimaryFrame = null;
+		if (!string.IsNullOrEmpty(cachedPngPath) && File.Exists(cachedPngPath))
+		{
+			try
+			{
+				var cachedImg = Image.LoadFromFile(cachedPngPath);
+				if (cachedImg != null && !cachedImg.IsEmpty())
+				{
+					diskPrimaryFrame = ImageTexture.CreateFromImage(cachedImg);
+				}
+			}
+			catch { }
+		}
 
 		try
 		{
-			var animThumb = RanimSkeletonThumbnailGenerator.GenerateAnimatedThumbnail(asset.FilePath);
+			var animThumb = RanimSkeletonThumbnailGenerator.GenerateAnimatedThumbnail(normPath);
 			if (animThumb != null && animThumb.Frames.Count > 0)
 			{
 				lock (_animatedThumbnailCache)
@@ -123,12 +144,31 @@ public static class AssetThumbnailProvider
 					}
 					_animatedThumbnailCache[normPath] = animThumb;
 				}
+
+				if (diskPrimaryFrame == null && animThumb.PrimaryFrame != null)
+				{
+					var pImg = animThumb.PrimaryFrame.GetImage();
+					if (pImg != null && !pImg.IsEmpty())
+					{
+						SaveThumbnailAtomic(pImg, cachedPngPath);
+					}
+				}
+
 				return animThumb;
 			}
 		}
 		catch (Exception ex)
 		{
-			GD.PrintErr($"[AssetThumbnailProvider] Error loading ranim {asset.FilePath}: {ex.Message}");
+			GD.PrintErr($"[AssetThumbnailProvider] Error loading ranim {normPath}: {ex.Message}");
+		}
+
+		if (diskPrimaryFrame != null)
+		{
+			return new AnimatedThumbnail
+			{
+				Frames = new List<Texture2D> { diskPrimaryFrame },
+				Fps = 1.0f
+			};
 		}
 
 		return null;
@@ -140,7 +180,7 @@ public static class AssetThumbnailProvider
 		_lruOrder.Add(key);
 	}
 
-	private static Texture2D? GenerateThumbnailDirect(IndexedAsset asset)
+	private static Texture2D? GenerateThumbnailDirect(IndexedAsset asset, bool isHighPriority = true)
 	{
 		string ext = asset.Extension.ToLowerInvariant();
 
@@ -151,7 +191,7 @@ public static class AssetThumbnailProvider
 
 		if (ext == ".rmesh")
 		{
-			return LoadGlbThumbnail(asset.FilePath, asset.LastModifiedUtc, asset.Blake3);
+			return LoadGlbThumbnail(asset.FilePath, asset.LastModifiedUtc, asset.Blake3, isHighPriority);
 		}
 
 		if (ext == ".raud" || ext == ".ogg" || ext == ".wav" || ext == ".mp3")
@@ -184,9 +224,12 @@ public static class AssetThumbnailProvider
 	{
 		string normPath = NormalizePath(filePath);
 		string ext = Path.GetExtension(normPath).ToLowerInvariant();
-		string cacheDir = ext == ".rtex"
-			? ProjectSettings.GlobalizePath("user://rtex_thumb_cache")
-			: ProjectSettings.GlobalizePath("user://image_thumb_cache");
+		string cacheDir = ext switch
+		{
+			".rtex" => ProjectSettings.GlobalizePath("user://rtex_thumb_cache"),
+			".ranim" => ProjectSettings.GlobalizePath("user://ranim_thumb_cache"),
+			_ => ProjectSettings.GlobalizePath("user://image_thumb_cache")
+		};
 		string hash = GlbThumbnailRenderer.GetBlake3(normPath, blake3);
 		if (string.IsNullOrEmpty(hash) || hash.Length < 2)
 		{
@@ -200,13 +243,104 @@ public static class AssetThumbnailProvider
 		return GetDiskCachePath(filePath, blake3);
 	}
 
+	public static void SaveThumbnailAtomic(Image img, string cachedPngPath)
+	{
+		if (string.IsNullOrEmpty(cachedPngPath) || img == null || img.IsEmpty()) return;
+		try
+		{
+			string? dir = Path.GetDirectoryName(cachedPngPath);
+			if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+			{
+				Directory.CreateDirectory(dir);
+			}
+
+			string tempPath = cachedPngPath + $".tmp_{Guid.NewGuid():N}";
+			IndexedPngHelper.SaveAs256ColorPng(
+				img.GetData(),
+				img.GetWidth(),
+				img.GetHeight(),
+				tempPath);
+
+			if (File.Exists(tempPath))
+			{
+				try
+				{
+					File.Move(tempPath, cachedPngPath, overwrite: true);
+				}
+				catch
+				{
+					if (File.Exists(tempPath))
+					{
+						File.Delete(tempPath);
+					}
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[AssetThumbnailProvider] SaveThumbnailAtomic error on {cachedPngPath}: {ex.Message}");
+		}
+	}
+
+	public static void NotifyThumbnailGeneratedFromDiskDeferred(string normPath)
+	{
+		if (Engine.GetMainLoop() is SceneTree)
+		{
+			Callable.From(() =>
+			{
+				var tex = LoadThumbnailFromDisk(normPath);
+				if (tex != null)
+				{
+					lock (_thumbnailCache)
+					{
+						_thumbnailCache[normPath] = tex;
+						TouchLru(normPath);
+					}
+					ThumbnailGenerated?.Invoke(normPath, tex);
+				}
+			}).CallDeferred();
+		}
+	}
+
+	public static Texture2D? LoadThumbnailFromDisk(string filePath, string? blake3 = null)
+	{
+		string normPath = NormalizePath(filePath);
+		if (string.IsNullOrEmpty(normPath)) return null;
+
+		string ext = Path.GetExtension(normPath).ToLowerInvariant();
+		if (ext == ".rmesh")
+		{
+			if (GlbThumbnailRenderer.TryGetDiskCached(normPath, blake3, out var rmeshTex))
+			{
+				return rmeshTex;
+			}
+			return null;
+		}
+
+		string cachedPngPath = GetDiskCachePath(normPath, blake3);
+		if (!string.IsNullOrEmpty(cachedPngPath) && File.Exists(cachedPngPath))
+		{
+			try
+			{
+				var cachedImg = Image.LoadFromFile(cachedPngPath);
+				if (cachedImg != null && !cachedImg.IsEmpty())
+				{
+					return ImageTexture.CreateFromImage(cachedImg);
+				}
+			}
+			catch { }
+		}
+
+		return null;
+	}
+
 	public static void EnsureDiskImageThumbnail(string filePath, DateTime lastModifiedUtc, string? blake3 = null)
 	{
 		string normPath = NormalizePath(filePath);
 		if (string.IsNullOrEmpty(normPath) || !File.Exists(normPath)) return;
 
 		string ext = Path.GetExtension(normPath).ToLowerInvariant();
-		if (!IsImageExtension(ext)) return;
+		if (!IsImageExtension(ext) && ext != ".ranim") return;
 
 		string cachedPngPath = GetDiskCachePath(normPath, blake3);
 		if (string.IsNullOrEmpty(cachedPngPath) || File.Exists(cachedPngPath))
@@ -216,6 +350,13 @@ public static class AssetThumbnailProvider
 
 		try
 		{
+			if (ext == ".ranim")
+			{
+				RanimSkeletonThumbnailGenerator.EnsureDiskRanimThumbnail(normPath, blake3);
+				NotifyThumbnailGeneratedFromDiskDeferred(normPath);
+				return;
+			}
+
 			Image? img = null;
 
 			if (ext == ".rtex")
@@ -273,11 +414,8 @@ public static class AssetThumbnailProvider
 					img.Resize(128, 128, Image.Interpolation.Bilinear);
 				}
 
-				IndexedPngHelper.SaveAs256ColorPng(
-					img.GetData(),
-					img.GetWidth(),
-					img.GetHeight(),
-					cachedPngPath);
+				SaveThumbnailAtomic(img, cachedPngPath);
+				NotifyThumbnailGeneratedFromDiskDeferred(normPath);
 			}
 		}
 		catch (Exception ex)
@@ -286,15 +424,15 @@ public static class AssetThumbnailProvider
 		}
 	}
 
-	private static Texture2D? LoadGlbThumbnail(string glbPath, DateTime lastModifiedUtc, string? blake3 = null)
+	private static Texture2D? LoadGlbThumbnail(string glbPath, DateTime lastModifiedUtc, string? blake3 = null, bool isHighPriority = true)
 	{
 		string normPath = NormalizePath(glbPath);
-		if (GlbThumbnailRenderer.Instance.TryGetDiskCached(normPath, blake3, out var cachedTexture))
+		if (GlbThumbnailRenderer.TryGetDiskCached(normPath, blake3, out var cachedTexture))
 		{
 			return cachedTexture;
 		}
 
-		GlbThumbnailRenderer.Instance.EnqueueRequest(normPath, lastModifiedUtc, blake3);
+		GlbThumbnailRenderer.EnqueueRequest(normPath, lastModifiedUtc, blake3, isHighPriority: isHighPriority);
 		return null;
 	}
 
@@ -373,15 +511,7 @@ public static class AssetThumbnailProvider
 
 			if (!string.IsNullOrEmpty(cachedPngPath))
 			{
-				try
-				{
-					IndexedPngHelper.SaveAs256ColorPng(
-						img.GetData(),
-						img.GetWidth(),
-						img.GetHeight(),
-						cachedPngPath);
-				}
-				catch { }
+				SaveThumbnailAtomic(img, cachedPngPath);
 			}
 
 			return ImageTexture.CreateFromImage(img);
@@ -432,15 +562,7 @@ public static class AssetThumbnailProvider
 
 				if (!string.IsNullOrEmpty(cachedPngPath))
 				{
-					try
-					{
-						IndexedPngHelper.SaveAs256ColorPng(
-							image.GetData(),
-							image.GetWidth(),
-							image.GetHeight(),
-							cachedPngPath);
-					}
-					catch { }
+					SaveThumbnailAtomic(image, cachedPngPath);
 				}
 
 				return ImageTexture.CreateFromImage(image);
@@ -491,15 +613,7 @@ public static class AssetThumbnailProvider
 
 				if (!string.IsNullOrEmpty(cachedPngPath))
 				{
-					try
-					{
-						IndexedPngHelper.SaveAs256ColorPng(
-							image.GetData(),
-							image.GetWidth(),
-							image.GetHeight(),
-							cachedPngPath);
-					}
-					catch { }
+					SaveThumbnailAtomic(image, cachedPngPath);
 				}
 
 				return ImageTexture.CreateFromImage(image);

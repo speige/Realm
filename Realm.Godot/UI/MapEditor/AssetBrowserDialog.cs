@@ -229,7 +229,11 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 		gridPanel.AddChild(_lblEmptyState);
 
 		_scrollContainer.GetVScrollBar().ValueChanged += (_) => UpdateVisibleGridCells();
-		_scrollContainer.Resized += () => UpdateVisibleGridCells();
+		_scrollContainer.Resized += () =>
+		{
+			UpdateVirtualGridSize();
+			UpdateVisibleGridCells();
+		};
 
 		_bottomDetailsPanel = new PanelContainer();
 		_bottomDetailsPanel.CustomMinimumSize = new Vector2(0, 60);
@@ -400,6 +404,12 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 		UpdateSelectedAssetDisplay();
 
 		OpenDialog();
+
+		Callable.From(() =>
+		{
+			UpdateVirtualGridSize();
+			UpdateVisibleGridCells();
+		}).CallDeferred();
 	}
 
 	private void RefreshFolderChips()
@@ -700,13 +710,27 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 		float availableWidth = Mathf.Max(100.0f, _scrollContainer.Size.X - GridPadding * 2.0f);
 		int columns = Math.Max(1, (int)((availableWidth + SpacingX) / (CellWidth + SpacingX)));
 		int totalRows = (_matchingAssets.Count + columns - 1) / columns;
-		float totalHeight = GridPadding * 2.0f + totalRows * CellHeight + Math.Max(0, totalRows - 1) * SpacingY;
+		float totalHeight = _matchingAssets.Count > 0
+			? (GridPadding * 2.0f + totalRows * CellHeight + Math.Max(0, totalRows - 1) * SpacingY)
+			: 0;
 
 		_virtualGridContent.CustomMinimumSize = new Vector2(0, totalHeight);
 	}
 
 	private void UpdateVisibleGridCells()
 	{
+		float availableWidth = Mathf.Max(100.0f, _scrollContainer.Size.X - GridPadding * 2.0f);
+		int columns = Math.Max(1, (int)((availableWidth + SpacingX) / (CellWidth + SpacingX)));
+		int totalRows = (_matchingAssets.Count + columns - 1) / columns;
+		float totalHeight = _matchingAssets.Count > 0
+			? (GridPadding * 2.0f + totalRows * CellHeight + Math.Max(0, totalRows - 1) * SpacingY)
+			: 0;
+
+		if (Math.Abs(_virtualGridContent.CustomMinimumSize.Y - totalHeight) > 0.5f)
+		{
+			_virtualGridContent.CustomMinimumSize = new Vector2(0, totalHeight);
+		}
+
 		if (_matchingAssets.Count == 0)
 		{
 			foreach (var cell in _cellPool)
@@ -716,12 +740,12 @@ public partial class AssetBrowserDialog : FloatingDialogBase
 			return;
 		}
 
-		float availableWidth = Mathf.Max(100.0f, _scrollContainer.Size.X - GridPadding * 2.0f);
-		int columns = Math.Max(1, (int)((availableWidth + SpacingX) / (CellWidth + SpacingX)));
-		int totalRows = (_matchingAssets.Count + columns - 1) / columns;
-
-		float scrollY = _scrollContainer.ScrollVertical;
+		float scrollY = (float)_scrollContainer.GetVScrollBar().Value;
 		float viewHeight = _scrollContainer.Size.Y;
+		if (viewHeight <= 0)
+		{
+			viewHeight = 320.0f;
+		}
 
 		int startRow = Math.Max(0, (int)((scrollY - GridPadding) / (CellHeight + SpacingY)) - 1);
 		int endRow = Math.Min(totalRows - 1, (int)((scrollY + viewHeight - GridPadding) / (CellHeight + SpacingY)) + 1);
