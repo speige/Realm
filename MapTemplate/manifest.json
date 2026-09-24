@@ -1,5 +1,14 @@
 {
 	"Assets": {
+		"animations": {
+			"Bored - Standing Around Bored Idle.ranim": "979a642d48705fc903a1c2e98ac71660cf1399ad462dc0d3add505b7f919ea84",
+			"Death - Death From Standing Idle.ranim": "7454fae0c375bc391a9f807f21f7edfd6d09e26b146ada81311b80c4972b1568",
+			"Heavy Weapon Swing - Two Handed Heavy Weapon Swing.ranim": "4c389cdf83c9eb5e8bc342486ace70c759e34897ef8a41c73ac4bc3cb8888568",
+			"Magic Spell Casting - Casting A Spell With One Hand.ranim": "396b0033881d3dc63a27f772c19d272fb152a056dd861af67059e9d8ce693d41",
+			"Northern Soul Floor Spin - Northern Soul Dance Spin On Floor.ranim": "5422fe09e49b7c1b5c43bfe93e7197f105bf9900bf2bb4c3360330558b371ab9",
+			"Standard Walk - Standard Walk.ranim": "5c48f7b2c6ad1e735d1e3644361007dc4175a7c716f83817797ed572c6819b22",
+			"Upward Thrust - Upward Weapon Thrust.ranim": "19c2fc338a0d52ee36cab89f730245999368d239a662f84383a0a9f2adebe083"
+		},
 		"decals": {
 			"acid_drip.rtex": "59fa45cd1071e46186b2e028dbc27522694f8f6f86172d1d649bfde5c0494ba5",
 			"arcane_spark.rtex": "404f1966b680cf1c83ba8e0e835b75681a4e1f0c97f4e27554e2d3f1e5593bab"
@@ -26,10 +35,29 @@
 				"orc_warrior_7.rmesh": "efeb0cbe40426de7408cbcbb1d0cec162efb04f5d0b2dc1cd2d8b3c3f4020984"
 			}
 		},
-		"icons": {},
-		"noise_textures": {},
-		"ribbons": {},
-		"skyboxes": {},
+		"icons": {
+			"victory_flag.rtex": "c75053b32e61012661294adfe81f829a1f050944be28e59ca7d6fab52bf3e035",
+			"wood_logs.rtex": "8bca34e59d38c84093234b4c265a154b280687dad4d7f8b2bee70b3829f345c5"
+		},
+		"music": {
+			"dragon_tavern.raud": "32dd3d8c6c2d6016a041c130f49b33bdb5a427813733a182b96e6d36aab1c653"
+		},
+		"noise_textures": {
+			"procedural_noise_1.rtex": "8d701309482f2baa266c0cb9de3b9566c2d73a2051136c44d8cf0871f53bd73a",
+			"procedural_noise_2.rtex": "0197726d32ff3e2c4d7426812f936ae319f010f531308a2535679817a60e30f8"
+		},
+		"ribbons": {
+			"frost_shard_beam.rtex": "3198dfd32712e0320181acad17118d917cc66430c09b727178921a0f45639764",
+			"magma_flow_lava_vein.rtex": "6861e18a80ce59081a25d4a76809eb61e3f6c2cd407a3f71d730941c2ec58844"
+		},
+		"sfx": {
+			"achievement_unlock_chime.raud": "45127c94d9a948b2ea3738629757f7db64eba944715d9686fa98743df394c3db",
+			"orc_victory_howl.raud": "e57c43c5bebeadc2ab603ef361cd799724fa602f750c919e127c801253520415"
+		},
+		"skyboxes": {
+			"jade_shrine.rtex": "e731a047f223e140a15463ecd247f89829df3faa5f061927116c66db1c52e751",
+			"star_reach.rtex": "4d91a6b90712e9f4b7f346f7b7a67437961ba82fba113802e2416cb96878e394"
+		},
 		"textures": {
 			"ancient_jungle_mossy_stone.rtex": "e9f4a3903186dfe759ade9528c2d826860398890c2125b1d6156f823011f43eb",
 			"ancient_jungle_overgrown_path.rtex": "69c003d1c7b4eda35f084a55f11ded32faa398c6332cd06a141957b3a99f17ef",
@@ -44,6 +72,17 @@
 			"sunken_ruins_reef_stone.rtex": "1b86b1289e0426a20e66eb5c7ccdb164aadca4857c14f77a33d800f2d2779b3e",
 			"whispering_woods_soft_grass.rtex": "54dcc56db933a8ad7fe195deab9727fc373623d242865021b01295f94c8483a1"
 		},
-		"vfx_spritesheets": {}
+		"vfx_radial": {
+			"mineral_geology_prism_dust.rtex": "ffbb1c99fe37cb0da38b4a357a8d13f35e50dbbbe3ccc8e1d0fe5e257b275ad4",
+			"mineral_geology_ruby_vein.rtex": "23ee044e252a84f79a0d3041dc7fe0124fba820188f26114f97e69d7ab62abdd"
+		},
+		"vfx_spritesheets": {
+			"ash_burst_sheet.rtex": "e2edfaebe2076a5510e0b600056bb7314c1e8bef82cff7b2cfcda5ae974a3a8b",
+			"blaze_streak_sheet.rtex": "fdc980fd1414fa9a7bcf98d47f23532e56ea0f6fa7777996162acc14306276f1"
+		},
+		"vfx_vertical": {
+			"crystal_lattice_growth.rtex": "7e3393eed7dd4e1f53775653a9575b171144fdae92b53ea76d1a3c532ef8631d",
+			"weapon_fins_venom_flick.rtex": "fda286b9b96e5b546a64bd0524d7d381d664c609151ec3a9cbc8da2c83433ea9"
+		}
 	}
 }

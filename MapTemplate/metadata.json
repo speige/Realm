@@ -507,7 +507,47 @@
 		"arcane_spark.rtex": {}
 	},
 	"icons": {},
-	"noise_textures": {},
+	"noise_textures": {
+		"procedural_noise_1.rtex": {
+			"color_a": "#db1d1d",
+			"color_b": "#2db813",
+			"color_mode": "ColorRamp",
+			"fractal_gain": 0.3,
+			"fractal_lacunarity": 2.9,
+			"fractal_octaves": 1,
+			"fractal_type": "Fbm",
+			"fractal_weighted_strength": 0.6,
+			"frequency": 0.042000003,
+			"generator": "FastNoiseLite",
+			"height": 512,
+			"invert": true,
+			"noise_type": "Perlin",
+			"normalize": true,
+			"seed": 825088,
+			"width": 512
+		},
+		"procedural_noise_2.rtex": {
+			"color_mode": "Grayscale",
+			"domain_warp_amplitude": 38,
+			"domain_warp_enabled": true,
+			"domain_warp_fractal_octaves": 5,
+			"domain_warp_frequency": 0.13599999,
+			"domain_warp_type": "Simplex",
+			"fractal_gain": 0.5,
+			"fractal_lacunarity": 3.2,
+			"fractal_octaves": 7,
+			"fractal_type": "Ridged",
+			"fractal_weighted_strength": 0.05,
+			"frequency": 0.044000003,
+			"generator": "FastNoiseLite",
+			"height": 512,
+			"invert": false,
+			"noise_type": "ValueCubic",
+			"normalize": true,
+			"seed": 416680,
+			"width": 512
+		}
+	},
 	"ribbons": {},
 	"skyboxes": {},
 	"textures": {
@@ -560,5 +600,14 @@
 			"swatchIndex": 11
 		}
 	},
-	"vfx_spritesheets": {}
+	"vfx_spritesheets": {
+		"ash_burst_sheet.rtex": {
+			"columns": 4,
+			"rows": 4
+		},
+		"blaze_streak_sheet.rtex": {
+			"columns": 4,
+			"rows": 4
+		}
+	}
 }
