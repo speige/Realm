@@ -119,8 +119,8 @@ public partial class Prop3D : StaticBody3D
 
 	private static TorusMesh GetOrCreateTorusMesh(float radius)
 	{
-		float r = Mathf.Max(0.4f, (float)Math.Round(radius, 1));
-		string key = r.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+		float r = Mathf.Max(0.4f, (float)Math.Round(radius, 2));
+		string key = r.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
 		if (!_sharedTorusMeshes.TryGetValue(key, out var mesh) || !GodotObject.IsInstanceValid(mesh))
 		{
 			mesh = new TorusMesh
@@ -165,6 +165,38 @@ public partial class Prop3D : StaticBody3D
 		return _sharedHoverMaterial;
 	}
 
+	private void UpdateSelectionRingTransform()
+	{
+		if (_selectionRing == null && _hoverRing == null) return;
+
+		float sx = Mathf.Abs(Scale.X) > 0.001f ? Scale.X : 1.0f;
+		float sy = Mathf.Abs(Scale.Y) > 0.001f ? Scale.Y : 1.0f;
+		float sz = Mathf.Abs(Scale.Z) > 0.001f ? Scale.Z : 1.0f;
+
+		Vector3 ringScale = new Vector3(1.0f / sx, 1.0f / sy, 1.0f / sz);
+		Vector3 ringPos = new Vector3(0, 0.05f / sy, 0);
+
+		float ratio = GameHost.Instance != null ? GameHost.Instance.GetModelCollisionCircleRatio(GameHost.Instance.GetModelAssetKey(this)) : 1.0f;
+		if (ratio <= 0.001f) ratio = 1.0f;
+
+		float baseRadius = GetBaseObstacleRadius();
+		float worldRadius = baseRadius * ratio * Mathf.Abs(sx);
+		var torusMesh = GetOrCreateTorusMesh(worldRadius);
+
+		if (_selectionRing != null)
+		{
+			_selectionRing.Mesh = torusMesh;
+			_selectionRing.Scale = ringScale;
+			_selectionRing.Position = ringPos;
+		}
+		if (_hoverRing != null)
+		{
+			_hoverRing.Mesh = torusMesh;
+			_hoverRing.Scale = ringScale;
+			_hoverRing.Position = ringPos;
+		}
+	}
+
 	public bool IsHovered
 	{
 		get => _isHovered;
@@ -177,6 +209,10 @@ public partial class Prop3D : StaticBody3D
 			}
 			if (_hoverRing != null)
 			{
+				if (_isHovered)
+				{
+					UpdateSelectionRingTransform();
+				}
 				_hoverRing.Visible = _isHovered && !IsSelected;
 			}
 		}
@@ -185,35 +221,28 @@ public partial class Prop3D : StaticBody3D
 	private void CreateHoverRing()
 	{
 		if (_hoverRing != null) return;
-		float baseRadius = GetBaseObstacleRadius();
 		_hoverRing = new MeshInstance3D
 		{
 			Name = "_hover_ring",
-			Mesh = GetOrCreateTorusMesh(baseRadius),
-			Position = new Vector3(0, 0.05f, 0),
 			CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
 			GIMode = GeometryInstance3D.GIModeEnum.Disabled,
-			MaterialOverride = GetOrCreateHoverMaterial()
+			MaterialOverride = GetOrCreateHoverMaterial(),
+			Visible = _isHovered && !IsSelected
 		};
-		float ratio = GameHost.Instance != null ? GameHost.Instance.GetModelCollisionCircleRatio(GameHost.Instance.GetModelAssetKey(this)) : 1.0f;
-		if (ratio <= 0.001f) ratio = 1.0f;
-		_hoverRing.Scale = new Vector3(ratio, 1.0f, ratio);
-		_hoverRing.Visible = _isHovered && !IsSelected;
 		AddChild(_hoverRing);
+		UpdateSelectionRingTransform();
 	}
 
 	public virtual void UpdateCollisionCircleScale(float ratio)
 	{
-		if (ratio <= 0.001f) ratio = 1.0f;
-		Vector3 ringScale = new Vector3(ratio, 1.0f, ratio);
+		UpdateSelectionRingTransform();
 		if (_selectionRing != null)
 		{
-			_selectionRing.Scale = ringScale;
 			_selectionRing.Visible = _isSelected;
 		}
 		if (_hoverRing != null)
 		{
-			_hoverRing.Scale = ringScale;
+			_hoverRing.Visible = _isHovered && !_isSelected;
 		}
 	}
 
@@ -229,6 +258,10 @@ public partial class Prop3D : StaticBody3D
 			}
 			if (_selectionRing != null)
 			{
+				if (_isSelected)
+				{
+					UpdateSelectionRingTransform();
+				}
 				_selectionRing.Visible = _isSelected;
 			}
 			if (_hoverRing != null)
@@ -246,33 +279,32 @@ public partial class Prop3D : StaticBody3D
 		}
 		if (_selectionRing != null)
 		{
+			if (highlight || _isSelected)
+			{
+				UpdateSelectionRingTransform();
+			}
 			_selectionRing.Visible = highlight || _isSelected;
 		}
 	}
 
 	protected virtual Color GetSelectionRingColor()
 	{
-		return new Color(0.95f, 0.82f, 0.15f);
+		return new Color(0.22f, 0.54f, 0.26f);
 	}
 
 	protected virtual void CreateSelectionRing()
 	{
 		if (_selectionRing != null) return;
-		float baseRadius = GetBaseObstacleRadius();
 		_selectionRing = new MeshInstance3D
 		{
 			Name = "_selection_ring",
 			CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
 			GIMode = GeometryInstance3D.GIModeEnum.Disabled,
-			Mesh = GetOrCreateTorusMesh(baseRadius),
-			Position = new Vector3(0, 0.05f, 0),
-			MaterialOverride = GetOrCreateSelectionMaterial(GetSelectionRingColor())
+			MaterialOverride = GetOrCreateSelectionMaterial(GetSelectionRingColor()),
+			Visible = _isSelected
 		};
-		float ratio = GameHost.Instance != null ? GameHost.Instance.GetModelCollisionCircleRatio(GameHost.Instance.GetModelAssetKey(this)) : 1.0f;
-		if (ratio <= 0.001f) ratio = 1.0f;
-		_selectionRing.Scale = new Vector3(ratio, 1.0f, ratio);
-		_selectionRing.Visible = _isSelected;
 		AddChild(_selectionRing);
+		UpdateSelectionRingTransform();
 	}
 
 	private static readonly Dictionary<string, (Shape3D Shape, Vector3 Offset)> _modelShapeCache = new(StringComparer.OrdinalIgnoreCase);
@@ -480,6 +512,7 @@ public partial class Prop3D : StaticBody3D
 		if (what == NotificationTransformChanged)
 		{
 			UpdateLodVisibility();
+			UpdateSelectionRingTransform();
 		}
 	}
 

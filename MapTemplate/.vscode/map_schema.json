@@ -3,6 +3,9 @@
   "title": "MapUnitsRegistry",
   "type": "object",
   "properties": {
+    "GameBuildNumber": {
+      "type": "string"
+    },
     "MapProperties": {
       "type": "object",
       "properties": {
@@ -150,7 +153,8 @@
     "CustomWeapons": { "$ref": "#/definitions/CustomWeapons" },
     "CustomUpgrades": { "$ref": "#/definitions/CustomUpgrades" },
     "CustomItems": { "$ref": "#/definitions/CustomItems" },
-    "Assets": { "$ref": "#/definitions/Assets" }
+    "Assets": { "$ref": "#/definitions/Assets" },
+    "textures": { "type": "object" }
   },
   "definitions": {
     "EntityItem": {
@@ -185,8 +189,7 @@
           "CollisionCircle": { "type": "number", "minimum": 0 },
           "Brightness": { "type": "number", "minimum": 0 },
           "Tint": { "type": "string" },
-          "NormalMode": { "type": "string", "enum": ["Original", "Smooth", "Flat"] },
-          "RecalculateNormals": { "type": "boolean" },
+          "DespillPlayerColor": { "type": "boolean" },
           "NormalizeLuminance": { "type": "boolean" },
           "IgnorePlayerColor": { "type": "boolean" },
           "MaxCapacity": { "type": "number", "minimum": 0 },
@@ -230,22 +233,51 @@
           "PortraitModelPath": { "type": "string" },
           "Animations": {
             "type": "object",
-            "description": "Dictionary of animation type enum to array of animation file names",
+            "description": "Dictionary of animation type enum to array of animation file names or attachment objects",
             "properties": {
-              "Idle": { "type": "array", "items": { "type": "string" } },
-              "Walk": { "type": "array", "items": { "type": "string" } },
-              "Attack": { "type": "array", "items": { "type": "string" } },
-              "Death": { "type": "array", "items": { "type": "string" } },
-              "Labor": { "type": "array", "items": { "type": "string" } },
-              "Spell_Cast": { "type": "array", "items": { "type": "string" } },
-              "Dance": { "type": "array", "items": { "type": "string" } }
+              "Idle": { "$ref": "#/definitions/AnimationList" },
+              "Walk": { "$ref": "#/definitions/AnimationList" },
+              "Attack": { "$ref": "#/definitions/AnimationList" },
+              "Death": { "$ref": "#/definitions/AnimationList" },
+              "Labor": { "$ref": "#/definitions/AnimationList" },
+              "Spell_Cast": { "$ref": "#/definitions/AnimationList" },
+              "Dance": { "$ref": "#/definitions/AnimationList" }
             },
             "additionalProperties": {
-              "type": "array",
-              "items": { "type": "string" }
+              "$ref": "#/definitions/AnimationList"
+            }
+          },
+          "ObjectAttachments": {
+            "type": "object",
+            "properties": {
+              "right_hand": {
+                "type": "array",
+                "items": { "type": "object" }
+              },
+              "left_hand": {
+                "type": "array",
+                "items": { "type": "object" }
+              }
             }
           }
         }
+      }
+    },
+    "AnimationList": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "required": ["Animation"],
+            "properties": {
+              "Animation": { "type": "string" },
+              "RightHandAttachment": { "type": ["string", "null"] },
+              "LeftHandAttachment": { "type": ["string", "null"] }
+            }
+          }
+        ]
       }
     },
     "CustomAbilities": {
@@ -452,12 +484,6 @@
     "Assets": {
       "type": "object"
     },
-    "ModelOffsets": { "type": "object" },
-    "ModelCollisionCircleRatios": { "type": "object" },
-    "ModelObstacleRadii": { "type": "object" },
-    "ModelBrightness": { "type": "object" },
-    "ModelColorTint": { "type": "object" },
-    "ModelNormalModes": { "type": "object" },
-    "ModelIgnorePlayerColor": { "type": "object" }
+    "Models": { "type": "object" }
   }
 }

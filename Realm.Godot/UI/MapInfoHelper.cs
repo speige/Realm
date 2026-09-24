@@ -117,7 +117,8 @@ public static class MapInfoHelper
 			Description = "",
 			GameBuildNumber = "v0.0.0",
 			Version = "1.0.0",
-			ManifestHash = ""
+			ManifestHash = "",
+			ThumbnailPath = FindThumbnailForMap(mapFolder)
 		};
 	}
 
@@ -246,6 +247,11 @@ public static class MapInfoHelper
 				catch { }
 			}
 
+			string? versionDir = System.IO.Path.GetDirectoryName(filePath);
+			string thumbPath = !string.IsNullOrEmpty(versionDir) && System.IO.File.Exists(System.IO.Path.Combine(versionDir, "thumbnail.png"))
+				? System.IO.Path.Combine(versionDir, "thumbnail.png")
+				: FindThumbnailForMap(mapName, version);
+
 			details = new MapBriefingDetails
 			{
 				PathName = mapName,
@@ -253,7 +259,8 @@ public static class MapInfoHelper
 				Description = description,
 				GameBuildNumber = gameBuildNumber,
 				Version = version,
-				ManifestHash = manifestHash
+				ManifestHash = manifestHash,
+				ThumbnailPath = thumbPath
 			};
 			return true;
 		}
@@ -426,6 +433,16 @@ public static class MapInfoHelper
 					}
 					catch { }
 
+					string thumbPath = "";
+					if (System.IO.File.Exists(System.IO.Path.Combine(mapFolderPath, "thumbnail.png")))
+					{
+						thumbPath = System.IO.Path.Combine(mapFolderPath, "thumbnail.png");
+					}
+					else
+					{
+						thumbPath = FindThumbnailForMap(mapFolder, version);
+					}
+
 					details = new MapBriefingDetails
 					{
 						PathName = mapFolder,
@@ -433,7 +450,8 @@ public static class MapInfoHelper
 						Description = description,
 						GameBuildNumber = gameBuildNumber,
 						Version = version,
-						ManifestHash = manifestHash
+						ManifestHash = manifestHash,
+						ThumbnailPath = thumbPath
 					};
 					return true;
 				}
@@ -725,5 +743,71 @@ public static class MapInfoHelper
 			return new Version(maj, min, 0);
 		}
 		return new Version(0, 0, 0);
+	}
+
+	public static string FindThumbnailForMap(string mapFolderOrName, string? version = null)
+	{
+		if (string.IsNullOrWhiteSpace(mapFolderOrName)) return string.Empty;
+
+		string globalArchive = MapAssetManager.GlobalArchiveDirectory;
+		if (System.IO.Directory.Exists(globalArchive))
+		{
+			if (!string.IsNullOrEmpty(version))
+			{
+				string candidateVersionDir = System.IO.Path.Combine(globalArchive, mapFolderOrName, version);
+				if (System.IO.Directory.Exists(candidateVersionDir))
+				{
+					string thumb = System.IO.Path.Combine(candidateVersionDir, "thumbnail.png");
+					if (System.IO.File.Exists(thumb)) return thumb;
+
+					foreach (var sub in System.IO.Directory.GetDirectories(candidateVersionDir))
+					{
+						string subThumb = System.IO.Path.Combine(sub, "thumbnail.png");
+						if (System.IO.File.Exists(subThumb)) return subThumb;
+					}
+				}
+			}
+
+			string candidateMapDir = System.IO.Path.Combine(globalArchive, mapFolderOrName);
+			if (System.IO.Directory.Exists(candidateMapDir))
+			{
+				string thumb = System.IO.Path.Combine(candidateMapDir, "thumbnail.png");
+				if (System.IO.File.Exists(thumb)) return thumb;
+
+				foreach (var verDir in System.IO.Directory.GetDirectories(candidateMapDir))
+				{
+					string verThumb = System.IO.Path.Combine(verDir, "thumbnail.png");
+					if (System.IO.File.Exists(verThumb)) return verThumb;
+
+					foreach (var sub in System.IO.Directory.GetDirectories(verDir))
+					{
+						string subThumb = System.IO.Path.Combine(sub, "thumbnail.png");
+						if (System.IO.File.Exists(subThumb)) return subThumb;
+					}
+				}
+			}
+		}
+
+		try
+		{
+			string resMap = ProjectSettings.GlobalizePath($"res://Maps/{mapFolderOrName}/thumbnail.png");
+			if (System.IO.File.Exists(resMap)) return resMap;
+		}
+		catch { }
+
+		try
+		{
+			string userMap = ProjectSettings.GlobalizePath($"user://maps/{mapFolderOrName}/thumbnail.png");
+			if (System.IO.File.Exists(userMap)) return userMap;
+		}
+		catch { }
+
+		if (System.IO.Directory.Exists(mapFolderOrName))
+		{
+			string directThumb = System.IO.Path.Combine(mapFolderOrName, "thumbnail.png");
+			if (System.IO.File.Exists(directThumb)) return directThumb;
+		}
+
+		return string.Empty;
 	}
 }

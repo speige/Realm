@@ -142,7 +142,7 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 			GameHost.Instance.RefreshAllPlacedObjectModels(_currentAssetKey);
 		});
 
-		_chkDespillPlayerColor = AddCheckBox(grid, TranslationServer.Translate("Despill Player Color"), true, (pressed) =>
+		_chkDespillPlayerColor = AddCheckBox(grid, TranslationServer.Translate("Despill Player Color"), false, (pressed) =>
 		{
 			if (_isUpdatingUI || GameHost.Instance == null || string.IsNullOrEmpty(_currentAssetKey)) return;
 			GameHost.Instance.SetModelDespillPlayerColor(_currentAssetKey, pressed);
@@ -184,15 +184,15 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 		_initialSnapshot = new GlobalOverridesSnapshot
 		{
 			Scale = GameHost.Instance.GetModelScale(selectedObject),
-			YOffset = GameHost.Instance.GetModelYOffset(_currentAssetKey),
-			CollisionCircleRatio = GameHost.Instance.GetModelCollisionCircleRatio(_currentAssetKey),
-			Brightness = GameHost.Instance.GetModelBrightness(_currentAssetKey),
-			ColorTint = GameHost.Instance.GetModelColorTint(_currentAssetKey),
-			NormalizeLuminance = GameHost.Instance.GetModelNormalizeLuminance(_currentAssetKey),
-			IgnorePlayerColor = GameHost.Instance.GetModelIgnorePlayerColor(_currentAssetKey),
-			DespillPlayerColor = GameHost.Instance.GetModelDespillPlayerColor(_currentAssetKey),
-			SpawnShader = GameHost.Instance.GetModelSpawnShader(_currentAssetKey),
-			DeathShader = GameHost.Instance.GetModelDeathShader(_currentAssetKey)
+			YOffset = GameHost.Instance.GetModelYOffset(selectedObject),
+			CollisionCircleRatio = GameHost.Instance.GetModelCollisionCircleRatio(selectedObject),
+			Brightness = GameHost.Instance.GetModelBrightness(selectedObject),
+			ColorTint = GameHost.Instance.GetModelColorTint(selectedObject),
+			NormalizeLuminance = GameHost.Instance.GetModelNormalizeLuminance(selectedObject),
+			IgnorePlayerColor = GameHost.Instance.GetModelIgnorePlayerColor(selectedObject),
+			DespillPlayerColor = GameHost.Instance.GetModelDespillPlayerColor(selectedObject),
+			SpawnShader = GameHost.Instance.GetModelSpawnShader(selectedObject),
+			DeathShader = GameHost.Instance.GetModelDeathShader(selectedObject)
 		};
 
 		TitleLabel.Text = $"{TranslationServer.Translate("Global Overrides")} - {_currentAssetKey}";
@@ -297,6 +297,14 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 			DeathShader = deathKey
 		};
 
+		GameHost.Instance.SetModelScale(_currentAssetKey, currentSnapshot.Scale);
+		GameHost.Instance.SetModelYOffset(_currentAssetKey, currentSnapshot.YOffset);
+		GameHost.Instance.SetModelCollisionCircleRatio(_currentAssetKey, currentSnapshot.CollisionCircleRatio);
+		GameHost.Instance.SetModelBrightness(_currentAssetKey, currentSnapshot.Brightness);
+		GameHost.Instance.SetModelColorTint(_currentAssetKey, currentSnapshot.ColorTint);
+		GameHost.Instance.SetModelNormalizeLuminance(_currentAssetKey, currentSnapshot.NormalizeLuminance);
+		GameHost.Instance.SetModelIgnorePlayerColor(_currentAssetKey, currentSnapshot.IgnorePlayerColor);
+		GameHost.Instance.SetModelDespillPlayerColor(_currentAssetKey, currentSnapshot.DespillPlayerColor);
 		GameHost.Instance.SetModelSpawnShader(_currentAssetKey, spawnKey);
 		GameHost.Instance.SetModelDeathShader(_currentAssetKey, deathKey);
 

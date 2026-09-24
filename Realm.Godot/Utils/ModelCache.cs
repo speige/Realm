@@ -235,7 +235,7 @@ namespace Realm.Godot.Utils
 						glbBytes = rmeshBytes;
 					}
 
-					bool despill = GameHost.Instance == null || GameHost.Instance.GetModelDespillPlayerColor(modelPath);
+					bool despill = GameHost.Instance != null && GameHost.Instance.GetModelDespillPlayerColor(modelPath);
 					if (despill)
 					{
 						glbBytes = Realm.Shared.GlbInMemoryColorPreprocessor.PreprocessGlbInMemory(glbBytes, chromaKey);

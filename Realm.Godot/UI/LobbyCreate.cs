@@ -18,6 +18,7 @@ public partial class LobbyCreate : Control
 	private HBoxContainer _versionContainer;
 	private Label _versionLabel;
 	private RichTextLabel _briefingText;
+	private TextureRect _mapThumbnail;
 
 	private Label _titleLabel;
 	private Label _mapSelectLabel;
@@ -111,9 +112,38 @@ public partial class LobbyCreate : Control
 		_createButton.GetParent().AddChild(spacer);
 		_createButton.GetParent().MoveChild(spacer, _createButton.GetIndex());
 
-		var mapThumbnail = GetNode<TextureRect>("CentralPanel/ContentContainer/BriefingPanel/MapThumbnail");
-		mapThumbnail.Texture = GD.Load<Texture2D>("res://Assets/UI/moonlit_castle.png");
-		mapThumbnail.Modulate = new Color(0.6f, 0.6f, 0.6f, 0.8f);
+		_mapThumbnail = GetNode<TextureRect>("CentralPanel/ContentContainer/BriefingPanel/MapThumbnail");
+
+		var briefingHBox = new HBoxContainer();
+		briefingHBox.Name = "BriefingHBox";
+		briefingHBox.AddThemeConstantOverride("separation", 16);
+		briefingHBox.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		briefingHBox.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+
+		_briefingPanel.RemoveChild(_mapThumbnail);
+		_briefingPanel.RemoveChild(textPanelWrapper);
+
+		var thumbFrame = new PanelContainer();
+		thumbFrame.Name = "ThumbnailFrame";
+		thumbFrame.CustomMinimumSize = new Vector2(256, 256);
+		thumbFrame.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
+		thumbFrame.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+		thumbFrame.AddThemeStyleboxOverride("panel", UIStyle.CreateBackdropPanel());
+
+		_mapThumbnail.CustomMinimumSize = new Vector2(240, 240);
+		_mapThumbnail.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+		_mapThumbnail.StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered;
+		_mapThumbnail.Modulate = Colors.White;
+		_mapThumbnail.Texture = UIStyle.EmptyBlackTexture;
+
+		thumbFrame.AddChild(_mapThumbnail);
+		briefingHBox.AddChild(thumbFrame);
+
+		textPanelWrapper.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		textPanelWrapper.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+		briefingHBox.AddChild(textPanelWrapper);
+
+		_briefingPanel.AddChild(briefingHBox);
 
 		_titleLabel = GetNode<Label>("Title");
 		_mapSelectLabel = GetNode<Label>("CentralPanel/ContentContainer/MapSelectLabel");
@@ -541,6 +571,35 @@ public partial class LobbyCreate : Control
 			var selectedMap = _availableMaps[(int)index];
 			_briefingText.Text = selectedMap.Description;
 			RefreshVersionsForSelectedMap(selectedMap, targetVersion);
+
+			string thumbPath = !string.IsNullOrEmpty(selectedMap.ThumbnailPath) && System.IO.File.Exists(selectedMap.ThumbnailPath)
+				? selectedMap.ThumbnailPath
+				: MapInfoHelper.FindThumbnailForMap(selectedMap.PathName, selectedMap.Version);
+
+			if (!string.IsNullOrEmpty(thumbPath) && System.IO.File.Exists(thumbPath))
+			{
+				try
+				{
+					var img = Image.LoadFromFile(thumbPath);
+					if (img != null && !img.IsEmpty())
+					{
+						_mapThumbnail.Texture = ImageTexture.CreateFromImage(img);
+						_mapThumbnail.Modulate = Colors.White;
+					}
+					else
+					{
+						_mapThumbnail.Texture = UIStyle.EmptyBlackTexture;
+					}
+				}
+				catch
+				{
+					_mapThumbnail.Texture = UIStyle.EmptyBlackTexture;
+				}
+			}
+			else
+			{
+				_mapThumbnail.Texture = UIStyle.EmptyBlackTexture;
+			}
 		}
 	}
 

@@ -7,56 +7,22 @@ using System.IO;
 public partial class GlbThumbnailRenderer : Node
 {
 	private static GlbThumbnailRenderer? _instance;
-	public static GlbThumbnailRenderer Instance
-	{
-		get
-		{
-			if (_instance == null || !GodotObject.IsInstanceValid(_instance))
-			{
-				_instance = new GlbThumbnailRenderer();
-				EnsureInTree(_instance);
-			}
-			else if (!_instance.IsInsideTree())
-			{
-				EnsureInTree(_instance);
-			}
-			return _instance;
-		}
-	}
+	private static readonly object _instanceLock = new();
 
-	public static void EnsureInTree(GlbThumbnailRenderer inst)
-	{
-		if (inst.IsInsideTree()) return;
-
-		if (Engine.GetMainLoop() is SceneTree tree && tree.Root != null)
-		{
-			try
-			{
-				if (System.Threading.Thread.CurrentThread.ManagedThreadId == 1)
-				{
-					if (!inst.IsInsideTree())
-					{
-						tree.Root.AddChild(inst);
-					}
-				}
-				else
-				{
-					tree.Root.CallDeferred(Node.MethodName.AddChild, inst);
-				}
-			}
-			catch { }
-		}
-	}
-
-	public event Action<string, Texture2D>? ThumbnailGenerated;
+	public static event Action<string, Texture2D>? ThumbnailGenerated;
 
 	private class GlbRequest
 	{
 		public string FilePath { get; set; } = string.Empty;
 		public DateTime LastModifiedUtc { get; set; }
-		public string CacheKey { get; set; } = string.Empty;
+		public string Blake3 { get; set; } = string.Empty;
 		public Action<string, Texture2D>? Callback { get; set; }
+		public bool IsHighPriority { get; set; }
 	}
+
+	private static readonly LinkedList<GlbRequest> _requestQueue = new();
+	private static readonly HashSet<string> _pendingPaths = new(StringComparer.OrdinalIgnoreCase);
+	private static readonly object _requestLock = new();
 
 	private SubViewport _subViewport;
 	private Node3D _modelContainer;
@@ -64,11 +30,51 @@ public partial class GlbThumbnailRenderer : Node
 	private DirectionalLight3D _keyLight;
 	private DirectionalLight3D _fillLight;
 
-	private readonly Queue<GlbRequest> _requestQueue = new();
-	private readonly HashSet<string> _pendingPaths = new(StringComparer.OrdinalIgnoreCase);
-
 	private GlbRequest? _currentRequest;
 	private int _framesRemainingForCapture;
+
+	public static void EnsureInTreeDeferred()
+	{
+		if (_instance != null && GodotObject.IsInstanceValid(_instance) && _instance.IsInsideTree())
+		{
+			return;
+		}
+
+		if (Engine.GetMainLoop() is SceneTree tree && tree.Root != null)
+		{
+			if (System.Threading.Thread.CurrentThread.ManagedThreadId == 1)
+			{
+				CreateInstanceInTree(tree);
+			}
+			else
+			{
+				Callable.From(() =>
+				{
+					if (Engine.GetMainLoop() is SceneTree mainTree)
+					{
+						CreateInstanceInTree(mainTree);
+					}
+				}).CallDeferred();
+			}
+		}
+	}
+
+	private static void CreateInstanceInTree(SceneTree tree)
+	{
+		if (tree.Root == null) return;
+		lock (_instanceLock)
+		{
+			if (_instance == null || !GodotObject.IsInstanceValid(_instance))
+			{
+				_instance = new GlbThumbnailRenderer();
+			}
+
+			if (!_instance.IsInsideTree())
+			{
+				tree.Root.AddChild(_instance);
+			}
+		}
+	}
 
 	public GlbThumbnailRenderer()
 	{
@@ -133,74 +139,167 @@ public partial class GlbThumbnailRenderer : Node
 		return Path.GetFullPath(path).Replace('\\', '/').TrimEnd('/');
 	}
 
-	public bool TryGetDiskCached(string glbPath, DateTime lastModifiedUtc, out Texture2D? texture)
+	public static string GetBlake3(string filePath, string? preferredBlake3 = null)
+	{
+		if (!string.IsNullOrEmpty(preferredBlake3))
+		{
+			return Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(preferredBlake3);
+		}
+
+		string fileName = Path.GetFileNameWithoutExtension(filePath);
+		if (fileName.Length == 64 && IsHexOnly(fileName))
+		{
+			return fileName.ToLowerInvariant();
+		}
+
+		try
+		{
+			string? metaJson = Realm.Shared.Metadata.RealmMetadataHelper.ExtractMetadata(filePath);
+			if (!string.IsNullOrEmpty(metaJson))
+			{
+				var node = System.Text.Json.Nodes.JsonNode.Parse(metaJson);
+				string? b3 = node?["blake3"]?.ToString();
+				if (!string.IsNullOrEmpty(b3))
+				{
+					return Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(b3);
+				}
+			}
+		}
+		catch { }
+
+		try
+		{
+			if (File.Exists(filePath))
+			{
+				var fi = new FileInfo(filePath);
+				string key = $"{filePath}_{fi.Length}_{fi.LastWriteTimeUtc.Ticks}";
+				using var sha = System.Security.Cryptography.SHA256.Create();
+				byte[] hashBytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(key));
+				return Convert.ToHexString(hashBytes).ToLowerInvariant();
+			}
+		}
+		catch { }
+
+		return Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(fileName);
+	}
+
+	private static bool IsHexOnly(string str)
+	{
+		foreach (char c in str)
+		{
+			if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	public static bool TryGetDiskCached(string glbPath, DateTime lastModifiedUtc, out Texture2D? texture)
+	{
+		return TryGetDiskCached(glbPath, null, out texture);
+	}
+
+	public static bool TryGetDiskCached(string glbPath, string? blake3, out Texture2D? texture)
 	{
 		texture = null;
 		string normPath = NormalizePath(glbPath);
 		if (string.IsNullOrEmpty(normPath) || !File.Exists(normPath)) return false;
 
+		string hash = GetBlake3(normPath, blake3);
+		if (string.IsNullOrEmpty(hash) || hash.Length < 2) return false;
+
 		string cacheDirectory = ProjectSettings.GlobalizePath("user://model_thumb_cache");
-		string fileName = Path.GetFileNameWithoutExtension(normPath);
-		string pathHash = Math.Abs(normPath.ToLowerInvariant().GetHashCode()).ToString("X8");
-		string cacheKey = $"{SanitizeFileName(fileName)}_{pathHash}_{lastModifiedUtc.Ticks}";
-		string cachedPngPath = Path.Combine(cacheDirectory, $"{cacheKey}.png");
+		string cachedPngPath = Path.Combine(cacheDirectory, hash.Substring(0, 2), $"{hash}.png");
 
 		if (File.Exists(cachedPngPath))
 		{
-			try
+			if (System.Threading.Thread.CurrentThread.ManagedThreadId == 1)
 			{
-				var img = Image.LoadFromFile(cachedPngPath);
-				if (img != null)
+				try
 				{
-					texture = ImageTexture.CreateFromImage(img);
-					return true;
+					var img = Image.LoadFromFile(cachedPngPath);
+					if (img != null && !img.IsEmpty())
+					{
+						texture = ImageTexture.CreateFromImage(img);
+						return true;
+					}
 				}
+				catch { }
 			}
-			catch { }
-		}
-
-		string legacyPngPath = Path.Combine(cacheDirectory, $"{SanitizeFileName(fileName)}_{lastModifiedUtc.Ticks}.png");
-		if (File.Exists(legacyPngPath))
-		{
-			try
+			else
 			{
-				var img = Image.LoadFromFile(legacyPngPath);
-				if (img != null)
-				{
-					texture = ImageTexture.CreateFromImage(img);
-					return true;
-				}
+				return true;
 			}
-			catch { }
 		}
 
 		return false;
 	}
 
-	public void EnqueueRequest(string glbPath, DateTime lastModifiedUtc, Action<string, Texture2D>? callback = null)
+	public static bool HasDiskCache(string glbPath, string? blake3 = null)
+	{
+		string normPath = NormalizePath(glbPath);
+		if (string.IsNullOrEmpty(normPath) || !File.Exists(normPath)) return false;
+
+		string hash = GetBlake3(normPath, blake3);
+		if (string.IsNullOrEmpty(hash) || hash.Length < 2) return false;
+
+		string cacheDirectory = ProjectSettings.GlobalizePath("user://model_thumb_cache");
+		string cachedPngPath = Path.Combine(cacheDirectory, hash.Substring(0, 2), $"{hash}.png");
+
+		return File.Exists(cachedPngPath);
+	}
+
+	public static void EnqueueRequest(string glbPath, DateTime lastModifiedUtc, string? blake3 = null, Action<string, Texture2D>? callback = null, bool isHighPriority = true)
 	{
 		string normPath = NormalizePath(glbPath);
 		if (string.IsNullOrEmpty(normPath) || !File.Exists(normPath)) return;
 
-		EnsureInTree(this);
-
-		lock (_requestQueue)
+		lock (_requestLock)
 		{
-			if (_pendingPaths.Contains(normPath)) return;
+			string hash = GetBlake3(normPath, blake3);
+
+			if (_pendingPaths.Contains(normPath))
+			{
+				if (isHighPriority)
+				{
+					var node = _requestQueue.First;
+					while (node != null)
+					{
+						if (string.Equals(node.Value.FilePath, normPath, StringComparison.OrdinalIgnoreCase))
+						{
+							_requestQueue.Remove(node);
+							_requestQueue.AddFirst(node.Value);
+							break;
+						}
+						node = node.Next;
+					}
+				}
+				return;
+			}
+
 			_pendingPaths.Add(normPath);
 
-			string fileName = Path.GetFileNameWithoutExtension(normPath);
-			string pathHash = Math.Abs(normPath.ToLowerInvariant().GetHashCode()).ToString("X8");
-			string cacheKey = $"{SanitizeFileName(fileName)}_{pathHash}_{lastModifiedUtc.Ticks}";
-
-			_requestQueue.Enqueue(new GlbRequest
+			var req = new GlbRequest
 			{
 				FilePath = normPath,
 				LastModifiedUtc = lastModifiedUtc,
-				CacheKey = cacheKey,
-				Callback = callback
-			});
+				Blake3 = hash,
+				Callback = callback,
+				IsHighPriority = isHighPriority
+			};
+
+			if (isHighPriority)
+			{
+				_requestQueue.AddFirst(req);
+			}
+			else
+			{
+				_requestQueue.AddLast(req);
+			}
 		}
+
+		EnsureInTreeDeferred();
 	}
 
 	public override void _Process(double delta)
@@ -215,12 +314,16 @@ public partial class GlbThumbnailRenderer : Node
 			return;
 		}
 
-		lock (_requestQueue)
+		lock (_requestLock)
 		{
 			if (_requestQueue.Count > 0)
 			{
-				_currentRequest = _requestQueue.Dequeue();
-				LoadGlbForCapture(_currentRequest);
+				_currentRequest = _requestQueue.First?.Value;
+				_requestQueue.RemoveFirst();
+				if (_currentRequest != null)
+				{
+					LoadGlbForCapture(_currentRequest);
+				}
 			}
 		}
 	}
@@ -237,7 +340,10 @@ public partial class GlbThumbnailRenderer : Node
 
 		if (!File.Exists(request.FilePath))
 		{
-			_pendingPaths.Remove(request.FilePath);
+			lock (_requestLock)
+			{
+				_pendingPaths.Remove(request.FilePath);
+			}
 			_currentRequest = null;
 			return;
 		}
@@ -251,21 +357,19 @@ public partial class GlbThumbnailRenderer : Node
 			Error err;
 			if (request.FilePath.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
 			{
-				byte[] rmeshBytes = File.ReadAllBytes(request.FilePath);
 				string? chromaKey = null;
-				byte[] glbBytes;
-				if (Realm.Shared.ModelOptimization.RmeshFile.IsRmeshBytes(rmeshBytes))
+				byte[]? glbBytes = Realm.Shared.ModelOptimization.RmeshFile.GetGlbBytesFromFile(request.FilePath);
+				if (glbBytes != null)
 				{
-					var (meta, glbPayload, _) = Realm.Shared.ModelOptimization.RmeshFile.Parse(rmeshBytes);
+					string? meta = Realm.Shared.ModelOptimization.RmeshFile.ExtractMetadataFromFile(request.FilePath);
 					chromaKey = Realm.Shared.Metadata.RealmMetadataHelper.ExtractChromaKeyFromMetadataJson(meta);
-					glbBytes = glbPayload;
 				}
 				else
 				{
-					glbBytes = rmeshBytes;
+					glbBytes = File.ReadAllBytes(request.FilePath);
 				}
 
-				bool despill = GameHost.Instance == null || GameHost.Instance.GetModelDespillPlayerColor(request.FilePath);
+				bool despill = GameHost.Instance != null && GameHost.Instance.GetModelDespillPlayerColor(request.FilePath);
 				if (despill)
 				{
 					glbBytes = Realm.Shared.GlbInMemoryColorPreprocessor.PreprocessGlbInMemory(glbBytes, chromaKey);
@@ -276,13 +380,16 @@ public partial class GlbThumbnailRenderer : Node
 			{
 				byte[] rawGlb = File.ReadAllBytes(request.FilePath);
 				string? chromaKey = Realm.Shared.Metadata.RealmMetadataHelper.ExtractChromaKey(request.FilePath);
-				bool despill = GameHost.Instance == null || GameHost.Instance.GetModelDespillPlayerColor(request.FilePath);
+				bool despill = GameHost.Instance != null && GameHost.Instance.GetModelDespillPlayerColor(request.FilePath);
 				byte[] processedGlb = despill ? Realm.Shared.GlbInMemoryColorPreprocessor.PreprocessGlbInMemory(rawGlb, chromaKey) : rawGlb;
 				err = doc.AppendFromBuffer(processedGlb, "", state);
 			}
 			if (err != Error.Ok)
 			{
-				_pendingPaths.Remove(request.FilePath);
+				lock (_requestLock)
+				{
+					_pendingPaths.Remove(request.FilePath);
+				}
 				_currentRequest = null;
 				return;
 			}
@@ -290,7 +397,10 @@ public partial class GlbThumbnailRenderer : Node
 			var scene = doc.GenerateScene(state);
 			if (scene == null)
 			{
-				_pendingPaths.Remove(request.FilePath);
+				lock (_requestLock)
+				{
+					_pendingPaths.Remove(request.FilePath);
+				}
 				_currentRequest = null;
 				return;
 			}
@@ -327,12 +437,15 @@ public partial class GlbThumbnailRenderer : Node
 			}
 			_camera.Current = true;
 
-			_framesRemainingForCapture = 3;
+			_framesRemainingForCapture = 1;
 		}
 		catch (Exception ex)
 		{
 			GD.PrintErr($"[GlbThumbnailRenderer] Error preparing {request.FilePath}: {ex.Message}");
-			_pendingPaths.Remove(request.FilePath);
+			lock (_requestLock)
+			{
+				_pendingPaths.Remove(request.FilePath);
+			}
 			_currentRequest = null;
 		}
 	}
@@ -349,10 +462,21 @@ public partial class GlbThumbnailRenderer : Node
 				var img = tex.GetImage();
 				if (img != null && !img.IsEmpty())
 				{
+					if (img.GetFormat() != Image.Format.Rgba8)
+					{
+						img.Convert(Image.Format.Rgba8);
+					}
+
 					string cacheDirectory = ProjectSettings.GlobalizePath("user://model_thumb_cache");
-					if (!Directory.Exists(cacheDirectory)) Directory.CreateDirectory(cacheDirectory);
-					string cachedPngPath = Path.Combine(cacheDirectory, $"{_currentRequest.CacheKey}.png");
-					img.SavePng(cachedPngPath);
+					string hash = !string.IsNullOrEmpty(_currentRequest.Blake3)
+						? _currentRequest.Blake3
+						: GetBlake3(_currentRequest.FilePath, null);
+
+					if (!string.IsNullOrEmpty(hash) && hash.Length >= 2)
+					{
+						string cachedPngPath = Path.Combine(cacheDirectory, hash.Substring(0, 2), $"{hash}.png");
+						AssetThumbnailProvider.SaveThumbnailAtomic(img, cachedPngPath);
+					}
 
 					var imgTex = ImageTexture.CreateFromImage(img);
 					_currentRequest.Callback?.Invoke(_currentRequest.FilePath, imgTex);
@@ -371,7 +495,13 @@ public partial class GlbThumbnailRenderer : Node
 				_modelContainer.RemoveChild(child);
 				child.QueueFree();
 			}
-			_pendingPaths.Remove(_currentRequest.FilePath);
+			lock (_requestLock)
+			{
+				if (_currentRequest != null)
+				{
+					_pendingPaths.Remove(_currentRequest.FilePath);
+				}
+			}
 			_currentRequest = null;
 		}
 	}

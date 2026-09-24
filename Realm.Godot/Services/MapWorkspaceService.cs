@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Realm.Godot.Services.ModelOptimization;
@@ -72,7 +73,7 @@ public static partial class MapWorkspaceService
 		return FindRootFile("Realm.MapEditorExtension/map_schema.json");
 	}
 
-	private static string GetTemplatePath(string fileName)
+	public static string GetTemplatePath(string fileName)
 	{
 		return FindRootFile("MapTemplate/" + fileName);
 	}
@@ -1215,6 +1216,34 @@ public static partial class MapWorkspaceService
 		}
 	}
 
+	public static float ExtractRtexScaleFactor(string rtexPath)
+	{
+		if (string.IsNullOrEmpty(rtexPath) || !File.Exists(rtexPath)) return 1.0f;
+		try
+		{
+			string? rtexMeta = RealmMetadataHelper.ExtractMetadata(rtexPath);
+			if (!string.IsNullOrEmpty(rtexMeta))
+			{
+				var rNode = JsonNode.Parse(rtexMeta);
+				if (rNode is JsonObject rObj)
+				{
+					if (rObj.TryGetPropertyValue("Scale_Factor", out var sfVal) ||
+						rObj.TryGetPropertyValue("scale_factor", out sfVal) ||
+						rObj.TryGetPropertyValue("scaleFactor", out sfVal) ||
+						rObj.TryGetPropertyValue("ScaleFactor", out sfVal))
+					{
+						if (float.TryParse(sfVal?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float parsedScale))
+						{
+							return Math.Clamp(parsedScale, 0.10f, 4.0f);
+						}
+					}
+				}
+			}
+		}
+		catch { }
+		return 1.0f;
+	}
+
 	public static bool NormalizeTextureEntries(JsonObject root, string? wsPath = null)
 	{
 		if (root == null) return false;
@@ -1267,6 +1296,43 @@ public static partial class MapWorkspaceService
 						}
 						texObj["swatchIndex"] = nextAvailable;
 						usedIndices.Add(nextAvailable);
+						modified = true;
+					}
+
+					bool hasValidSf = texObj.TryGetPropertyValue("Scale_Factor", out var sfNode) && sfNode != null && float.TryParse(sfNode.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float parsedSf) && parsedSf > 0.0001f;
+					if (!hasValidSf)
+					{
+						string fileName = kvp.Key;
+						string rtexFileName = fileName.EndsWith(".rtex", StringComparison.OrdinalIgnoreCase) ? fileName : fileName + ".rtex";
+						string? rtexPath = null;
+						if (!string.IsNullOrEmpty(wsPath))
+						{
+							string p1 = Path.Combine(wsPath, "Assets", "textures", rtexFileName);
+							if (File.Exists(p1)) rtexPath = p1;
+							else
+							{
+								string p2 = Path.Combine(wsPath, rtexFileName);
+								if (File.Exists(p2)) rtexPath = p2;
+							}
+						}
+						if (string.IsNullOrEmpty(rtexPath)) rtexPath = PathUtils.FindPath($"Assets/textures/{rtexFileName}");
+						if (string.IsNullOrEmpty(rtexPath)) rtexPath = PathUtils.FindPath($"MapTemplate/Assets/textures/{rtexFileName}");
+
+						float sf = 1.0f;
+						if (!string.IsNullOrEmpty(rtexPath) && File.Exists(rtexPath))
+						{
+							float rtexSf = ExtractRtexScaleFactor(rtexPath);
+							if (rtexSf > 0.0001f && MathF.Abs(rtexSf - 1.0f) > 0.001f)
+							{
+								sf = rtexSf;
+							}
+							else
+							{
+								sf = Realm.Shared.Textures.TextureConverter.CalculateLuminanceScaleFactor(rtexPath);
+							}
+						}
+						if (sf <= 0.0001f) sf = 1.0f;
+						texObj["Scale_Factor"] = sf;
 						modified = true;
 					}
 				}

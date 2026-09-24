@@ -893,31 +893,10 @@ public class MapStorageService
 
     private static string FindThumbnailPath(string versionDirectory)
     {
-        string[] candidates = new[]
+        string p = Path.Combine(versionDirectory, "thumbnail.png");
+        if (File.Exists(p))
         {
-            "preview.png", "preview.jpg", "thumbnail.png", "thumbnail.jpg",
-            "Assets/textures/preview.png", "Assets/textures/thumbnail.png",
-            "Assets/preview.png", "Assets/thumbnail.png"
-        };
-
-        foreach (var c in candidates)
-        {
-            string p = Path.Combine(versionDirectory, c);
-            if (File.Exists(p))
-            {
-                return p;
-            }
-        }
-
-        try
-        {
-            string[] pngs = Directory.GetFiles(versionDirectory, "*.png", SearchOption.AllDirectories);
-            var match = pngs.FirstOrDefault(f => f.Contains("preview", StringComparison.OrdinalIgnoreCase) ||
-                                                 f.Contains("thumb", StringComparison.OrdinalIgnoreCase));
-            if (match != null) return match;
-        }
-        catch
-        {
+            return p;
         }
 
         return string.Empty;

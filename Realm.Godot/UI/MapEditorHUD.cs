@@ -662,17 +662,20 @@ public partial class MapEditorHUD : Control
 		_btnTestMap = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnTestMap");
 		SetupOptionButton(_btnTestMap, "\uf11b TEST", () => TestMapAction(), 13, "Launch single-player mode on the current editor map");
 
+		_btnPublish = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnPublish");
+		SetupOptionButton(_btnPublish, "\uf093 PUBLISH", () => PublishMapActionExternal(), 13, "Publish/export map to custom map registry");
+
 		_btnExportMap = GetNodeOrNull<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnExportMap");
 		if (_btnExportMap == null)
 		{
 			_btnExportMap = new Button();
 			_btnExportMap.Name = "BtnExportMap";
 			_btnExportMap.Set("icon_max_width", 0);
-			int insertIndex = _contentFile.GetChildren().IndexOf(_btnPublish);
+			int insertIndex = _contentFile.GetChildren().IndexOf(_btnTestMap);
 			if (insertIndex >= 0)
 			{
 				_contentFile.AddChild(_btnExportMap);
-				_contentFile.MoveChild(_btnExportMap, insertIndex);
+				_contentFile.MoveChild(_btnExportMap, insertIndex + 1);
 			}
 			else
 			{
@@ -680,9 +683,6 @@ public partial class MapEditorHUD : Control
 			}
 		}
 		SetupOptionButton(_btnExportMap, "\uf56e EXPORT (.7Z)", () => ExportMapAction(), 13, "Export prepared map package (.7z) with compiled WASM for hosting and CAS storage");
-
-		_btnPublish = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnPublish");
-		SetupOptionButton(_btnPublish, "\uf093 PUBLISH", () => PublishMapActionExternal(), 13, "Publish/export map to custom map registry");
 
 		_btnResetMap = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnResetMap");
 		SetupOptionButton(_btnResetMap, "\uf12d RESET MAP", () =>
@@ -706,7 +706,7 @@ public partial class MapEditorHUD : Control
 
 		_btnObjectManager = new Button();
 		_btnObjectManager.Name = "BtnObjectManager";
-		SetupOptionButton(_btnObjectManager, "\uf0cb OBJECT MANAGER", () => OpenObjectManagerDialog(), 13, "Open Object Manager dialog to list and locate all placed objects");
+		SetupOptionButton(_btnObjectManager, "\uf0cb OBJECTS", () => OpenObjectManagerDialog(), 13, "Open dialog to list and locate all placed objects");
 		_contentFile.AddChild(_btnObjectManager);
 
 		_btnEditorSettings = new Button();
@@ -719,7 +719,16 @@ public partial class MapEditorHUD : Control
 		_btnAuthorSignature.Name = "BtnAuthorSignature";
 		_btnAuthorSignature.Set("icon_max_width", 0);
 		SetupOptionButton(_btnAuthorSignature, "✍️ " + TranslationServer.Translate("AUTHOR SIGNATURE"), () => _authorSignatureDialog?.OpenDialog(), 13, "View author identity key, signature details, and backup location");
-		_contentFile.AddChild(_btnAuthorSignature);
+		int pubIdx = _contentFile.GetChildren().IndexOf(_btnPublish);
+		if (pubIdx >= 0)
+		{
+			_contentFile.AddChild(_btnAuthorSignature);
+			_contentFile.MoveChild(_btnAuthorSignature, pubIdx + 1);
+		}
+		else
+		{
+			_contentFile.AddChild(_btnAuthorSignature);
+		}
 
 		_accordionViewport = GetNode<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion");
 		_btnHeaderViewport = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/BtnHeaderViewport");
@@ -1566,6 +1575,7 @@ public partial class MapEditorHUD : Control
 		StyleRowButton(_btnSave);
 		StyleRowButton(_btnTestMap);
 		StyleRowButton(_btnPublish);
+		StyleRowButton(_btnExportMap);
 		StyleRowButton(_btnResetMap);
 		StyleRowButton(_btnGenerateMap);
 		StyleRowButton(_btnImportMinimap);
@@ -2064,6 +2074,15 @@ public partial class MapEditorHUD : Control
 
 	public void PublishMapActionExternal()
 	{
+		string wsPath = !string.IsNullOrEmpty(_tempWorkspacePath) ? _tempWorkspacePath : MapWorkspaceService.GetActiveWorkspacePath();
+		var (assetsValid, missingAssets) = MapAssetHelper.ValidateWorkspaceAssets(wsPath);
+		if (!assetsValid)
+		{
+			ShowFeedback(string.Format(TranslationServer.Translate("Publish failed: Map is missing required asset files:\n{0}"), string.Join(", ", missingAssets.Take(4)) + (missingAssets.Count > 4 ? "..." : "")));
+			AppendWasmConsoleLog($"[ERROR] Publish failed. Missing required asset files:\n  {string.Join("\n  ", missingAssets)}");
+			return;
+		}
+
 		var overlay = new ColorRect();
 		overlay.Name = "PublishInstructionsOverlay";
 		overlay.Color = new Color(0, 0, 0, 0.7f);
@@ -3068,6 +3087,9 @@ public partial class MapEditorHUD : Control
 		string unitsPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
 		System.IO.Directory.CreateDirectory(_tempWorkspacePath);
 		MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, "MapScript");
+		string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+		_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
+		_lastMetadataSyncTime = GetLastWriteTimeSafe(unitsPath);
 	}
 
 	private long GetLastWriteTimeSafe(string path)
@@ -3256,7 +3278,11 @@ public partial class MapEditorHUD : Control
 
 		try
 		{
+			MapAssetHelper.PruneNonExistentAssetsFromManifest(_tempWorkspacePath);
+
 			await System.Threading.Tasks.Task.Run(() => CopyTempWorkspaceToFolder(targetFolder));
+
+			MapAssetHelper.PruneNonExistentAssetsFromManifest(targetFolder);
 
 			SaveCurrentDirectoryBlake3();
 
@@ -3781,6 +3807,14 @@ public partial class MapEditorHUD : Control
 
 		string workspace = !string.IsNullOrEmpty(_tempWorkspacePath) ? _tempWorkspacePath : MapWorkspaceService.GetActiveWorkspacePath();
 
+		var (assetsValid, missingAssets) = MapAssetHelper.ValidateWorkspaceAssets(workspace);
+		if (!assetsValid)
+		{
+			ShowFeedback(string.Format(TranslationServer.Translate("Publish failed: Map is missing required asset files:\n{0}"), string.Join(", ", missingAssets.Take(4)) + (missingAssets.Count > 4 ? "..." : "")));
+			AppendWasmConsoleLog($"[ERROR] Publish failed. Missing required asset files:\n  {string.Join("\n  ", missingAssets)}");
+			return;
+		}
+
 		string mapTitle = GetMapNameFromMetadata();
 		if (string.IsNullOrWhiteSpace(mapTitle) || mapTitle.Equals("Untitled Map", StringComparison.OrdinalIgnoreCase))
 		{
@@ -3977,6 +4011,22 @@ public partial class MapEditorHUD : Control
 				await VSCodeManager.Instance.SaveAllOpenFilesAsync();
 			}
 
+			progressBar.Value = 15;
+			statusLabel.Text = TranslationServer.Translate("Verifying map assets...");
+			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+
+			(assetsValid, missingAssets) = MapAssetHelper.ValidateWorkspaceAssets(workspace);
+			if (!assetsValid)
+			{
+				progressBar.Value = 100;
+				statusLabel.Text = "❌ " + TranslationServer.Translate("Missing required asset files. Publish aborted.");
+				statusLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.3f, 0.3f));
+				closeBtn.Visible = true;
+				ShowFeedback(string.Format(TranslationServer.Translate("Publish failed: Map is missing required asset files:\n{0}"), string.Join(", ", missingAssets.Take(4)) + (missingAssets.Count > 4 ? "..." : "")));
+				AppendWasmConsoleLog($"[ERROR] Publish aborted. Missing required asset files:\n  {string.Join("\n  ", missingAssets)}");
+				return;
+			}
+
 			progressBar.Value = 20;
 			statusLabel.Text = TranslationServer.Translate("Compiling WASM map script...");
 			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
@@ -4045,6 +4095,15 @@ public partial class MapEditorHUD : Control
 				statusLabel.Text = string.Format(TranslationServer.Translate("Converting texture {0}/{1}: {2}..."), current, total, fileName);
 				await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 			});
+
+			progressBar.Value = 60;
+			statusLabel.Text = TranslationServer.Translate("Generating map thumbnail...");
+			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+
+			if (_minimapController != null)
+			{
+				await _minimapController.GenerateAndSaveMinimapThumbnailAsync(workspace);
+			}
 
 			progressBar.Value = 65;
 			statusLabel.Text = TranslationServer.Translate("Generating manifest & indexing asset hashes...");
@@ -6184,7 +6243,9 @@ public partial class MapEditorHUD : Control
 			SafeReparent(_btnLoad, fileGrid1);
 			SafeReparent(_btnSave, fileGrid1);
 			SafeReparent(_btnTestMap, fileGrid1);
+			SafeReparent(_btnExportMap, fileGrid1);
 			SafeReparent(_btnPublish, fileGrid1);
+			SafeReparent(_btnAuthorSignature, fileGrid1);
 
 			var fileGrid2 = new GridContainer();
 			fileGrid2.Columns = 2;
@@ -7391,7 +7452,7 @@ public partial class MapEditorHUD : Control
 			{
 				if (_gridSwatches is GridContainer gridSwatchesContainer)
 				{
-					gridSwatchesContainer.Columns = 8;
+					gridSwatchesContainer.Columns = 6;
 				}
 				foreach (Node child in _gridSwatches.GetChildren())
 				{
@@ -7416,6 +7477,7 @@ public partial class MapEditorHUD : Control
 
 					if (!slot.IsFiller && !string.IsNullOrEmpty(slot.BaseName))
 					{
+						btn.Visible = true;
 						Texture2D tex = GetSwatchTexture(slotIndex);
 						if (tex != null)
 						{
@@ -7443,14 +7505,7 @@ public partial class MapEditorHUD : Control
 					}
 					else
 					{
-						var emptyBox = new ColorRect();
-						emptyBox.Color = new Color(0.15f, 0.15f, 0.15f, 0.8f);
-						emptyBox.MouseFilter = MouseFilterEnum.Ignore;
-						emptyBox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-						emptyBox.GrowHorizontal = GrowDirection.Both;
-						emptyBox.GrowVertical = GrowDirection.Both;
-						btn.AddChild(emptyBox);
-						btn.TooltipText = $"Slot {slotIndex} (Empty)";
+						btn.Visible = false;
 					}
 
 					btn.GuiInput += (@event) =>
@@ -9030,10 +9085,28 @@ public partial class MapEditorHUD : Control
 	{
 		if (GameHost.Instance == null) return;
 
+		string wsPath = !string.IsNullOrEmpty(_tempWorkspacePath) ? _tempWorkspacePath : MapWorkspaceService.GetActiveWorkspacePath();
+		var (assetsValid, missingAssets) = MapAssetHelper.ValidateWorkspaceAssets(wsPath);
+		if (!assetsValid)
+		{
+			ShowFeedback(string.Format(TranslationServer.Translate("Export failed: Map is missing required asset files:\n{0}"), string.Join(", ", missingAssets.Take(4)) + (missingAssets.Count > 4 ? "..." : "")));
+			AppendWasmConsoleLog($"[ERROR] Export failed. Missing required asset files:\n  {string.Join("\n  ", missingAssets)}");
+			return;
+		}
+
 		string mapTitle = GetMapNameFromMetadata();
 		string cleanMapName = string.Join("_", mapTitle.Split(System.IO.Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries)).Trim();
 		if (string.IsNullOrEmpty(cleanMapName) || cleanMapName.Equals("Untitled Map", StringComparison.OrdinalIgnoreCase)) cleanMapName = "MapExport";
-		string defaultFileName = $"{cleanMapName}.7z";
+
+		string mapVersion = GetMapVersionFromMetadata();
+		string cleanMapVersion = string.Join("_", mapVersion.Split(System.IO.Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries)).Trim();
+		if (string.IsNullOrEmpty(cleanMapVersion)) cleanMapVersion = "1.0.0";
+
+		string manifestBlake3 = GetManifestBlake3();
+		string normHash = !string.IsNullOrEmpty(manifestBlake3) ? ContentAddressableStorage.NormalizeBlake3Hash(manifestBlake3) : string.Empty;
+		string shortHash = normHash.Length >= 4 ? normHash.Substring(0, 4) : (normHash.Length > 0 ? normHash : "0000");
+
+		string defaultFileName = $"{cleanMapName}_{cleanMapVersion}_{shortHash}.7z";
 		string initialDir = GetInitialDirectory();
 
 		var err = DisplayServer.FileDialogShow(
@@ -9066,6 +9139,23 @@ public partial class MapEditorHUD : Control
 	public async System.Threading.Tasks.Task ExportMapPackageAsync(string destinationPath)
 	{
 		if (GameHost.Instance == null) return;
+
+		if (System.IO.Directory.Exists(destinationPath))
+		{
+			string mapTitle = GetMapNameFromMetadata();
+			string cleanMapName = string.Join("_", mapTitle.Split(System.IO.Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries)).Trim();
+			if (string.IsNullOrEmpty(cleanMapName) || cleanMapName.Equals("Untitled Map", StringComparison.OrdinalIgnoreCase)) cleanMapName = "MapExport";
+
+			string mapVersion = GetMapVersionFromMetadata();
+			string cleanMapVersion = string.Join("_", mapVersion.Split(System.IO.Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries)).Trim();
+			if (string.IsNullOrEmpty(cleanMapVersion)) cleanMapVersion = "1.0.0";
+
+			string manifestBlake3 = GetManifestBlake3();
+			string normHash = !string.IsNullOrEmpty(manifestBlake3) ? ContentAddressableStorage.NormalizeBlake3Hash(manifestBlake3) : string.Empty;
+			string shortHash = normHash.Length >= 4 ? normHash.Substring(0, 4) : (normHash.Length > 0 ? normHash : "0000");
+
+			destinationPath = System.IO.Path.Combine(destinationPath, $"{cleanMapName}_{cleanMapVersion}_{shortHash}.7z");
+		}
 
 		var popup = new Panel();
 		popup.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
@@ -9163,6 +9253,22 @@ public partial class MapEditorHUD : Control
 				await VSCodeManager.Instance.SaveAllOpenFilesAsync();
 			}
 
+			progressBar.Value = 15;
+			statusLabel.Text = TranslationServer.Translate("Verifying map assets...");
+			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+
+			var (assetsValid, missingAssets) = MapAssetHelper.ValidateWorkspaceAssets(_tempWorkspacePath);
+			if (!assetsValid)
+			{
+				progressBar.Value = 100;
+				statusLabel.Text = "❌ " + TranslationServer.Translate("Missing required asset files. Export aborted.");
+				statusLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.3f, 0.3f));
+				closeBtn.Visible = true;
+				ShowFeedback(string.Format(TranslationServer.Translate("Export failed: Map is missing required asset files:\n{0}"), string.Join(", ", missingAssets.Take(4)) + (missingAssets.Count > 4 ? "..." : "")));
+				AppendWasmConsoleLog($"[ERROR] Export aborted. Missing required asset files:\n  {string.Join("\n  ", missingAssets)}");
+				return;
+			}
+
 			progressBar.Value = 20;
 			statusLabel.Text = TranslationServer.Translate("Compiling WASM map script...");
 			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
@@ -9232,12 +9338,21 @@ public partial class MapEditorHUD : Control
 				await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 			});
 
+			progressBar.Value = 70;
+			statusLabel.Text = TranslationServer.Translate("Generating map thumbnail...");
+			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+
+			if (_minimapController != null)
+			{
+				await _minimapController.GenerateAndSaveMinimapThumbnailAsync(_tempWorkspacePath);
+			}
+
 			progressBar.Value = 75;
 			statusLabel.Text = TranslationServer.Translate("Generating manifest & indexing asset hashes...");
 			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 
 			string mapTitle = GetMapNameFromMetadata();
-			string mapVersion = "1.0.0";
+			string mapVersion = GetMapVersionFromMetadata();
 			string metaJsonPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
 			if (System.IO.File.Exists(metaJsonPath))
 			{
@@ -9768,6 +9883,96 @@ public partial class MapEditorHUD : Control
 		}
 	}
 
+	public string GetMapVersionFromMetadata()
+	{
+		try
+		{
+			string workspacePath = !string.IsNullOrEmpty(_tempWorkspacePath) ? _tempWorkspacePath : MapWorkspaceService.GetActiveWorkspacePath();
+			string manifestPath = System.IO.Path.Combine(workspacePath, "manifest.json");
+			if (System.IO.File.Exists(manifestPath))
+			{
+				string json = System.IO.File.ReadAllText(manifestPath);
+				var root = System.Text.Json.Nodes.JsonNode.Parse(json) as System.Text.Json.Nodes.JsonObject;
+				if (root != null && root.TryGetPropertyValue("Version", out var verNode) && verNode != null)
+				{
+					string v = verNode.ToString().Trim();
+					if (!string.IsNullOrEmpty(v)) return v;
+				}
+			}
+
+			if (MetadataService.Instance.TryLoadMetadata(workspacePath, out var metadata))
+			{
+				string? ver = metadata.MapProperties?.Version;
+				if (!string.IsNullOrWhiteSpace(ver)) return ver.Trim();
+			}
+
+			string metaJsonPath = System.IO.Path.Combine(workspacePath, "metadata.json");
+			if (System.IO.File.Exists(metaJsonPath))
+			{
+				var doc = JsonNode.Parse(System.IO.File.ReadAllText(metaJsonPath));
+				if (doc != null)
+				{
+					if (doc["MapProperties"] is JsonObject props)
+					{
+						string? v = props["MapVersion"]?.ToString() ?? props["Version"]?.ToString();
+						if (!string.IsNullOrWhiteSpace(v)) return v.Trim();
+					}
+					else
+					{
+						string? v = doc["Version"]?.ToString() ?? doc["MapVersion"]?.ToString();
+						if (!string.IsNullOrWhiteSpace(v)) return v.Trim();
+					}
+				}
+			}
+
+			string mapJsonPath = System.IO.Path.Combine(workspacePath, "map.json");
+			if (System.IO.File.Exists(mapJsonPath))
+			{
+				var mapDoc = JsonNode.Parse(System.IO.File.ReadAllText(mapJsonPath)) as System.Text.Json.Nodes.JsonObject;
+				if (mapDoc != null && mapDoc.TryGetPropertyValue("MapProperties", out var mp) && mp is System.Text.Json.Nodes.JsonObject mpObj)
+				{
+					string? v = mpObj["MapVersion"]?.ToString() ?? mpObj["Version"]?.ToString();
+					if (!string.IsNullOrWhiteSpace(v)) return v.Trim();
+				}
+			}
+
+			return "1.0.0";
+		}
+		catch
+		{
+			return "1.0.0";
+		}
+	}
+
+	public string GetManifestBlake3()
+	{
+		try
+		{
+			string workspacePath = !string.IsNullOrEmpty(_tempWorkspacePath) ? _tempWorkspacePath : MapWorkspaceService.GetActiveWorkspacePath();
+			string manifestJsonPath = System.IO.Path.Combine(workspacePath, "manifest.json");
+			if (System.IO.File.Exists(manifestJsonPath))
+			{
+				string manifestBlake3 = RealmMetadataHelper.ComputeBlake3(manifestJsonPath);
+				if (!string.IsNullOrEmpty(manifestBlake3))
+				{
+					return manifestBlake3;
+				}
+			}
+
+			if (System.IO.Directory.Exists(workspacePath))
+			{
+				string mapTitle = GetMapNameFromMetadata();
+				string mapVersion = GetMapVersionFromMetadata();
+				string author = LobbyManager.Instance?.AuthenticatedUsername ?? "MapAuthor";
+				var manifest = MapManifest.CreateFromDirectory(workspacePath, mapTitle, author, mapVersion);
+				return manifest.ComputeManifestBlake3();
+			}
+		}
+		catch { }
+
+		return string.Empty;
+	}
+
 	public void UpdateMapNameHeader()
 	{
 		if (_lblMapNameHeader == null) return;
@@ -9829,14 +10034,10 @@ public partial class MapEditorHUD : Control
 						{
 							float rounded = (float)Math.Round(radius, 2);
 							GameHost.Instance.ModelObstacleRadii[normKey] = rounded;
-							if (root["ModelObstacleRadii"] is JsonObject radiiObj)
-							{
-								radiiObj[normKey] = rounded;
-							}
-							else
-							{
-								root["ModelObstacleRadii"] = new JsonObject { [normKey] = rounded };
-							}
+							if (!root.ContainsKey("Models") || root["Models"] is not JsonObject) root["Models"] = new JsonObject();
+							var modelsObj = (JsonObject)root["Models"]!;
+							if (!modelsObj.ContainsKey(normKey) || modelsObj[normKey] is not JsonObject) modelsObj[normKey] = new JsonObject();
+							((JsonObject)modelsObj[normKey]!)["ObstacleRadii"] = rounded;
 						}
 					}
 				}
@@ -9878,7 +10079,7 @@ public partial class MapEditorHUD : Control
 						["scale"] = defaultScale,
 						["y_offset"] = autoYOffset,
 						["default_asset_type"] = subCategory.ToLowerInvariant(),
-						["despill_player_color"] = true,
+						["despill_player_color"] = false,
 						["normalize_luminance"] = true,
 						["ignore_player_color"] = isPropOrRes
 					};
@@ -9886,11 +10087,12 @@ public partial class MapEditorHUD : Control
 					catObj[subCategory] = subObj;
 					assetsObj[category] = catObj;
 
-					if (!root.ContainsKey("ModelOffsets") || root["ModelOffsets"] is not JsonObject) root["ModelOffsets"] = new JsonObject();
-					((JsonObject)root["ModelOffsets"])[fileName] = autoYOffset;
-
-					if (!root.ContainsKey("ModelScales") || root["ModelScales"] is not JsonObject) root["ModelScales"] = new JsonObject();
-					((JsonObject)root["ModelScales"])[fileName] = defaultScale;
+					if (!root.ContainsKey("Models") || root["Models"] is not JsonObject) root["Models"] = new JsonObject();
+					var modelsMap = (JsonObject)root["Models"]!;
+					if (!modelsMap.ContainsKey(fileName) || modelsMap[fileName] is not JsonObject) modelsMap[fileName] = new JsonObject();
+					var modelEntry = (JsonObject)modelsMap[fileName]!;
+					modelEntry["Offsets"] = autoYOffset;
+					modelEntry["Scales"] = defaultScale;
 
 					GameHost.Instance?.SetModelYOffset(fileName, autoYOffset);
 					GameHost.Instance?.SetModelScale(fileName, defaultScale);
@@ -9941,7 +10143,7 @@ public partial class MapEditorHUD : Control
 							["YOffset"] = autoYOffset,
 							["PathingType"] = defaultPathing,
 							["ModelPath"] = fileName,
-							["DespillPlayerColor"] = true,
+							["DespillPlayerColor"] = false,
 							["NormalizeLuminance"] = true,
 							["IgnorePlayerColor"] = isPropOrRes
 						};
@@ -10214,6 +10416,8 @@ public partial class MapEditorHUD : Control
 
 			string texDir = System.IO.Path.Combine(wsPath, "Assets", "textures");
 			System.IO.Directory.CreateDirectory(texDir);
+
+			MapWorkspaceService.NormalizeMetadataTextureEntries(wsPath);
 
 			_swatchTextureCache.Clear();
 			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)

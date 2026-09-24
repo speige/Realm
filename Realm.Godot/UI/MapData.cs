@@ -48,7 +48,7 @@ public class MapData
 		}
 		if (string.IsNullOrEmpty(thumbPath))
 		{
-			thumbPath = !string.IsNullOrEmpty(dto.ThumbnailUrl) ? dto.ThumbnailUrl : "res://Assets/UI/moonlit_castle.png";
+			thumbPath = !string.IsNullOrEmpty(dto.ThumbnailUrl) ? dto.ThumbnailUrl : "";
 		}
 
 		var screenshots = new System.Collections.Generic.List<string>();

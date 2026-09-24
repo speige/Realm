@@ -201,6 +201,7 @@ public class MapEditorMinimap
 					}
 
 					viewport = new SubViewport();
+					viewport.TransparentBg = true;
 					viewport.Size = new Vector2I(viewportWidth, viewportHeight);
 					viewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Once;
 					viewport.DebugDraw = Viewport.DebugDrawEnum.Unshaded;
@@ -211,7 +212,7 @@ public class MapEditorMinimap
 					camera.KeepAspect = Camera3D.KeepAspectEnum.Height;
 					camera.Size = physicalDepth;
 					camera.Far = 200f;
-					camera.Position = new Vector3(0, 100, 0);
+					camera.Position = new Vector3(-0.5f * quadSize, 100f, -0.5f * quadSize);
 					camera.RotationDegrees = new Vector3(-90, 0, 0);
 					viewport.AddChild(camera);
 
@@ -290,4 +291,131 @@ public class MapEditorMinimap
 		}
 	}
 
+	public async System.Threading.Tasks.Task<bool> GenerateAndSaveMinimapThumbnailAsync(string workspacePath)
+	{
+		if (string.IsNullOrWhiteSpace(workspacePath) || !System.IO.Directory.Exists(workspacePath)) return false;
+		if (_hudNode == null || !GodotObject.IsInstanceValid(_hudNode)) return false;
+		var tree = _hudNode.GetTree();
+		if (tree == null) return false;
+
+		SubViewport viewport = null;
+		try
+		{
+			float quadSize = GameHost.Instance?.GroundTerrain?.QuadSize ?? 2.0f;
+			float physicalWidth = (GameHost.Instance?.GroundTerrain?.Width - 1 ?? 125) * quadSize;
+			float physicalDepth = (GameHost.Instance?.GroundTerrain?.Depth - 1 ?? 125) * quadSize;
+
+			int viewportWidth = 512;
+			int viewportHeight = 512;
+
+			if (physicalWidth >= physicalDepth && physicalWidth > 0.0f)
+			{
+				viewportHeight = Mathf.Max(32, Mathf.RoundToInt(512f * physicalDepth / physicalWidth));
+			}
+			else if (physicalDepth > physicalWidth && physicalDepth > 0.0f)
+			{
+				viewportWidth = Mathf.Max(32, Mathf.RoundToInt(512f * physicalWidth / physicalDepth));
+			}
+
+			viewport = new SubViewport();
+			viewport.TransparentBg = true;
+			viewport.Size = new Vector2I(viewportWidth, viewportHeight);
+			viewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Once;
+			viewport.DebugDraw = Viewport.DebugDrawEnum.Unshaded;
+			_hudNode.AddChild(viewport);
+
+			var camera = new Camera3D();
+			camera.Projection = Camera3D.ProjectionType.Orthogonal;
+			camera.KeepAspect = Camera3D.KeepAspectEnum.Height;
+			camera.Size = physicalDepth;
+			camera.Far = 200f;
+			camera.Position = new Vector3(-0.5f * quadSize, 100f, -0.5f * quadSize);
+			camera.RotationDegrees = new Vector3(-90, 0, 0);
+			viewport.AddChild(camera);
+
+			bool wasVisible = false;
+			if (GameHost.Instance?.BrushIndicatorMesh != null)
+			{
+				wasVisible = GameHost.Instance.BrushIndicatorMesh.Visible;
+				GameHost.Instance.BrushIndicatorMesh.Visible = false;
+			}
+
+			var wasGridMode = GameHost.GridOverlayMode.Off;
+			bool wasPathingVisible = false;
+			if (GameHost.Instance != null)
+			{
+				wasGridMode = GameHost.Instance.EditorGridMode;
+				wasPathingVisible = GameHost.Instance.PathingOverlayVisible;
+				GameHost.Instance.EditorGridMode = GameHost.GridOverlayMode.Off;
+				GameHost.Instance.PathingOverlayVisible = false;
+				GameHost.Instance.UpdateGridOverlayVisibility();
+				GameHost.Instance.UpdatePathingOverlay();
+			}
+
+			EditableTerrain.IsMinimapRendering = true;
+			EditableTerrain.Instance?.BeginMinimapCapture();
+			PropMultiMeshManager.Instance?.SetAllNodesVisible(true);
+			try
+			{
+				await _hudNode.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+
+				var texture = viewport.GetTexture();
+				if (texture != null)
+				{
+					var img = texture.GetImage();
+					if (img != null && !img.IsEmpty())
+					{
+						if (img.GetFormat() != Image.Format.Rgba8)
+						{
+							img.Convert(Image.Format.Rgba8);
+						}
+						if (img.GetWidth() != 512 || img.GetHeight() != 512)
+						{
+							img.Resize(512, 512, Image.Interpolation.Bilinear);
+						}
+
+						string destinationPngPath = System.IO.Path.Combine(workspacePath, "thumbnail.png");
+						Realm.Shared.Textures.IndexedPngHelper.SaveAs256ColorPng(
+							img.GetData(),
+							img.GetWidth(),
+							img.GetHeight(),
+							destinationPngPath);
+
+						return true;
+					}
+				}
+			}
+			finally
+			{
+				EditableTerrain.Instance?.EndMinimapCapture();
+				EditableTerrain.IsMinimapRendering = false;
+			}
+
+			if (GameHost.Instance?.BrushIndicatorMesh != null)
+			{
+				GameHost.Instance.BrushIndicatorMesh.Visible = wasVisible;
+			}
+
+			if (GameHost.Instance != null)
+			{
+				GameHost.Instance.EditorGridMode = wasGridMode;
+				GameHost.Instance.PathingOverlayVisible = wasPathingVisible;
+				GameHost.Instance.UpdateGridOverlayVisibility();
+				GameHost.Instance.UpdatePathingOverlay();
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"Failed to capture minimap thumbnail.png: {ex.Message}");
+		}
+		finally
+		{
+			if (viewport != null && GodotObject.IsInstanceValid(viewport))
+			{
+				viewport.QueueFree();
+			}
+		}
+
+		return false;
+	}
 }

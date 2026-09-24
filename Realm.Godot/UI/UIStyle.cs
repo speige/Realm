@@ -17,6 +17,21 @@ public static class UIStyle
 	public static readonly Font FontNorseBold = GD.Load<Font>("res://Assets/UI/Norse-Bold.otf");
 	public static readonly Font FontCinzelBold = GD.Load<Font>("res://Assets/UI/Cinzel-Bold.ttf");
 
+	private static Texture2D? _emptyBlackTexture;
+	public static Texture2D EmptyBlackTexture
+	{
+		get
+		{
+			if (_emptyBlackTexture == null)
+			{
+				var img = Image.CreateEmpty(512, 512, false, Image.Format.Rgba8);
+				img.Fill(Colors.Black);
+				_emptyBlackTexture = ImageTexture.CreateFromImage(img);
+			}
+			return _emptyBlackTexture;
+		}
+	}
+
 	public static StyleBox CreateBgTexture(string path)
 	{
 		var texture = GD.Load<Texture2D>(path);

@@ -1,3 +1,7 @@
+param(
+    [string]$VersionNumber = ""
+)
+
 $ErrorActionPreference = "Stop"
 
 $rootDir = Split-Path -Parent $PSScriptRoot
@@ -8,13 +12,46 @@ if (-not (Test-Path $versionJsonPath)) {
 }
 
 $versionData = [System.IO.File]::ReadAllText($versionJsonPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
-$version = $versionData.version
-$fileVersion = if ($versionData.fileVersion) { $versionData.fileVersion } else { "0.0.1.0" }
-$productVersion = if ($versionData.productVersion) { $versionData.productVersion } else { $version }
-$extVersion = if ($versionData.extensionVersion) { $versionData.extensionVersion } else { $version.Split('-')[0] }
-$infoVersion = if ($versionData.informationalVersion) { $versionData.informationalVersion } else { $version.Replace('-', '_') }
 
-Write-Host "Syncing version $version (Ext: $extVersion, File: $fileVersion, Product: $productVersion)..."
+if ($VersionNumber -and $VersionNumber.Trim() -ne "") {
+    $rawInput = $VersionNumber.Trim()
+    $version = $rawInput
+    
+    $cleanSemVer = $rawInput -replace '^v', ''
+    $cleanSemVer = ($cleanSemVer -split '[-_]')[0]
+    $semVerParts = @($cleanSemVer.Split('.'))
+    while ($semVerParts.Count -lt 3) {
+        $semVerParts += "0"
+    }
+    $extVersion = "$($semVerParts[0]).$($semVerParts[1]).$($semVerParts[2])"
+    $fileVersion = "$extVersion.0"
+    
+    $productVersion = $rawInput
+    if ($rawInput -match '^v?(\d+\.\d+\.\d+)[-_](.+)$') {
+        $infoVersion = "$($Matches[1])_$($Matches[2])"
+    } else {
+        $infoVersion = $rawInput
+    }
+    
+    $versionData.version = $version
+    $versionData.fileVersion = $fileVersion
+    $versionData.productVersion = $productVersion
+    $versionData.informationalVersion = $infoVersion
+    $versionData.extensionVersion = $extVersion
+    
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    $updatedJsonText = $versionData | ConvertTo-Json -Depth 10
+    [System.IO.File]::WriteAllText($versionJsonPath, $updatedJsonText, $utf8NoBom)
+    Write-Host "Updated version.json with VersionNumber: $VersionNumber"
+} else {
+    $version = $versionData.version
+    $fileVersion = if ($versionData.fileVersion) { $versionData.fileVersion } else { "0.0.1.0" }
+    $productVersion = if ($versionData.productVersion) { $versionData.productVersion } else { $version }
+    $extVersion = if ($versionData.extensionVersion) { $versionData.extensionVersion } else { $version.Split('-')[0] }
+    $infoVersion = if ($versionData.informationalVersion) { $versionData.informationalVersion } else { $version.Replace('-', '_') }
+}
+
+Write-Host "Syncing version $version (Ext: $extVersion, File: $fileVersion, Product: $productVersion, Info: $infoVersion)..."
 
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
@@ -56,6 +93,15 @@ if (Test-Path $exportCfgPath) {
     $cfgContent = $cfgContent -replace 'application/product_version=".*?"', "application/product_version=`"$productVersion`""
     [System.IO.File]::WriteAllText($exportCfgPath, $cfgContent, $utf8NoBom)
     Write-Host "Updated $exportCfgPath"
+}
+
+if ($env:GITHUB_ENV) {
+    Add-Content -Path $env:GITHUB_ENV -Value "VERSION_NUMBER=$infoVersion"
+    Add-Content -Path $env:GITHUB_ENV -Value "RAW_VERSION=$version"
+}
+if ($env:GITHUB_OUTPUT) {
+    Add-Content -Path $env:GITHUB_OUTPUT -Value "version_number=$infoVersion"
+    Add-Content -Path $env:GITHUB_OUTPUT -Value "raw_version=$version"
 }
 
 Write-Host "Version sync completed successfully."

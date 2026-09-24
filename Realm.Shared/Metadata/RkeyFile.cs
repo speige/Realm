@@ -57,6 +57,16 @@ public static class RkeyFile
 		return RealmContainerHeader.ExtractMetadata(bytes, Magic);
 	}
 
+	public static string? ExtractMetadata(Stream stream)
+	{
+		return RealmContainerHeader.ExtractMetadata(stream, Magic);
+	}
+
+	public static string? ExtractMetadataFromFile(string filePath)
+	{
+		return RealmContainerHeader.ExtractMetadataFromFile(filePath, Magic);
+	}
+
 	public static byte[] SetMetadata(ReadOnlySpan<byte> bytes, string? newMetadataJson)
 	{
 		return RealmContainerHeader.SetMetadata(bytes, Magic, newMetadataJson, "RKEY");

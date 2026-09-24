@@ -348,12 +348,12 @@ public class Migration_0_0_1_InitialCanonicalFormat : IMapMigration
 						}
 						if (itemObj.ContainsKey("NormalMode"))
 						{
-							itemObj["DespillPlayerColor"] = true;
+							itemObj["DespillPlayerColor"] = false;
 							itemObj.Remove("NormalMode");
 						}
 						if (itemObj.ContainsKey("RecalculateNormals"))
 						{
-							itemObj["DespillPlayerColor"] = true;
+							itemObj["DespillPlayerColor"] = false;
 							itemObj.Remove("RecalculateNormals");
 						}
 					}
@@ -599,6 +599,121 @@ public class Migration_0_0_1_InitialCanonicalFormat : IMapMigration
 	}
 }
 
+public class Migration_0_0_2_NormalizeModelProperties : IMapMigration
+{
+	public string FromVersion => "v0.0.1";
+	public string ToVersion => "v0.0.2";
+	public string Description => "Normalize legacy top-level Model dictionaries into canonical Models dictionary";
+
+	public MigrationResult Up(string mapDirectory, IProgress<MigrationProgressUpdate>? progress = null)
+	{
+		try
+		{
+			string metadataPath = Path.Combine(mapDirectory, "metadata.json");
+			JsonObject? metadataRoot = null;
+			if (File.Exists(metadataPath))
+			{
+				string text = File.ReadAllText(metadataPath);
+				metadataRoot = JsonNode.Parse(text)?.AsObject();
+			}
+
+			metadataRoot ??= new JsonObject();
+
+			const int totalSteps = 2;
+			progress?.Report(new MigrationProgressUpdate(Description, 1, totalSteps, "Normalizing model properties into Models dictionary..."));
+
+			if (!metadataRoot.ContainsKey("Models") || metadataRoot["Models"] is not JsonObject)
+			{
+				metadataRoot["Models"] = new JsonObject();
+			}
+			var modelsObj = metadataRoot["Models"]!.AsObject();
+
+			var dictMappings = new (string TopLevelKey, string ModelPropKey)[]
+			{
+				("ModelBrightness", "Brightness"),
+				("ModelCollisionCircleRatios", "CollisionCircleRatios"),
+				("ModelColorTint", "ColorTint"),
+				("ModelDespillPlayerColor", "DespillPlayerColor"),
+				("ModelIgnorePlayerColor", "IgnorePlayerColor"),
+				("ModelNormalizeLuminance", "NormalizeLuminance"),
+				("ModelObstacleRadii", "ObstacleRadii"),
+				("ModelOffsets", "Offsets"),
+				("ModelScales", "Scales"),
+				("ModelSpawnShaders", "SpawnShaders"),
+				("ModelDeathShaders", "DeathShaders")
+			};
+
+			foreach (var (topKey, propKey) in dictMappings)
+			{
+				if (metadataRoot.TryGetPropertyValue(topKey, out var dictNode) && dictNode is JsonObject dictObj)
+				{
+					foreach (var kvp in dictObj)
+					{
+						string modelKey = kvp.Key;
+						if (string.IsNullOrWhiteSpace(modelKey)) continue;
+
+						if (!modelsObj.ContainsKey(modelKey) || modelsObj[modelKey] is not JsonObject)
+						{
+							modelsObj[modelKey] = new JsonObject();
+						}
+						var modelEntry = modelsObj[modelKey]!.AsObject();
+						if (kvp.Value != null)
+						{
+							modelEntry[propKey] = kvp.Value.DeepClone();
+						}
+					}
+					metadataRoot.Remove(topKey);
+				}
+			}
+
+			if (metadataRoot.TryGetPropertyValue("ModelNormalModes", out var nrmNode) && nrmNode is JsonObject nrmObj)
+			{
+				foreach (var kvp in nrmObj)
+				{
+					string modelKey = kvp.Key;
+					if (string.IsNullOrWhiteSpace(modelKey)) continue;
+
+					if (!modelsObj.ContainsKey(modelKey) || modelsObj[modelKey] is not JsonObject)
+					{
+						modelsObj[modelKey] = new JsonObject();
+					}
+					var modelEntry = modelsObj[modelKey]!.AsObject();
+					modelEntry["DespillPlayerColor"] = true;
+				}
+				metadataRoot.Remove("ModelNormalModes");
+			}
+
+			metadataRoot["GameBuildNumber"] = ToVersion;
+			SaveLoadService.CleanMetadataJsonSchema(metadataRoot);
+
+			progress?.Report(new MigrationProgressUpdate(Description, 2, totalSteps, "Saving migrated metadata.json..."));
+			MapJsonFormatter.SaveFormattedJson(metadataPath, metadataRoot);
+
+			return new MigrationResult
+			{
+				Success = true,
+				FromVersion = FromVersion,
+				ToVersion = ToVersion
+			};
+		}
+		catch (Exception ex)
+		{
+			return new MigrationResult
+			{
+				Success = false,
+				ErrorMessage = $"Migration 0.0.2 failed: {ex.Message}",
+				FromVersion = FromVersion,
+				ToVersion = ToVersion
+			};
+		}
+	}
+
+	public Task<MigrationResult> UpAsync(string mapDirectory, IProgress<MigrationProgressUpdate>? progress = null)
+	{
+		return Task.Run(() => Up(mapDirectory, progress));
+	}
+}
+
 public class MapUpgradeService
 {
 	private readonly WorldAccessor _worldAccessor;
@@ -615,6 +730,7 @@ public class MapUpgradeService
 	private void RegisterMigrations()
 	{
 		_migrations.Add(new Migration_0_0_1_InitialCanonicalFormat());
+		_migrations.Add(new Migration_0_0_2_NormalizeModelProperties());
 	}
 
 	public string GetMapBuildNumber(string mapDirectory)
@@ -738,25 +854,70 @@ public class MapUpgradeService
 	{
 		try
 		{
-			string timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
-			string backupDir = Path.Combine(mapDirectory, ".backups", $"backup_{currentVersion}_{timestamp}");
-			Directory.CreateDirectory(backupDir);
-
-			string metadataPath = Path.Combine(mapDirectory, "metadata.json");
-			if (File.Exists(metadataPath))
+			string loadedFolderName = Path.GetFileName(mapDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+			if (string.IsNullOrEmpty(loadedFolderName))
 			{
-				File.Copy(metadataPath, Path.Combine(backupDir, "metadata.json"), overwrite: true);
+				loadedFolderName = "map";
 			}
 
-			string manifestPath = Path.Combine(mapDirectory, "manifest.json");
-			if (File.Exists(manifestPath))
+			string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+			string userDataDir;
+			try
 			{
-				File.Copy(manifestPath, Path.Combine(backupDir, "manifest.json"), overwrite: true);
+				userDataDir = OS.GetUserDataDir();
+				if (string.IsNullOrEmpty(userDataDir))
+				{
+					userDataDir = ProjectSettings.GlobalizePath("user://");
+				}
 			}
+			catch
+			{
+				string appData = System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData);
+				userDataDir = Path.Combine(appData, "Godot", "app_userdata", "Realm");
+			}
+
+			string upgradeBackupsRoot = Path.Combine(userDataDir, "map_upgrades");
+			string targetBackupDir = Path.Combine(upgradeBackupsRoot, $"{loadedFolderName}_{timestamp}");
+
+			CopyDirectoryContentsSafe(mapDirectory, targetBackupDir, upgradeBackupsRoot);
 		}
 		catch (Exception ex)
 		{
 			GD.PrintErr($"[MapUpgradeService] Warning: Failed to create map backup: {ex.Message}");
+		}
+	}
+
+	private static void CopyDirectoryContentsSafe(string sourceDir, string targetDir, string? backupsRoot = null)
+	{
+		var source = new DirectoryInfo(sourceDir);
+		if (!source.Exists) return;
+
+		var excludedFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+		{
+			".git", "bin", "obj", ".godot", ".vs", ".vscode", "map_upgrades", "map_backups", ".backups", ".dotnet", ".wasi", ".sidecarcache", ".cache"
+		};
+
+		Directory.CreateDirectory(targetDir);
+
+		foreach (var file in source.GetFiles())
+		{
+			if (file.Extension.Equals(".tmp", StringComparison.OrdinalIgnoreCase)) continue;
+			string destFile = Path.Combine(targetDir, file.Name);
+			file.CopyTo(destFile, true);
+		}
+
+		foreach (var dir in source.GetDirectories())
+		{
+			if (excludedFolders.Contains(dir.Name)) continue;
+			if (!string.IsNullOrEmpty(backupsRoot) &&
+				(string.Equals(dir.FullName, backupsRoot, StringComparison.OrdinalIgnoreCase) ||
+				 dir.FullName.StartsWith(backupsRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
+			{
+				continue;
+			}
+
+			string destSubDir = Path.Combine(targetDir, dir.Name);
+			CopyDirectoryContentsSafe(dir.FullName, destSubDir, backupsRoot);
 		}
 	}
 }

@@ -1144,7 +1144,7 @@ public partial class GameHost : Node3D, IGameAPI
 		{
 			Brightness = 0.5f;
 			NormalizeLuminance = true;
-			DespillPlayerColor = true;
+			DespillPlayerColor = false;
 		}
 
 		public string UnitId { get; set; }
@@ -1174,7 +1174,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public string Tint { get; set; }
 		public bool NormalizeLuminance { get; set; } = true;
 		public bool IgnorePlayerColor { get; set; }
-		public bool DespillPlayerColor { get; set; } = true;
+		public bool DespillPlayerColor { get; set; } = false;
 		public string[]? BuildOptions { get; set; }
 		public bool IsHero { get; set; }
 		public string[]? Abilities { get; set; }
@@ -1352,7 +1352,7 @@ public partial class GameHost : Node3D, IGameAPI
 			Brightness = 0.5f;
 			NormalizeLuminance = true;
 			IgnorePlayerColor = true;
-			DespillPlayerColor = true;
+			DespillPlayerColor = false;
 		}
 
 		public string UnitId { get; set; }
@@ -1367,7 +1367,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public string Tint { get; set; }
 		public bool NormalizeLuminance { get; set; } = true;
 		public bool IgnorePlayerColor { get; set; } = true;
-		public bool DespillPlayerColor { get; set; } = true;
+		public bool DespillPlayerColor { get; set; } = false;
 		public int PathingType { get; set; }
 		public string SpawnShader { get; set; }
 		public string DeathShader { get; set; }
@@ -1385,7 +1385,7 @@ public partial class GameHost : Node3D, IGameAPI
 			Brightness = 0.5f;
 			NormalizeLuminance = true;
 			IgnorePlayerColor = true;
-			DespillPlayerColor = true;
+			DespillPlayerColor = false;
 		}
 
 		public string UnitId { get; set; }
@@ -1404,7 +1404,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public string Tint { get; set; }
 		public bool NormalizeLuminance { get; set; } = true;
 		public bool IgnorePlayerColor { get; set; } = true;
-		public bool DespillPlayerColor { get; set; } = true;
+		public bool DespillPlayerColor { get; set; } = false;
 		public int PathingType { get; set; }
 		public string SpawnShader { get; set; }
 		public string DeathShader { get; set; }
@@ -1559,7 +1559,7 @@ public partial class GameHost : Node3D, IGameAPI
 		public float Contrast { get; set; }
 		public float Saturation { get; set; }
 		public bool NormalizeLuminance { get; set; }
-		public bool DespillPlayerColor { get; set; } = true;
+		public bool DespillPlayerColor { get; set; } = false;
 		public float RotX { get; set; }
 		public float RotY { get; set; }
 		public float RotZ { get; set; }

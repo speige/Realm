@@ -7,12 +7,12 @@ namespace Realm.Shared;
 
 public static class RealmVersion
 {
-	public const string GameBuildNumber = "v0.0.1";
+	public const string GameBuildNumber = "v0.0.2";
 	public static readonly string GameBinaryVersion = GetGameBinaryVersion();
 
 	public static string GetGameBinaryVersion(Assembly? assembly = null)
 	{
-		const string defaultVersionString = "v0.0.1_Pre-Alpha";
+		const string defaultVersionString = "v0.0.2_Pre-Alpha";
 		try
 		{
 			assembly ??= typeof(RealmVersion).Assembly;

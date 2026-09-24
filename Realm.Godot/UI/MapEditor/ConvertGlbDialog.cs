@@ -560,7 +560,7 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 					["y_offset"] = 0.0f,
 					["min_y"] = 0.0f,
 					["default_asset_type"] = subCategory,
-					["despill_player_color"] = true,
+					["despill_player_color"] = false,
 					["normalize_luminance"] = true,
 					["ignore_player_color"] = isPropOrRes,
 					["team_color"] = convRes.SupportsTeamColor
@@ -667,7 +667,7 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 								Scale = defaultScale,
 								YOffset = autoYOffset,
 								PathingType = 9,
-								DespillPlayerColor = true,
+								DespillPlayerColor = false,
 								NormalizeLuminance = true
 							});
 						}
@@ -689,7 +689,7 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 								Scale = defaultScale,
 								YOffset = autoYOffset,
 								PathingType = 32,
-								DespillPlayerColor = true,
+								DespillPlayerColor = false,
 								NormalizeLuminance = true
 							});
 						}
@@ -711,7 +711,7 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 								Scale = defaultScale,
 								YOffset = autoYOffset,
 								PathingType = 255,
-								DespillPlayerColor = true,
+								DespillPlayerColor = false,
 								NormalizeLuminance = true,
 								IgnorePlayerColor = true
 							});
@@ -734,7 +734,7 @@ public partial class ConvertGlbDialog : FloatingDialogBase
 								Scale = defaultScale,
 								YOffset = autoYOffset,
 								PathingType = 255,
-								DespillPlayerColor = true,
+								DespillPlayerColor = false,
 								NormalizeLuminance = true,
 								IgnorePlayerColor = true
 							});

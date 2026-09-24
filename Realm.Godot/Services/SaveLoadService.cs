@@ -1536,18 +1536,7 @@ public class SaveLoadService
 				set.Add(jsonAttr.Name);
 			}
 		}
-
-		foreach (var field in typeof(GameHost).GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
-		{
-			if (field.Name.StartsWith("Model", StringComparison.OrdinalIgnoreCase))
-			{
-				set.Add(field.Name);
-			}
-		}
-		set.Add("ModelOffsets");
-		set.Add("ModelSpawnShaders");
-		set.Add("ModelDeathShaders");
-		set.Add("ModelDespawnShaders");
+		set.Add("Models");
 		set.Add("textures");
 		set.Add("decals");
 		set.Add("vfx_spritesheets");
@@ -2021,6 +2010,39 @@ public class SaveLoadService
 		if (root == null) return;
 
 		root.Remove("Assets");
+		root.Remove("Ratings");
+		root.Remove("Greenlight");
+		root.Remove("ModelOffsets");
+		root.Remove("ModelScales");
+		root.Remove("ModelCollisionCircleRatios");
+		root.Remove("ModelObstacleRadii");
+		root.Remove("ModelBrightness");
+		root.Remove("ModelColorTint");
+		root.Remove("ModelDespillPlayerColor");
+		root.Remove("ModelNormalizeLuminance");
+		root.Remove("ModelIgnorePlayerColor");
+		root.Remove("ModelSpawnShaders");
+		root.Remove("ModelDeathShaders");
+		root.Remove("ModelNormalModes");
+
+		if (root.TryGetPropertyValue("Models", out var modelsNode) && modelsNode is JsonObject modelsObject)
+		{
+			var allowedModelProperties = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+			{
+				"Offsets", "Scales", "CollisionCircleRatios", "ObstacleRadii", "Brightness",
+				"ColorTint", "DespillPlayerColor", "NormalizeLuminance", "IgnorePlayerColor",
+				"SpawnShaders", "DeathShaders"
+			};
+			foreach (var keyValuePair in modelsObject)
+			{
+				if (keyValuePair.Value is JsonObject itemObject)
+				{
+					itemObject.Remove("hash");
+					var propertiesToRemove = itemObject.Select(property => property.Key).Where(property => !allowedModelProperties.Contains(property)).ToList();
+					foreach (var property in propertiesToRemove) itemObject.Remove(property);
+				}
+			}
+		}
 
 		if (root.TryGetPropertyValue("textures", out var texturesNode) && texturesNode is JsonObject texturesObject)
 		{
@@ -2158,7 +2180,7 @@ public class SaveLoadService
 			string assetsDir = Path.Combine(mapDirectory, "Assets");
 
 			var includedRelativePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-			var assetsToSync = new List<(string RelativePath, JsonNode? EntryNode, JsonObject ParentObj, string PropertyKey)>();
+			var assetsToSync = new List<(string RelativePath, JsonNode? EntryNode, JsonObject ParentObj, string PropertyKey, string Category, string? SubCategory)>();
 
 			foreach (var categoryKvp in assetsObj)
 			{
@@ -2175,7 +2197,7 @@ public class SaveLoadService
 								string fileName = itemKvp.Key;
 								string relPath = Path.Combine("Assets", "models", subCategory, fileName).Replace('\\', '/');
 								includedRelativePaths.Add(relPath);
-								assetsToSync.Add((relPath, itemKvp.Value, subCatObj, fileName));
+								assetsToSync.Add((relPath, itemKvp.Value, subCatObj, fileName, "glb", subCategory));
 							}
 						}
 					}
@@ -2208,7 +2230,7 @@ public class SaveLoadService
 							includedRelativePaths.Add(Path.Combine("Assets", "audio", subFolder, fileName).Replace('\\', '/'));
 						}
 
-						assetsToSync.Add((relPath, itemKvp.Value, catObj, fileName));
+						assetsToSync.Add((relPath, itemKvp.Value, catObj, fileName, category, null));
 					}
 				}
 			}
@@ -2232,16 +2254,37 @@ public class SaveLoadService
 				DeleteEmptyDirectoriesRecursive(assetsDir);
 			}
 
-			foreach (var (relPath, entryNode, parentObj, propertyKey) in assetsToSync)
+			var nonExistentAssets = new List<(JsonObject ParentObj, string PropertyKey)>();
+
+			foreach (var (relPath, entryNode, parentObj, propertyKey, category, subCategory) in assetsToSync)
 			{
 				string fullDiskPath = Path.Combine(mapDirectory, relPath);
 				if (!File.Exists(fullDiskPath))
 				{
 					string fileName = Path.GetFileName(relPath);
-					string? altPath = FindAssetFileByName(assetsDir, fileName);
-					if (altPath != null && File.Exists(altPath))
+					if (category == "glb")
 					{
-						fullDiskPath = altPath;
+						string? modelDisk = MapAssetHelper.FindModelOnDisk(mapDirectory, subCategory, fileName);
+						if (!string.IsNullOrEmpty(modelDisk) && File.Exists(modelDisk))
+						{
+							fullDiskPath = modelDisk;
+						}
+					}
+					else
+					{
+						string? altPath = FindAssetFileByName(assetsDir, fileName);
+						if (altPath != null && File.Exists(altPath))
+						{
+							fullDiskPath = altPath;
+						}
+						else
+						{
+							string directMapPath = Path.Combine(mapDirectory, fileName);
+							if (File.Exists(directMapPath))
+							{
+								fullDiskPath = directMapPath;
+							}
+						}
 					}
 				}
 
@@ -2270,6 +2313,15 @@ public class SaveLoadService
 						RealmMetadataHelper.SyncBlake3Metadata(fullDiskPath);
 					}
 				}
+				else
+				{
+					nonExistentAssets.Add((parentObj, propertyKey));
+				}
+			}
+
+			foreach (var (parentObj, propertyKey) in nonExistentAssets)
+			{
+				parentObj.Remove(propertyKey);
 			}
 
 			MapAssetHelper.SaveAssetsToManifest(mapDirectory, assetsObj, removeFromMetadata: true);

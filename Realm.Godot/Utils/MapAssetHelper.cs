@@ -63,9 +63,208 @@ public static class MapAssetHelper
 			AttachMetadataAttributesToUnionedAssets(unionedAssets, metadataRoot, targetDirectory);
 		}
 
+		MapWorkspaceService.NormalizeTextureEntries(unionedAssets, targetDirectory);
+
 		EnsureAllAssetsHaveBlake3Hashes(unionedAssets, targetDirectory);
 
 		return unionedAssets;
+	}
+
+	public static (bool IsValid, List<string> MissingFiles) ValidateWorkspaceAssets(string workspacePath)
+	{
+		var missingFiles = new List<string>();
+		if (string.IsNullOrEmpty(workspacePath) || !Directory.Exists(workspacePath))
+		{
+			missingFiles.Add(string.IsNullOrEmpty(workspacePath) ? "Workspace path is empty" : $"Workspace directory does not exist: {workspacePath}");
+			return (false, missingFiles);
+		}
+
+		string assetsDir = Path.Combine(workspacePath, "Assets");
+		string manifestPath = Path.Combine(workspacePath, "manifest.json");
+		string metadataPath = Path.Combine(workspacePath, "metadata.json");
+
+		if (File.Exists(manifestPath))
+		{
+			try
+			{
+				string manifestJson = File.ReadAllText(manifestPath);
+				var manifestDoc = JsonNode.Parse(manifestJson)?.AsObject();
+				if (manifestDoc != null)
+				{
+					if (manifestDoc["Assets"] is JsonObject manifestAssets)
+					{
+						var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+						MapManifest.FlattenAssetsInto(dict, manifestAssets);
+						foreach (var kvp in dict)
+						{
+							string relPath = kvp.Key.TrimStart('/', '\\');
+							string fullPath = Path.Combine(workspacePath, relPath);
+							if (!File.Exists(fullPath))
+							{
+								string fileName = Path.GetFileName(relPath);
+								string? resolvedModel = FindModelOnDisk(workspacePath, null, fileName);
+								if (string.IsNullOrEmpty(resolvedModel) || !File.Exists(resolvedModel))
+								{
+									missingFiles.Add(relPath);
+								}
+							}
+						}
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"[MapAssetHelper] ValidateWorkspaceAssets error reading manifest: {ex.Message}");
+			}
+		}
+
+		if (File.Exists(metadataPath))
+		{
+			try
+			{
+				string metadataJson = File.ReadAllText(metadataPath);
+				var metadataRoot = JsonNode.Parse(metadataJson)?.AsObject();
+				if (metadataRoot != null)
+				{
+					var arrayMappings = new (string ArrayKey, string SubCategory)[]
+					{
+						("CustomUnits", "units"),
+						("CustomBuildings", "buildings"),
+						("CustomResources", "resources"),
+						("CustomProps", "props"),
+						("CustomAttachments", "attachments"),
+						("CustomWeapons", "weapons")
+					};
+
+					foreach (var (arrayKey, subCat) in arrayMappings)
+					{
+						if (metadataRoot.TryGetPropertyValue(arrayKey, out var arrNode) && arrNode is JsonArray arr)
+						{
+							foreach (var itemNode in arr)
+							{
+								if (itemNode is JsonObject entityObj)
+								{
+									string modelPath = arrayKey switch
+									{
+										"CustomWeapons" => entityObj["ProjectileModelPath"]?.ToString() ?? entityObj["ModelPath"]?.ToString() ?? "",
+										_ => entityObj["ModelPath"]?.ToString() ?? ""
+									};
+
+									if (!string.IsNullOrWhiteSpace(modelPath) && !modelPath.StartsWith("res://", StringComparison.OrdinalIgnoreCase) && !modelPath.StartsWith("user://", StringComparison.OrdinalIgnoreCase))
+									{
+										string fileName = Path.GetFileName(modelPath);
+										string? diskPath = FindModelOnDisk(workspacePath, subCat, fileName);
+										if (string.IsNullOrEmpty(diskPath) || !File.Exists(diskPath))
+										{
+											string expectedRel = $"Assets/models/{subCat}/{fileName}".Replace('\\', '/');
+											if (!expectedRel.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
+											{
+												expectedRel = Path.ChangeExtension(expectedRel, ".rmesh");
+											}
+											missingFiles.Add(expectedRel);
+										}
+									}
+
+									string portraitModel = entityObj["PortraitModelPath"]?.ToString() ?? "";
+									if (!string.IsNullOrWhiteSpace(portraitModel) && !portraitModel.StartsWith("res://", StringComparison.OrdinalIgnoreCase) && !portraitModel.StartsWith("user://", StringComparison.OrdinalIgnoreCase))
+									{
+										string fileName = Path.GetFileName(portraitModel);
+										string? diskPath = FindModelOnDisk(workspacePath, subCat, fileName);
+										if (string.IsNullOrEmpty(diskPath) || !File.Exists(diskPath))
+										{
+											string expectedRel = $"Assets/models/{subCat}/{fileName}".Replace('\\', '/');
+											if (!expectedRel.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase)) expectedRel = Path.ChangeExtension(expectedRel, ".rmesh");
+											missingFiles.Add(expectedRel);
+										}
+									}
+
+									string deadModel = entityObj["DeadModelPath"]?.ToString() ?? "";
+									if (!string.IsNullOrWhiteSpace(deadModel) && !deadModel.StartsWith("res://", StringComparison.OrdinalIgnoreCase) && !deadModel.StartsWith("user://", StringComparison.OrdinalIgnoreCase))
+									{
+										string fileName = Path.GetFileName(deadModel);
+										string? diskPath = FindModelOnDisk(workspacePath, subCat, fileName);
+										if (string.IsNullOrEmpty(diskPath) || !File.Exists(diskPath))
+										{
+											string expectedRel = $"Assets/models/{subCat}/{fileName}".Replace('\\', '/');
+											if (!expectedRel.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase)) expectedRel = Path.ChangeExtension(expectedRel, ".rmesh");
+											missingFiles.Add(expectedRel);
+										}
+									}
+
+									string placementModel = entityObj["PlacementModelPath"]?.ToString() ?? "";
+									if (!string.IsNullOrWhiteSpace(placementModel) && !placementModel.StartsWith("res://", StringComparison.OrdinalIgnoreCase) && !placementModel.StartsWith("user://", StringComparison.OrdinalIgnoreCase))
+									{
+										string fileName = Path.GetFileName(placementModel);
+										string? diskPath = FindModelOnDisk(workspacePath, subCat, fileName);
+										if (string.IsNullOrEmpty(diskPath) || !File.Exists(diskPath))
+										{
+											string expectedRel = $"Assets/models/{subCat}/{fileName}".Replace('\\', '/');
+											if (!expectedRel.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase)) expectedRel = Path.ChangeExtension(expectedRel, ".rmesh");
+											missingFiles.Add(expectedRel);
+										}
+									}
+								}
+							}
+						}
+					}
+
+					string[] categoryKeys = new[] { "textures", "decals", "vfx_spritesheets", "noise_textures", "icons", "skyboxes", "ribbons", "animations", "sfx", "music", "other" };
+					foreach (var cat in categoryKeys)
+					{
+						if (metadataRoot.TryGetPropertyValue(cat, out var catNode) && catNode is JsonObject catObj)
+						{
+							string subFolder = cat switch
+							{
+								"vfx_spritesheets" => "vfx",
+								"animations" => "animations",
+								"sfx" => "audio/sfx",
+								"music" => "audio/music",
+								"icons" => "icons",
+								"decals" => "decals",
+								"ribbons" => "ribbons",
+								"noise_textures" => "noise",
+								"skyboxes" => "skyboxes",
+								"other" => "other",
+								_ => "textures"
+							};
+
+							foreach (var itemPair in catObj)
+							{
+								string fileName = itemPair.Key;
+								if (string.IsNullOrWhiteSpace(fileName)) continue;
+
+								string diskPath = subFolder == "other" ? Path.Combine(workspacePath, fileName) : Path.Combine(assetsDir, subFolder, fileName);
+								if (!File.Exists(diskPath) && subFolder is "audio/sfx" or "audio/music")
+								{
+									diskPath = Path.Combine(assetsDir, subFolder.Substring(6), fileName);
+								}
+								if (!File.Exists(diskPath))
+								{
+									diskPath = Path.Combine(assetsDir, fileName);
+								}
+								if (!File.Exists(diskPath))
+								{
+									diskPath = Path.Combine(workspacePath, fileName);
+								}
+
+								if (!File.Exists(diskPath))
+								{
+									string expectedRel = subFolder == "other" ? fileName : $"Assets/{subFolder}/{fileName}".Replace('\\', '/');
+									missingFiles.Add(expectedRel);
+								}
+							}
+						}
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"[MapAssetHelper] ValidateWorkspaceAssets error reading metadata: {ex.Message}");
+			}
+		}
+
+		var distinctMissing = missingFiles.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+		return (distinctMissing.Count == 0, distinctMissing);
 	}
 
 	public static void SaveAssetsToManifest(string mapDirectory, JsonObject assets, bool removeFromMetadata = true)
@@ -228,11 +427,212 @@ public static class MapAssetHelper
 		RemoveAssetFromMetadata(targetDirectory, categoryKey, fileName);
 	}
 
+	public static void PruneNonExistentAssetsFromManifest(string mapDirectory)
+	{
+		string targetDirectory = string.IsNullOrEmpty(mapDirectory)
+			? MapWorkspaceService.GetActiveWorkspacePath()
+			: mapDirectory;
+
+		if (!Directory.Exists(targetDirectory)) return;
+
+		string manifestPath = Path.Combine(targetDirectory, "manifest.json");
+		if (!File.Exists(manifestPath)) return;
+
+		try
+		{
+			string manifestJson = File.ReadAllText(manifestPath);
+			var manifestDoc = JsonNode.Parse(manifestJson)?.AsObject();
+			if (manifestDoc == null) return;
+
+			string assetsDir = Path.Combine(targetDirectory, "Assets");
+
+			if (manifestDoc["Assets"] is JsonObject assetsObj)
+			{
+				var categoriesToRemove = new List<string>();
+
+				foreach (var categoryKvp in assetsObj)
+				{
+					string category = categoryKvp.Key.ToLowerInvariant();
+					if (category == "glb" && categoryKvp.Value is JsonObject glbObj)
+					{
+						var subCategoriesToRemove = new List<string>();
+						foreach (var subKvp in glbObj)
+						{
+							string subCategory = NormalizeGlbSubCategory(subKvp.Key);
+							if (subKvp.Value is JsonObject subCatObj)
+							{
+								var itemsToRemove = new List<string>();
+								foreach (var itemKvp in subCatObj)
+								{
+									string fileName = itemKvp.Key;
+									string? diskPath = FindModelOnDisk(targetDirectory, subCategory, fileName);
+									if (string.IsNullOrEmpty(diskPath) || !File.Exists(diskPath))
+									{
+										itemsToRemove.Add(fileName);
+									}
+									else
+									{
+										string hash = RealmMetadataHelper.ComputeBlake3(diskPath);
+										if (!string.IsNullOrEmpty(hash))
+										{
+											if (itemKvp.Value is JsonObject itemObj)
+											{
+												itemObj["hash"] = hash;
+											}
+											else
+											{
+												subCatObj[fileName] = hash;
+											}
+										}
+									}
+								}
+								foreach (var item in itemsToRemove)
+								{
+									subCatObj.Remove(item);
+								}
+								if (subCatObj.Count == 0)
+								{
+									subCategoriesToRemove.Add(subKvp.Key);
+								}
+							}
+						}
+						foreach (var sub in subCategoriesToRemove)
+						{
+							glbObj.Remove(sub);
+						}
+						if (glbObj.Count == 0)
+						{
+							categoriesToRemove.Add(categoryKvp.Key);
+						}
+					}
+					else if (categoryKvp.Value is JsonObject catObj)
+					{
+						string subFolder = category switch
+						{
+							"vfx" or "vfx_spritesheets" => "vfx",
+							"animations" => "animations",
+							"sfx" => "audio/sfx",
+							"music" => "audio/music",
+							"icons" => "icons",
+							"decals" => "decals",
+							"ribbons" or "ribbon_textures" => "ribbons",
+							"noise" or "noise_textures" => "noise",
+							"skyboxes" => "skyboxes",
+							"textures" => "textures",
+							"other" => "other",
+							_ => category
+						};
+
+						var itemsToRemove = new List<string>();
+						foreach (var itemKvp in catObj)
+						{
+							string fileName = itemKvp.Key;
+							string diskPath = subFolder == "other" ? Path.Combine(targetDirectory, fileName) : Path.Combine(assetsDir, subFolder, fileName);
+							if (!File.Exists(diskPath) && subFolder is "audio/sfx" or "audio/music")
+							{
+								diskPath = Path.Combine(assetsDir, subFolder.Substring(6), fileName);
+							}
+							if (!File.Exists(diskPath))
+							{
+								diskPath = Path.Combine(assetsDir, fileName);
+							}
+							if (!File.Exists(diskPath))
+							{
+								diskPath = Path.Combine(targetDirectory, fileName);
+							}
+
+							if (!File.Exists(diskPath))
+							{
+								itemsToRemove.Add(fileName);
+							}
+							else
+							{
+								string hash = RealmMetadataHelper.ComputeBlake3(diskPath);
+								if (!string.IsNullOrEmpty(hash))
+								{
+									if (itemKvp.Value is JsonObject itemObj)
+									{
+										itemObj["hash"] = hash;
+									}
+									else
+									{
+										catObj[fileName] = hash;
+									}
+								}
+							}
+						}
+						foreach (var item in itemsToRemove)
+						{
+							catObj.Remove(item);
+						}
+						if (catObj.Count == 0)
+						{
+							categoriesToRemove.Add(categoryKvp.Key);
+						}
+					}
+				}
+
+				foreach (var cat in categoriesToRemove)
+				{
+					assetsObj.Remove(cat);
+				}
+			}
+
+			if (manifestDoc["Files"] is JsonObject filesObj)
+			{
+				var filesToRemove = new List<string>();
+				foreach (var fileKvp in filesObj)
+				{
+					string relPath = fileKvp.Key.TrimStart('/', '\\');
+					string fullPath = Path.Combine(targetDirectory, relPath);
+					if (!File.Exists(fullPath))
+					{
+						string fileName = Path.GetFileName(relPath);
+						string? modelDisk = FindModelOnDisk(targetDirectory, null, fileName);
+						if (string.IsNullOrEmpty(modelDisk) || !File.Exists(modelDisk))
+						{
+							filesToRemove.Add(fileKvp.Key);
+						}
+					}
+				}
+				foreach (var f in filesToRemove)
+				{
+					filesObj.Remove(f);
+					if (manifestDoc["FileSizes"] is JsonObject sizesObj)
+					{
+						sizesObj.Remove(f);
+					}
+				}
+			}
+
+			SaveAssetsToManifest(targetDirectory, manifestDoc["Assets"]?.AsObject() ?? new JsonObject(), removeFromMetadata: true);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"[MapAssetHelper] PruneNonExistentAssetsFromManifest error: {ex.Message}");
+		}
+	}
+
 	public static void EnsureManifestJson(string directory)
 	{
 		if (string.IsNullOrEmpty(directory)) return;
 
 		string manifestPath = Path.Combine(directory, "manifest.json");
+		if (!File.Exists(manifestPath) || new FileInfo(manifestPath).Length == 0)
+		{
+			string templateManifest = MapWorkspaceService.GetTemplatePath("manifest.json");
+			if (!string.IsNullOrEmpty(templateManifest) && File.Exists(templateManifest))
+			{
+				try
+				{
+					File.Copy(templateManifest, manifestPath, true);
+				}
+				catch
+				{
+				}
+			}
+		}
+
 		if (File.Exists(manifestPath) && new FileInfo(manifestPath).Length > 0)
 		{
 			try
@@ -278,11 +678,10 @@ public static class MapAssetHelper
 						foreach (var itemKeyValuePair in subCategoryObject)
 						{
 							string hash = ExtractHashString(itemKeyValuePair.Value);
-							if (string.IsNullOrEmpty(hash))
+							if (!string.IsNullOrEmpty(hash))
 							{
-								hash = RealmMetadataHelper.ComputeBlake3(System.Text.Encoding.UTF8.GetBytes(itemKeyValuePair.Key), Path.GetExtension(itemKeyValuePair.Key));
+								cleanSub[itemKeyValuePair.Key] = hash;
 							}
-							cleanSub[itemKeyValuePair.Key] = hash;
 						}
 					}
 				}
@@ -295,11 +694,10 @@ public static class MapAssetHelper
 				foreach (var itemKeyValuePair in categoryObject)
 				{
 					string hash = ExtractHashString(itemKeyValuePair.Value);
-					if (string.IsNullOrEmpty(hash))
+					if (!string.IsNullOrEmpty(hash))
 					{
-						hash = RealmMetadataHelper.ComputeBlake3(System.Text.Encoding.UTF8.GetBytes(itemKeyValuePair.Key), Path.GetExtension(itemKeyValuePair.Key));
+						cleanCategory[itemKeyValuePair.Key] = hash;
 					}
-					cleanCategory[itemKeyValuePair.Key] = hash;
 				}
 			}
 		}
@@ -418,29 +816,8 @@ public static class MapAssetHelper
 			return;
 		}
 
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelOffsets");
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelScales");
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelCollisionCircleRatios");
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelObstacleRadii");
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelBrightness");
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelColorTint");
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelDespillPlayerColor");
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelNormalizeLuminance");
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelIgnorePlayerColor");
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelSpawnShaders");
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelDeathShaders");
-
-		var offsetsObject = metadataRoot["ModelOffsets"]!.AsObject();
-		var scalesObject = metadataRoot["ModelScales"]!.AsObject();
-		var collisionCircleObject = metadataRoot["ModelCollisionCircleRatios"]!.AsObject();
-		var obstacleRadiiObject = metadataRoot["ModelObstacleRadii"]!.AsObject();
-		var brightnessObject = metadataRoot["ModelBrightness"]!.AsObject();
-		var colorTintObject = metadataRoot["ModelColorTint"]!.AsObject();
-		var despillObject = metadataRoot["ModelDespillPlayerColor"]!.AsObject();
-		var normalizeLuminanceObject = metadataRoot["ModelNormalizeLuminance"]!.AsObject();
-		var ignorePlayerColorObject = metadataRoot["ModelIgnorePlayerColor"]!.AsObject();
-		var spawnShadersObject = metadataRoot["ModelSpawnShaders"]!.AsObject();
-		var deathShadersObject = metadataRoot["ModelDeathShaders"]!.AsObject();
+		EnsureMetadataTopLevelObject(metadataRoot, "Models");
+		var modelsObject = metadataRoot["Models"]!.AsObject();
 
 		foreach (var subCategoryKeyValuePair in glbObject)
 		{
@@ -451,47 +828,53 @@ public static class MapAssetHelper
 					string fileName = itemKeyValuePair.Key;
 					if (itemKeyValuePair.Value is JsonObject modelProperties)
 					{
+						if (!modelsObject.ContainsKey(fileName) || modelsObject[fileName] is not JsonObject)
+						{
+							modelsObject[fileName] = new JsonObject();
+						}
+						var modelEntry = modelsObject[fileName]!.AsObject();
+
 						if (modelProperties.TryGetPropertyValue("y_offset", out var yOffsetNode) && yOffsetNode != null && float.TryParse(yOffsetNode.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float yOffset))
 						{
-							offsetsObject[fileName] = yOffset;
+							modelEntry["Offsets"] = yOffset;
 						}
 						if (modelProperties.TryGetPropertyValue("scale", out var scaleNode) && scaleNode != null && float.TryParse(scaleNode.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float scale))
 						{
-							scalesObject[fileName] = scale;
+							modelEntry["Scales"] = scale;
 						}
 						if (modelProperties.TryGetPropertyValue("collision_circle_ratio", out var ratioNode) && ratioNode != null && float.TryParse(ratioNode.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float ratio))
 						{
-							collisionCircleObject[fileName] = ratio;
+							modelEntry["CollisionCircleRatios"] = ratio;
 						}
 						if (modelProperties.TryGetPropertyValue("collision_radius", out var radiusNode) && radiusNode != null && float.TryParse(radiusNode.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float radius))
 						{
-							obstacleRadiiObject[fileName] = radius;
+							modelEntry["ObstacleRadii"] = radius;
 						}
 						if (modelProperties.TryGetPropertyValue("brightness", out var brightnessNode) && brightnessNode != null && float.TryParse(brightnessNode.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float brightness))
 						{
-							brightnessObject[fileName] = brightness;
+							modelEntry["Brightness"] = brightness;
 						}
 						if (modelProperties.TryGetPropertyValue("despill_player_color", out var despillNode) && despillNode != null && bool.TryParse(despillNode.ToString(), out bool despill))
 						{
-							despillObject[fileName] = despill;
+							modelEntry["DespillPlayerColor"] = despill;
 						}
 						if (modelProperties.TryGetPropertyValue("normalize_luminance", out var normalizeLuminanceNode) && normalizeLuminanceNode != null && bool.TryParse(normalizeLuminanceNode.ToString(), out bool normalizeLuminance))
 						{
-							normalizeLuminanceObject[fileName] = normalizeLuminance;
+							modelEntry["NormalizeLuminance"] = normalizeLuminance;
 						}
 						if (modelProperties.TryGetPropertyValue("ignore_player_color", out var ignorePlayerColorNode) && ignorePlayerColorNode != null && bool.TryParse(ignorePlayerColorNode.ToString(), out bool ignorePlayerColor))
 						{
-							ignorePlayerColorObject[fileName] = ignorePlayerColor;
+							modelEntry["IgnorePlayerColor"] = ignorePlayerColor;
 						}
 						if (modelProperties.TryGetPropertyValue("spawn_shader", out var spawnShaderNode) && spawnShaderNode != null)
 						{
 							string spawnShader = spawnShaderNode.ToString();
-							if (!string.IsNullOrWhiteSpace(spawnShader)) spawnShadersObject[fileName] = spawnShader;
+							if (!string.IsNullOrWhiteSpace(spawnShader)) modelEntry["SpawnShaders"] = spawnShader;
 						}
 						if (modelProperties.TryGetPropertyValue("death_shader", out var deathShaderNode) && deathShaderNode != null)
 						{
 							string deathShader = deathShaderNode.ToString();
-							if (!string.IsNullOrWhiteSpace(deathShader)) deathShadersObject[fileName] = deathShader;
+							if (!string.IsNullOrWhiteSpace(deathShader)) modelEntry["DeathShaders"] = deathShader;
 						}
 					}
 				}
@@ -528,14 +911,11 @@ public static class MapAssetHelper
 
 			if (categoryKey == "glb")
 			{
-				foreach (var mapKey in new[] { "ModelOffsets", "ModelScales", "ModelCollisionCircleRatios", "ModelObstacleRadii", "ModelBrightness", "ModelColorTint", "ModelDespillPlayerColor", "ModelNormalizeLuminance", "ModelIgnorePlayerColor", "ModelSpawnShaders", "ModelDeathShaders" })
+				if (metadataRoot.TryGetPropertyValue("Models", out var modelsNode) && modelsNode is JsonObject modelsObject)
 				{
-					if (metadataRoot.TryGetPropertyValue(mapKey, out var mapNode) && mapNode is JsonObject mapObject)
+					if (modelsObject.Remove(fileName))
 					{
-						if (mapObject.Remove(fileName))
-						{
-							modified = true;
-						}
+						modified = true;
 					}
 				}
 			}
@@ -633,10 +1013,28 @@ public static class MapAssetHelper
 				{
 					if (itemNode is JsonObject entityObj)
 					{
-						string modelPath = entityObj["ModelPath"]?.ToString() ?? "";
+						string modelPath = arrayKey switch
+						{
+							"CustomWeapons" => entityObj["ProjectileModelPath"]?.ToString() ?? entityObj["ModelPath"]?.ToString() ?? "",
+							_ => entityObj["ModelPath"]?.ToString() ?? ""
+						};
+
 						if (string.IsNullOrEmpty(modelPath))
 						{
-							modelPath = entityObj["UnitId"]?.ToString() ?? entityObj["AttachmentId"]?.ToString() ?? entityObj["WeaponId"]?.ToString() ?? "";
+							string fallbackId = arrayKey switch
+							{
+								"CustomUnits" => entityObj["UnitId"]?.ToString() ?? "",
+								"CustomAttachments" => entityObj["AttachmentId"]?.ToString() ?? "",
+								_ => ""
+							};
+							if (!string.IsNullOrEmpty(fallbackId))
+							{
+								string? diskCheck = FindModelOnDisk(targetDirectory, subCat, fallbackId, out _);
+								if (!string.IsNullOrEmpty(diskCheck))
+								{
+									modelPath = fallbackId;
+								}
+							}
 						}
 
 						if (!string.IsNullOrEmpty(modelPath))
@@ -646,43 +1044,47 @@ public static class MapAssetHelper
 							if (!string.IsNullOrEmpty(diskPath))
 							{
 								fileName = Path.GetFileName(diskPath);
+								EnsureGlbEntryExists(unionedAssets, subCat, fileName, diskPath);
 							}
-							else if (!fileName.EndsWith(".rmesh", StringComparison.OrdinalIgnoreCase))
-							{
-								fileName = Path.ChangeExtension(fileName, ".rmesh");
-							}
-
-							EnsureGlbEntryExists(unionedAssets, subCat, fileName, diskPath);
 						}
+
+						void TryAttachModel(string? path)
+						{
+							if (string.IsNullOrWhiteSpace(path) || path.StartsWith("res://", StringComparison.OrdinalIgnoreCase) || path.StartsWith("user://", StringComparison.OrdinalIgnoreCase))
+							{
+								return;
+							}
+							string fileName = Path.GetFileName(path);
+							string? diskPath = FindModelOnDisk(targetDirectory, subCat, fileName, out string resolvedSub);
+							if (!string.IsNullOrEmpty(diskPath))
+							{
+								fileName = Path.GetFileName(diskPath);
+								EnsureGlbEntryExists(unionedAssets, subCat, fileName, diskPath);
+							}
+						}
+
+						TryAttachModel(entityObj["PortraitModelPath"]?.ToString());
+						TryAttachModel(entityObj["DeadModelPath"]?.ToString());
+						TryAttachModel(entityObj["PlacementModelPath"]?.ToString());
 					}
 				}
 			}
 		}
 
-		string[] modelDictNames = new[]
+		if (metadataRoot.TryGetPropertyValue("Models", out var modelsNode) && modelsNode is JsonObject modelsObj)
 		{
-			"ModelOffsets", "ModelScales", "ModelCollisionCircleRatios", "ModelObstacleRadii",
-			"ModelBrightness", "ModelColorTint", "ModelDespillPlayerColor", "ModelNormalizeLuminance",
-			"ModelIgnorePlayerColor", "ModelSpawnShaders", "ModelDeathShaders"
-		};
-
-		foreach (var dictName in modelDictNames)
-		{
-			if (metadataRoot.TryGetPropertyValue(dictName, out var dictNode) && dictNode is JsonObject dictObj)
+			foreach (var prop in modelsObj)
 			{
-				foreach (var prop in dictObj)
+				string rawName = prop.Key;
+				string? existingSub = FindExistingGlbSubCategory(unionedAssets, rawName);
+				if (string.IsNullOrEmpty(existingSub))
 				{
-					string rawName = prop.Key;
-					string? existingSub = FindExistingGlbSubCategory(unionedAssets, rawName);
-					if (string.IsNullOrEmpty(existingSub))
+					string? diskPath = FindModelOnDisk(targetDirectory, null, rawName, out string foundSub);
+					if (!string.IsNullOrEmpty(diskPath))
 					{
-						string? diskPath = FindModelOnDisk(targetDirectory, null, rawName, out string foundSub);
-						if (!string.IsNullOrEmpty(diskPath))
-						{
-							string fileName = Path.GetFileName(diskPath);
-							existingSub = !string.IsNullOrEmpty(foundSub) ? foundSub : "props";
-							EnsureGlbEntryExists(unionedAssets, existingSub, fileName, diskPath);
-						}
+						string fileName = Path.GetFileName(diskPath);
+						existingSub = !string.IsNullOrEmpty(foundSub) ? foundSub : "props";
+						EnsureGlbEntryExists(unionedAssets, existingSub, fileName, diskPath);
 					}
 				}
 			}
@@ -786,7 +1188,7 @@ public static class MapAssetHelper
 		}
 	}
 
-	private static string? FindModelOnDisk(string targetDirectory, string? preferredSubCategory, string fileName, out string resolvedSubCategory)
+	public static string? FindModelOnDisk(string targetDirectory, string? preferredSubCategory, string fileName, out string resolvedSubCategory)
 	{
 		resolvedSubCategory = !string.IsNullOrEmpty(preferredSubCategory) ? preferredSubCategory : "props";
 		if (string.IsNullOrEmpty(targetDirectory) || !Directory.Exists(targetDirectory))
@@ -850,7 +1252,7 @@ public static class MapAssetHelper
 		return null;
 	}
 
-	private static string? FindModelOnDisk(string targetDirectory, string? preferredSubCategory, string fileName)
+	public static string? FindModelOnDisk(string targetDirectory, string? preferredSubCategory, string fileName)
 	{
 		return FindModelOnDisk(targetDirectory, preferredSubCategory, fileName, out _);
 	}
@@ -906,18 +1308,17 @@ public static class MapAssetHelper
 								{
 									hash = RealmMetadataHelper.ComputeBlake3(diskPath);
 								}
-								else
-								{
-									hash = RealmMetadataHelper.ComputeBlake3(System.Text.Encoding.UTF8.GetBytes(fileName), Path.GetExtension(fileName));
-								}
 
-								if (itemPair.Value is JsonObject itemObj)
+								if (!string.IsNullOrEmpty(hash))
 								{
-									itemObj["hash"] = hash;
-								}
-								else
-								{
-									subObj[fileName] = hash;
+									if (itemPair.Value is JsonObject itemObj)
+									{
+										itemObj["hash"] = hash;
+									}
+									else
+									{
+										subObj[fileName] = hash;
+									}
 								}
 							}
 						}
@@ -964,18 +1365,17 @@ public static class MapAssetHelper
 						{
 							hash = RealmMetadataHelper.ComputeBlake3(diskPath);
 						}
-						else
-						{
-							hash = RealmMetadataHelper.ComputeBlake3(System.Text.Encoding.UTF8.GetBytes(fileName), Path.GetExtension(fileName));
-						}
 
-						if (itemPair.Value is JsonObject itemObj)
+						if (!string.IsNullOrEmpty(hash))
 						{
-							itemObj["hash"] = hash;
-						}
-						else
-						{
-							catObj[fileName] = hash;
+							if (itemPair.Value is JsonObject itemObj)
+							{
+								itemObj["hash"] = hash;
+							}
+							else
+							{
+								catObj[fileName] = hash;
+							}
 						}
 					}
 				}
@@ -1038,17 +1438,7 @@ public static class MapAssetHelper
 			return;
 		}
 
-		var offsetsObject = metadataRoot["ModelOffsets"] as JsonObject;
-		var scalesObject = metadataRoot["ModelScales"] as JsonObject;
-		var collisionCircleObject = metadataRoot["ModelCollisionCircleRatios"] as JsonObject;
-		var obstacleRadiiObject = metadataRoot["ModelObstacleRadii"] as JsonObject;
-		var brightnessObject = metadataRoot["ModelBrightness"] as JsonObject;
-		var colorTintObject = metadataRoot["ModelColorTint"] as JsonObject;
-		var despillObject = metadataRoot["ModelDespillPlayerColor"] as JsonObject;
-		var normalizeLuminanceObject = metadataRoot["ModelNormalizeLuminance"] as JsonObject;
-		var ignorePlayerColorObject = metadataRoot["ModelIgnorePlayerColor"] as JsonObject;
-		var spawnShadersObject = metadataRoot["ModelSpawnShaders"] as JsonObject;
-		var deathShadersObject = metadataRoot["ModelDeathShaders"] as JsonObject;
+		var modelsObject = metadataRoot["Models"] as JsonObject;
 
 		foreach (var subCategoryKeyValuePair in glbObject)
 		{
@@ -1074,49 +1464,65 @@ public static class MapAssetHelper
 						subCategoryObject[fileName] = modelObject;
 					}
 
-					if (offsetsObject != null && (offsetsObject.TryGetPropertyValue(fileName, out var offsetNode) || offsetsObject.TryGetPropertyValue(baseName, out offsetNode)))
+					JsonObject? modelEntry = null;
+					if (modelsObject != null)
 					{
-						modelObject["y_offset"] = offsetNode?.DeepClone();
+						if (modelsObject.TryGetPropertyValue(fileName, out var entryNode) && entryNode is JsonObject entryObj)
+						{
+							modelEntry = entryObj;
+						}
+						else if (modelsObject.TryGetPropertyValue(baseName, out var baseEntryNode) && baseEntryNode is JsonObject baseEntryObj)
+						{
+							modelEntry = baseEntryObj;
+						}
 					}
-					if (scalesObject != null && (scalesObject.TryGetPropertyValue(fileName, out var scaleNode) || scalesObject.TryGetPropertyValue(baseName, out scaleNode)))
+
+					if (modelEntry != null)
 					{
-						modelObject["scale"] = scaleNode?.DeepClone();
-					}
-					if (collisionCircleObject != null && (collisionCircleObject.TryGetPropertyValue(fileName, out var circleNode) || collisionCircleObject.TryGetPropertyValue(baseName, out circleNode)))
-					{
-						modelObject["collision_circle_ratio"] = circleNode?.DeepClone();
-					}
-					if (obstacleRadiiObject != null && (obstacleRadiiObject.TryGetPropertyValue(fileName, out var radiusNode) || obstacleRadiiObject.TryGetPropertyValue(baseName, out radiusNode)))
-					{
-						modelObject["collision_radius"] = radiusNode?.DeepClone();
-					}
-					if (brightnessObject != null && (brightnessObject.TryGetPropertyValue(fileName, out var brightNode) || brightnessObject.TryGetPropertyValue(baseName, out brightNode)))
-					{
-						modelObject["brightness"] = brightNode?.DeepClone();
-					}
-					if (colorTintObject != null && (colorTintObject.TryGetPropertyValue(fileName, out var tintNode) || colorTintObject.TryGetPropertyValue(baseName, out tintNode)))
-					{
-						modelObject["tint"] = tintNode?.DeepClone();
-					}
-					if (despillObject != null && (despillObject.TryGetPropertyValue(fileName, out var despillNode) || despillObject.TryGetPropertyValue(baseName, out despillNode)))
-					{
-						modelObject["despill_player_color"] = despillNode?.DeepClone();
-					}
-					if (normalizeLuminanceObject != null && (normalizeLuminanceObject.TryGetPropertyValue(fileName, out var lumNode) || normalizeLuminanceObject.TryGetPropertyValue(baseName, out lumNode)))
-					{
-						modelObject["normalize_luminance"] = lumNode?.DeepClone();
-					}
-					if (ignorePlayerColorObject != null && (ignorePlayerColorObject.TryGetPropertyValue(fileName, out var ipcNode) || ignorePlayerColorObject.TryGetPropertyValue(baseName, out ipcNode)))
-					{
-						modelObject["ignore_player_color"] = ipcNode?.DeepClone();
-					}
-					if (spawnShadersObject != null && (spawnShadersObject.TryGetPropertyValue(fileName, out var spawnNode) || spawnShadersObject.TryGetPropertyValue(baseName, out spawnNode)))
-					{
-						modelObject["spawn_shader"] = spawnNode?.DeepClone();
-					}
-					if (deathShadersObject != null && (deathShadersObject.TryGetPropertyValue(fileName, out var deathNode) || deathShadersObject.TryGetPropertyValue(baseName, out deathNode)))
-					{
-						modelObject["death_shader"] = deathNode?.DeepClone();
+						if (modelEntry.TryGetPropertyValue("Offsets", out var offsetNode))
+						{
+							modelObject["y_offset"] = offsetNode?.DeepClone();
+						}
+						if (modelEntry.TryGetPropertyValue("Scales", out var scaleNode))
+						{
+							modelObject["scale"] = scaleNode?.DeepClone();
+						}
+						if (modelEntry.TryGetPropertyValue("CollisionCircleRatios", out var circleNode))
+						{
+							modelObject["collision_circle_ratio"] = circleNode?.DeepClone();
+						}
+						if (modelEntry.TryGetPropertyValue("ObstacleRadii", out var radiusNode))
+						{
+							modelObject["collision_radius"] = radiusNode?.DeepClone();
+						}
+						if (modelEntry.TryGetPropertyValue("Brightness", out var brightNode))
+						{
+							modelObject["brightness"] = brightNode?.DeepClone();
+						}
+						if (modelEntry.TryGetPropertyValue("ColorTint", out var tintNode))
+						{
+							modelObject["tint"] = tintNode?.DeepClone();
+						}
+						if (modelEntry.TryGetPropertyValue("DespillPlayerColor", out var despillNode))
+						{
+							modelObject["despill_player_color"] = despillNode?.DeepClone();
+						}
+						if (modelEntry.TryGetPropertyValue("NormalizeLuminance", out var lumNode))
+						{
+							modelObject["normalize_luminance"] = lumNode?.DeepClone();
+						}
+						if (modelEntry.TryGetPropertyValue("IgnorePlayerColor", out var ipcNode))
+						{
+							modelObject["ignore_player_color"] = ipcNode?.DeepClone();
+						}
+						if (modelEntry.TryGetPropertyValue("SpawnShaders", out var spawnNode))
+						{
+							modelObject["spawn_shader"] = spawnNode?.DeepClone();
+						}
+						if (modelEntry.TryGetPropertyValue("DeathShaders", out var deathNode))
+						{
+							modelObject["death_shader"] = deathNode?.DeepClone();
+						}
 					}
 				}
 			}

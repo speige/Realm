@@ -103,14 +103,14 @@ public partial class AssetGridCell : PanelContainer
 		if (ext == ".ranim")
 		{
 			_currentAnimatedThumbnail = AssetThumbnailProvider.GetAnimatedThumbnail(asset);
-			_thumbnailRect.Texture = _currentAnimatedThumbnail?.PrimaryFrame ?? AssetThumbnailProvider.GetThumbnail(asset);
+			_thumbnailRect.Texture = _currentAnimatedThumbnail?.PrimaryFrame ?? AssetThumbnailProvider.GetThumbnail(asset, isHighPriority: true);
 			_animTimer = 0f;
 			_lastRenderedFrameIndex = 0;
 		}
 		else
 		{
 			_currentAnimatedThumbnail = null;
-			_thumbnailRect.Texture = AssetThumbnailProvider.GetThumbnail(asset);
+			_thumbnailRect.Texture = AssetThumbnailProvider.GetThumbnail(asset, isHighPriority: true);
 		}
 
 		UpdateStyle();
@@ -141,6 +141,10 @@ public partial class AssetGridCell : PanelContainer
 			string eventNorm = AssetThumbnailProvider.NormalizePath(filePath);
 			if (string.Equals(currentNorm, eventNorm, StringComparison.OrdinalIgnoreCase))
 			{
+				if (_currentAsset.Extension.Equals(".ranim", StringComparison.OrdinalIgnoreCase) && _currentAnimatedThumbnail == null)
+				{
+					_currentAnimatedThumbnail = AssetThumbnailProvider.GetAnimatedThumbnail(_currentAsset);
+				}
 				_thumbnailRect.Texture = texture;
 			}
 		}
