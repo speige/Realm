@@ -4059,6 +4059,15 @@ public partial class MapEditorHUD : Control
 				await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 			});
 
+			progressBar.Value = 60;
+			statusLabel.Text = TranslationServer.Translate("Generating map thumbnail...");
+			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+
+			if (_minimapController != null)
+			{
+				await _minimapController.GenerateAndSaveMinimapThumbnailAsync(workspace);
+			}
+
 			progressBar.Value = 65;
 			statusLabel.Text = TranslationServer.Translate("Generating manifest & indexing asset hashes...");
 			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
@@ -9240,6 +9249,15 @@ public partial class MapEditorHUD : Control
 				statusLabel.Text = string.Format(TranslationServer.Translate("Converting texture {0}/{1}: {2}..."), current, total, fileName);
 				await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 			});
+
+			progressBar.Value = 70;
+			statusLabel.Text = TranslationServer.Translate("Generating map thumbnail...");
+			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+
+			if (_minimapController != null)
+			{
+				await _minimapController.GenerateAndSaveMinimapThumbnailAsync(_tempWorkspacePath);
+			}
 
 			progressBar.Value = 75;
 			statusLabel.Text = TranslationServer.Translate("Generating manifest & indexing asset hashes...");

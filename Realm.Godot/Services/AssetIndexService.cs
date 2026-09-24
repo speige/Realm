@@ -354,7 +354,7 @@ public class AssetIndexService : IDisposable
 						asset.MapVersion = mapVersion;
 						asset.Blake3 = norm;
 						batchToUpsert.Add(asset);
-						AssetThumbnailProvider.EnsureDiskImageThumbnail(normPath, fi.LastWriteTimeUtc);
+						AssetThumbnailProvider.EnsureDiskImageThumbnail(normPath, fi.LastWriteTimeUtc, norm);
 					}
 				}
 
@@ -491,7 +491,7 @@ public class AssetIndexService : IDisposable
 					asset.HasRealmMetadata = hasRealmMetadata || !string.IsNullOrEmpty(assetType);
 
 					batchToUpsert.Add(asset);
-					AssetThumbnailProvider.EnsureDiskImageThumbnail(normPath, fi.LastWriteTimeUtc);
+					AssetThumbnailProvider.EnsureDiskImageThumbnail(normPath, fi.LastWriteTimeUtc, norm);
 				}
 			}
 
@@ -837,7 +837,7 @@ public class AssetIndexService : IDisposable
 					existingAsset.LastModifiedUtc == fileInfo.LastWriteTimeUtc &&
 					!string.IsNullOrEmpty(existingAsset.Blake3))
 				{
-					AssetThumbnailProvider.EnsureDiskImageThumbnail(normalizedFilePath, fileInfo.LastWriteTimeUtc);
+					AssetThumbnailProvider.EnsureDiskImageThumbnail(normalizedFilePath, fileInfo.LastWriteTimeUtc, existingAsset.Blake3);
 					continue;
 				}
 
@@ -906,7 +906,7 @@ public class AssetIndexService : IDisposable
 				asset.Blake3 = !string.IsNullOrEmpty(normBlake3) ? Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(normBlake3) : string.Empty;
 
 				batchToUpsert.Add(asset);
-				AssetThumbnailProvider.EnsureDiskImageThumbnail(normalizedFilePath, fileInfo.LastWriteTimeUtc);
+				AssetThumbnailProvider.EnsureDiskImageThumbnail(normalizedFilePath, fileInfo.LastWriteTimeUtc, asset.Blake3);
 
 				if (batchToUpsert.Count >= 250)
 				{

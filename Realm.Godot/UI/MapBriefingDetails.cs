@@ -6,4 +6,5 @@ public struct MapBriefingDetails
 	public string GameBuildNumber;
 	public string Version;
 	public string ManifestHash;
+	public string ThumbnailPath;
 }

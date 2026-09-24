@@ -54,7 +54,7 @@ public partial class GlbThumbnailRenderer : Node
 	{
 		public string FilePath { get; set; } = string.Empty;
 		public DateTime LastModifiedUtc { get; set; }
-		public string CacheKey { get; set; } = string.Empty;
+		public string Blake3 { get; set; } = string.Empty;
 		public Action<string, Texture2D>? Callback { get; set; }
 	}
 
@@ -133,39 +133,76 @@ public partial class GlbThumbnailRenderer : Node
 		return Path.GetFullPath(path).Replace('\\', '/').TrimEnd('/');
 	}
 
+	public static string GetBlake3(string filePath, string? preferredBlake3 = null)
+	{
+		if (!string.IsNullOrEmpty(preferredBlake3))
+		{
+			return Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(preferredBlake3);
+		}
+
+		string fileName = Path.GetFileNameWithoutExtension(filePath);
+		if (fileName.Length == 64 && IsHexOnly(fileName))
+		{
+			return fileName.ToLowerInvariant();
+		}
+
+		try
+		{
+			string? metaJson = Realm.Shared.Metadata.RealmMetadataHelper.ExtractMetadata(filePath);
+			if (!string.IsNullOrEmpty(metaJson))
+			{
+				var node = System.Text.Json.Nodes.JsonNode.Parse(metaJson);
+				string? b3 = node?["blake3"]?.ToString();
+				if (!string.IsNullOrEmpty(b3))
+				{
+					return Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(b3);
+				}
+			}
+
+			return Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(
+				Realm.Shared.Metadata.RealmMetadataHelper.ComputeBlake3(filePath));
+		}
+		catch
+		{
+			return Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(fileName);
+		}
+	}
+
+	private static bool IsHexOnly(string str)
+	{
+		foreach (char c in str)
+		{
+			if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
 	public bool TryGetDiskCached(string glbPath, DateTime lastModifiedUtc, out Texture2D? texture)
+	{
+		return TryGetDiskCached(glbPath, null, out texture);
+	}
+
+	public bool TryGetDiskCached(string glbPath, string? blake3, out Texture2D? texture)
 	{
 		texture = null;
 		string normPath = NormalizePath(glbPath);
 		if (string.IsNullOrEmpty(normPath) || !File.Exists(normPath)) return false;
 
+		string hash = GetBlake3(normPath, blake3);
+		if (string.IsNullOrEmpty(hash) || hash.Length < 2) return false;
+
 		string cacheDirectory = ProjectSettings.GlobalizePath("user://model_thumb_cache");
-		string fileName = Path.GetFileNameWithoutExtension(normPath);
-		string pathHash = Math.Abs(normPath.ToLowerInvariant().GetHashCode()).ToString("X8");
-		string cacheKey = $"{SanitizeFileName(fileName)}_{pathHash}_{lastModifiedUtc.Ticks}";
-		string cachedPngPath = Path.Combine(cacheDirectory, $"{cacheKey}.png");
+		string cachedPngPath = Path.Combine(cacheDirectory, hash.Substring(0, 2), $"{hash}.png");
 
 		if (File.Exists(cachedPngPath))
 		{
 			try
 			{
 				var img = Image.LoadFromFile(cachedPngPath);
-				if (img != null)
-				{
-					texture = ImageTexture.CreateFromImage(img);
-					return true;
-				}
-			}
-			catch { }
-		}
-
-		string legacyPngPath = Path.Combine(cacheDirectory, $"{SanitizeFileName(fileName)}_{lastModifiedUtc.Ticks}.png");
-		if (File.Exists(legacyPngPath))
-		{
-			try
-			{
-				var img = Image.LoadFromFile(legacyPngPath);
-				if (img != null)
+				if (img != null && !img.IsEmpty())
 				{
 					texture = ImageTexture.CreateFromImage(img);
 					return true;
@@ -177,7 +214,7 @@ public partial class GlbThumbnailRenderer : Node
 		return false;
 	}
 
-	public void EnqueueRequest(string glbPath, DateTime lastModifiedUtc, Action<string, Texture2D>? callback = null)
+	public void EnqueueRequest(string glbPath, DateTime lastModifiedUtc, string? blake3 = null, Action<string, Texture2D>? callback = null)
 	{
 		string normPath = NormalizePath(glbPath);
 		if (string.IsNullOrEmpty(normPath) || !File.Exists(normPath)) return;
@@ -189,15 +226,13 @@ public partial class GlbThumbnailRenderer : Node
 			if (_pendingPaths.Contains(normPath)) return;
 			_pendingPaths.Add(normPath);
 
-			string fileName = Path.GetFileNameWithoutExtension(normPath);
-			string pathHash = Math.Abs(normPath.ToLowerInvariant().GetHashCode()).ToString("X8");
-			string cacheKey = $"{SanitizeFileName(fileName)}_{pathHash}_{lastModifiedUtc.Ticks}";
+			string hash = GetBlake3(normPath, blake3);
 
 			_requestQueue.Enqueue(new GlbRequest
 			{
 				FilePath = normPath,
 				LastModifiedUtc = lastModifiedUtc,
-				CacheKey = cacheKey,
+				Blake3 = hash,
 				Callback = callback
 			});
 		}
@@ -347,10 +382,25 @@ public partial class GlbThumbnailRenderer : Node
 				var img = tex.GetImage();
 				if (img != null && !img.IsEmpty())
 				{
+					if (img.GetFormat() != Image.Format.Rgba8)
+					{
+						img.Convert(Image.Format.Rgba8);
+					}
+
 					string cacheDirectory = ProjectSettings.GlobalizePath("user://model_thumb_cache");
-					if (!Directory.Exists(cacheDirectory)) Directory.CreateDirectory(cacheDirectory);
-					string cachedPngPath = Path.Combine(cacheDirectory, $"{_currentRequest.CacheKey}.png");
-					img.SavePng(cachedPngPath);
+					string hash = !string.IsNullOrEmpty(_currentRequest.Blake3)
+						? _currentRequest.Blake3
+						: GetBlake3(_currentRequest.FilePath, null);
+
+					if (!string.IsNullOrEmpty(hash) && hash.Length >= 2)
+					{
+						string cachedPngPath = Path.Combine(cacheDirectory, hash.Substring(0, 2), $"{hash}.png");
+						Realm.Shared.Textures.IndexedPngHelper.SaveAs256ColorPng(
+							img.GetData(),
+							img.GetWidth(),
+							img.GetHeight(),
+							cachedPngPath);
+					}
 
 					var imgTex = ImageTexture.CreateFromImage(img);
 					_currentRequest.Callback?.Invoke(_currentRequest.FilePath, imgTex);

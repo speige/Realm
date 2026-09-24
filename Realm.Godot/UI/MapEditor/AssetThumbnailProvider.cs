@@ -146,12 +146,12 @@ public static class AssetThumbnailProvider
 
 		if (ext == ".rtex")
 		{
-			return LoadRtexAlbedoThumbnail(asset.FilePath, asset.LastModifiedUtc);
+			return LoadRtexAlbedoThumbnail(asset.FilePath, asset.LastModifiedUtc, asset.Blake3);
 		}
 
 		if (ext == ".rmesh")
 		{
-			return LoadGlbThumbnail(asset.FilePath, asset.LastModifiedUtc);
+			return LoadGlbThumbnail(asset.FilePath, asset.LastModifiedUtc, asset.Blake3);
 		}
 
 		if (ext == ".raud" || ext == ".ogg" || ext == ".wav" || ext == ".mp3")
@@ -161,12 +161,12 @@ public static class AssetThumbnailProvider
 
 		if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".webp" || ext == ".bmp" || ext == ".tga")
 		{
-			return LoadRasterImageThumbnail(asset.FilePath, asset.LastModifiedUtc);
+			return LoadRasterImageThumbnail(asset.FilePath, asset.LastModifiedUtc, asset.Blake3);
 		}
 
 		if (ext == ".svg")
 		{
-			return LoadSvgThumbnail(asset.FilePath, asset.LastModifiedUtc);
+			return LoadSvgThumbnail(asset.FilePath, asset.LastModifiedUtc, asset.Blake3);
 		}
 
 		return GetPlaceholderTexture(ext.TrimStart('.').ToUpperInvariant());
@@ -180,34 +180,27 @@ public static class AssetThumbnailProvider
 		return ext is ".rtex" or ".png" or ".jpg" or ".jpeg" or ".webp" or ".bmp" or ".tga" or ".svg";
 	}
 
-	private static string SanitizeFileName(string name)
-	{
-		var invalidChars = Path.GetInvalidFileNameChars();
-		var chars = name.ToCharArray();
-		for (int i = 0; i < chars.Length; i++)
-		{
-			if (Array.IndexOf(invalidChars, chars[i]) >= 0)
-			{
-				chars[i] = '_';
-			}
-		}
-		return new string(chars);
-	}
-
-	public static string GetDiskCachePath(string filePath, DateTime lastModifiedUtc)
+	public static string GetDiskCachePath(string filePath, string? blake3 = null)
 	{
 		string normPath = NormalizePath(filePath);
 		string ext = Path.GetExtension(normPath).ToLowerInvariant();
 		string cacheDir = ext == ".rtex"
 			? ProjectSettings.GlobalizePath("user://rtex_thumb_cache")
 			: ProjectSettings.GlobalizePath("user://image_thumb_cache");
-		string fileName = Path.GetFileNameWithoutExtension(normPath);
-		string pathHash = Math.Abs(normPath.ToLowerInvariant().GetHashCode()).ToString("X8");
-		string cacheKey = $"{SanitizeFileName(fileName)}_{pathHash}_{lastModifiedUtc.Ticks}";
-		return Path.Combine(cacheDir, $"{cacheKey}.png");
+		string hash = GlbThumbnailRenderer.GetBlake3(normPath, blake3);
+		if (string.IsNullOrEmpty(hash) || hash.Length < 2)
+		{
+			return string.Empty;
+		}
+		return Path.Combine(cacheDir, hash.Substring(0, 2), $"{hash}.png");
 	}
 
-	public static void EnsureDiskImageThumbnail(string filePath, DateTime lastModifiedUtc)
+	public static string GetDiskCachePath(string filePath, DateTime lastModifiedUtc, string? blake3 = null)
+	{
+		return GetDiskCachePath(filePath, blake3);
+	}
+
+	public static void EnsureDiskImageThumbnail(string filePath, DateTime lastModifiedUtc, string? blake3 = null)
 	{
 		string normPath = NormalizePath(filePath);
 		if (string.IsNullOrEmpty(normPath) || !File.Exists(normPath)) return;
@@ -215,8 +208,8 @@ public static class AssetThumbnailProvider
 		string ext = Path.GetExtension(normPath).ToLowerInvariant();
 		if (!IsImageExtension(ext)) return;
 
-		string cachedPngPath = GetDiskCachePath(normPath, lastModifiedUtc);
-		if (File.Exists(cachedPngPath))
+		string cachedPngPath = GetDiskCachePath(normPath, blake3);
+		if (string.IsNullOrEmpty(cachedPngPath) || File.Exists(cachedPngPath))
 		{
 			return;
 		}
@@ -270,17 +263,21 @@ public static class AssetThumbnailProvider
 
 			if (img != null && !img.IsEmpty())
 			{
+				if (img.GetFormat() != Image.Format.Rgba8)
+				{
+					img.Convert(Image.Format.Rgba8);
+				}
+
 				if (img.GetWidth() > 128 || img.GetHeight() > 128)
 				{
 					img.Resize(128, 128, Image.Interpolation.Bilinear);
 				}
 
-				string? cacheDir = Path.GetDirectoryName(cachedPngPath);
-				if (!string.IsNullOrEmpty(cacheDir) && !Directory.Exists(cacheDir))
-				{
-					Directory.CreateDirectory(cacheDir);
-				}
-				img.SavePng(cachedPngPath);
+				IndexedPngHelper.SaveAs256ColorPng(
+					img.GetData(),
+					img.GetWidth(),
+					img.GetHeight(),
+					cachedPngPath);
 			}
 		}
 		catch (Exception ex)
@@ -289,19 +286,19 @@ public static class AssetThumbnailProvider
 		}
 	}
 
-	private static Texture2D? LoadGlbThumbnail(string glbPath, DateTime lastModifiedUtc)
+	private static Texture2D? LoadGlbThumbnail(string glbPath, DateTime lastModifiedUtc, string? blake3 = null)
 	{
 		string normPath = NormalizePath(glbPath);
-		if (GlbThumbnailRenderer.Instance.TryGetDiskCached(normPath, lastModifiedUtc, out var cachedTexture))
+		if (GlbThumbnailRenderer.Instance.TryGetDiskCached(normPath, blake3, out var cachedTexture))
 		{
 			return cachedTexture;
 		}
 
-		GlbThumbnailRenderer.Instance.EnqueueRequest(normPath, lastModifiedUtc);
+		GlbThumbnailRenderer.Instance.EnqueueRequest(normPath, lastModifiedUtc, blake3);
 		return null;
 	}
 
-	private static Texture2D? LoadRtexAlbedoThumbnail(string rtexPath, DateTime lastModifiedUtc)
+	private static Texture2D? LoadRtexAlbedoThumbnail(string rtexPath, DateTime lastModifiedUtc, string? blake3 = null)
 	{
 		string normPath = NormalizePath(rtexPath);
 		if (string.IsNullOrEmpty(normPath) || !File.Exists(normPath))
@@ -309,8 +306,8 @@ public static class AssetThumbnailProvider
 			return null;
 		}
 
-		string cachedPngPath = GetDiskCachePath(normPath, lastModifiedUtc);
-		if (File.Exists(cachedPngPath))
+		string cachedPngPath = GetDiskCachePath(normPath, blake3);
+		if (!string.IsNullOrEmpty(cachedPngPath) && File.Exists(cachedPngPath))
 		{
 			try
 			{
@@ -364,21 +361,28 @@ public static class AssetThumbnailProvider
 				return null;
 			}
 
+			if (img.GetFormat() != Image.Format.Rgba8)
+			{
+				img.Convert(Image.Format.Rgba8);
+			}
+
 			if (img.GetWidth() > 128 || img.GetHeight() > 128)
 			{
 				img.Resize(128, 128, Image.Interpolation.Bilinear);
 			}
 
-			try
+			if (!string.IsNullOrEmpty(cachedPngPath))
 			{
-				string? cacheDir = Path.GetDirectoryName(cachedPngPath);
-				if (!string.IsNullOrEmpty(cacheDir) && !Directory.Exists(cacheDir))
+				try
 				{
-					Directory.CreateDirectory(cacheDir);
+					IndexedPngHelper.SaveAs256ColorPng(
+						img.GetData(),
+						img.GetWidth(),
+						img.GetHeight(),
+						cachedPngPath);
 				}
-				img.SavePng(cachedPngPath);
+				catch { }
 			}
-			catch { }
 
 			return ImageTexture.CreateFromImage(img);
 		}
@@ -389,7 +393,7 @@ public static class AssetThumbnailProvider
 		}
 	}
 
-	private static Texture2D? LoadRasterImageThumbnail(string imagePath, DateTime lastModifiedUtc)
+	private static Texture2D? LoadRasterImageThumbnail(string imagePath, DateTime lastModifiedUtc, string? blake3 = null)
 	{
 		string normPath = NormalizePath(imagePath);
 		if (string.IsNullOrEmpty(normPath) || !File.Exists(normPath))
@@ -397,8 +401,8 @@ public static class AssetThumbnailProvider
 			return null;
 		}
 
-		string cachedPngPath = GetDiskCachePath(normPath, lastModifiedUtc);
-		if (File.Exists(cachedPngPath))
+		string cachedPngPath = GetDiskCachePath(normPath, blake3);
+		if (!string.IsNullOrEmpty(cachedPngPath) && File.Exists(cachedPngPath))
 		{
 			try
 			{
@@ -416,21 +420,28 @@ public static class AssetThumbnailProvider
 			var image = Image.LoadFromFile(normPath);
 			if (image != null && !image.IsEmpty())
 			{
+				if (image.GetFormat() != Image.Format.Rgba8)
+				{
+					image.Convert(Image.Format.Rgba8);
+				}
+
 				if (image.GetWidth() > 128 || image.GetHeight() > 128)
 				{
 					image.Resize(128, 128, Image.Interpolation.Bilinear);
 				}
 
-				try
+				if (!string.IsNullOrEmpty(cachedPngPath))
 				{
-					string? cacheDir = Path.GetDirectoryName(cachedPngPath);
-					if (!string.IsNullOrEmpty(cacheDir) && !Directory.Exists(cacheDir))
+					try
 					{
-						Directory.CreateDirectory(cacheDir);
+						IndexedPngHelper.SaveAs256ColorPng(
+							image.GetData(),
+							image.GetWidth(),
+							image.GetHeight(),
+							cachedPngPath);
 					}
-					image.SavePng(cachedPngPath);
+					catch { }
 				}
-				catch { }
 
 				return ImageTexture.CreateFromImage(image);
 			}
@@ -440,7 +451,7 @@ public static class AssetThumbnailProvider
 		return null;
 	}
 
-	private static Texture2D? LoadSvgThumbnail(string svgPath, DateTime lastModifiedUtc)
+	private static Texture2D? LoadSvgThumbnail(string svgPath, DateTime lastModifiedUtc, string? blake3 = null)
 	{
 		string normPath = NormalizePath(svgPath);
 		if (string.IsNullOrEmpty(normPath) || !File.Exists(normPath))
@@ -448,8 +459,8 @@ public static class AssetThumbnailProvider
 			return null;
 		}
 
-		string cachedPngPath = GetDiskCachePath(normPath, lastModifiedUtc);
-		if (File.Exists(cachedPngPath))
+		string cachedPngPath = GetDiskCachePath(normPath, blake3);
+		if (!string.IsNullOrEmpty(cachedPngPath) && File.Exists(cachedPngPath))
 		{
 			try
 			{
@@ -468,21 +479,28 @@ public static class AssetThumbnailProvider
 			var err = image.Load(normPath);
 			if (err == Error.Ok && !image.IsEmpty())
 			{
+				if (image.GetFormat() != Image.Format.Rgba8)
+				{
+					image.Convert(Image.Format.Rgba8);
+				}
+
 				if (image.GetWidth() > 128 || image.GetHeight() > 128)
 				{
 					image.Resize(128, 128, Image.Interpolation.Bilinear);
 				}
 
-				try
+				if (!string.IsNullOrEmpty(cachedPngPath))
 				{
-					string? cacheDir = Path.GetDirectoryName(cachedPngPath);
-					if (!string.IsNullOrEmpty(cacheDir) && !Directory.Exists(cacheDir))
+					try
 					{
-						Directory.CreateDirectory(cacheDir);
+						IndexedPngHelper.SaveAs256ColorPng(
+							image.GetData(),
+							image.GetWidth(),
+							image.GetHeight(),
+							cachedPngPath);
 					}
-					image.SavePng(cachedPngPath);
+					catch { }
 				}
-				catch { }
 
 				return ImageTexture.CreateFromImage(image);
 			}

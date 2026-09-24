@@ -225,7 +225,7 @@ public partial class StorageMenu : Control
 		_mapThumbnail.CustomMinimumSize = new Vector2(140, 100);
 		_mapThumbnail.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 		_mapThumbnail.StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered;
-		_mapThumbnail.Texture = GD.Load<Texture2D>("res://Assets/UI/minimap_placeholder.png");
+		_mapThumbnail.Texture = UIStyle.EmptyBlackTexture;
 		_mapThumbnail.MouseFilter = MouseFilterEnum.Ignore;
 		topDetailsHBox.AddChild(_mapThumbnail);
 
@@ -470,18 +470,18 @@ public partial class StorageMenu : Control
 		if (!string.IsNullOrEmpty(map.ThumbnailPath) && File.Exists(map.ThumbnailPath))
 		{
 			var img = Image.LoadFromFile(map.ThumbnailPath);
-			if (img != null)
+			if (img != null && !img.IsEmpty())
 			{
 				_mapThumbnail.Texture = ImageTexture.CreateFromImage(img);
 			}
 			else
 			{
-				_mapThumbnail.Texture = GD.Load<Texture2D>("res://Assets/UI/minimap_placeholder.png");
+				_mapThumbnail.Texture = UIStyle.EmptyBlackTexture;
 			}
 		}
 		else
 		{
-			_mapThumbnail.Texture = GD.Load<Texture2D>("res://Assets/UI/minimap_placeholder.png");
+			_mapThumbnail.Texture = UIStyle.EmptyBlackTexture;
 		}
 
 		_downloadUpdateButton.Visible = false;

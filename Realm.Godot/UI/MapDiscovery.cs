@@ -476,7 +476,7 @@ public partial class MapDiscovery : Control
 		thumbnail.StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered;
 		thumbnail.TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps;
 		var loadedTex = LoadTextureSafe(map.ThumbnailPath);
-		thumbnail.Texture = loadedTex ?? GD.Load<Texture2D>("res://icon.svg");
+		thumbnail.Texture = loadedTex ?? UIStyle.EmptyBlackTexture;
 		imgContainer.AddChild(thumbnail);
 
 		var frameOverlay = new TextureRect();
