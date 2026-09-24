@@ -2856,27 +2856,12 @@ public partial class MapEditorHUD : Control
 		try
 		{
 			var files = System.IO.Directory.GetFiles(directoryPath, "*", System.IO.SearchOption.AllDirectories)
-				.Where(f => {
-					string rel = System.IO.Path.GetRelativePath(directoryPath, f).Replace('\\', '/');
-					string[] parts = rel.Split('/');
-					foreach (var p in parts)
-					{
-						if (p.Equals(".git", StringComparison.OrdinalIgnoreCase) ||
-							p.Equals(".vs", StringComparison.OrdinalIgnoreCase) ||
-							p.Equals(".godot", StringComparison.OrdinalIgnoreCase) ||
-							p.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
-							p.Equals("obj", StringComparison.OrdinalIgnoreCase))
-						{
-							return false;
-						}
-					}
-					return true;
-				})
+				.Where(f => !IsIgnoredPath(f.Substring(directoryPath.Length).TrimStart('/', '\\')))
 				.OrderBy(f => System.IO.Path.GetRelativePath(directoryPath, f).Replace('\\', '/'), StringComparer.OrdinalIgnoreCase)
 				.ToList();
 
 			using var hasher = Blake3.Hasher.New();
-			byte[] buffer = new byte[16384];
+			byte[] buffer = new byte[65536];
 
 			foreach (var file in files)
 			{
@@ -3292,12 +3277,9 @@ public partial class MapEditorHUD : Control
 
 		try
 		{
-			MapAssetHelper.PruneNonExistentAssetsFromManifest(_tempWorkspacePath);
-
 			await System.Threading.Tasks.Task.Run(() => CopyTempWorkspaceToFolder(targetFolder));
 
 			MapWorkspaceService.EnsureLicenseFile(targetFolder);
-			MapAssetHelper.PruneNonExistentAssetsFromManifest(targetFolder);
 
 			SaveCurrentDirectoryBlake3();
 

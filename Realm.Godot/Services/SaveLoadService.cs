@@ -1186,28 +1186,43 @@ public class SaveLoadService
 			".git", "bin", "obj", ".godot", ".vs", ".vscode", "map_backups", "backups", ".dotnet", ".wasi", ".sidecarcache", ".cache"
 		};
 
-		Directory.CreateDirectory(targetDir);
+		var filesToCopy = new List<(string SourcePath, string DestPath)>();
+		var dirsToProcess = new Queue<(DirectoryInfo Dir, string Target)>();
+		dirsToProcess.Enqueue((source, targetDir));
 
-		foreach (var file in source.GetFiles())
+		while (dirsToProcess.Count > 0)
 		{
-			if (file.Extension.Equals(".tmp", StringComparison.OrdinalIgnoreCase)) continue;
-			string destFile = Path.Combine(targetDir, file.Name);
-			file.CopyTo(destFile, true);
-		}
+			var (curDir, curTarget) = dirsToProcess.Dequeue();
+			Directory.CreateDirectory(curTarget);
 
-		foreach (var dir in source.GetDirectories())
-		{
-			if (excludedFolders.Contains(dir.Name)) continue;
-			if (!string.IsNullOrEmpty(backupsRoot) &&
-				(string.Equals(dir.FullName, backupsRoot, StringComparison.OrdinalIgnoreCase) ||
-				 dir.FullName.StartsWith(backupsRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
+			foreach (var file in curDir.GetFiles())
 			{
-				continue;
+				if (file.Extension.Equals(".tmp", StringComparison.OrdinalIgnoreCase)) continue;
+				filesToCopy.Add((file.FullName, Path.Combine(curTarget, file.Name)));
 			}
 
-			string destSubDir = Path.Combine(targetDir, dir.Name);
-			CopyDirectoryContentsSafe(dir.FullName, destSubDir, backupsRoot);
+			foreach (var subDir in curDir.GetDirectories())
+			{
+				if (excludedFolders.Contains(subDir.Name)) continue;
+				if (!string.IsNullOrEmpty(backupsRoot) &&
+					(string.Equals(subDir.FullName, backupsRoot, StringComparison.OrdinalIgnoreCase) ||
+					 subDir.FullName.StartsWith(backupsRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
+				{
+					continue;
+				}
+
+				dirsToProcess.Enqueue((subDir, Path.Combine(curTarget, subDir.Name)));
+			}
 		}
+
+		Parallel.ForEach(filesToCopy, pair =>
+		{
+			try
+			{
+				File.Copy(pair.SourcePath, pair.DestPath, true);
+			}
+			catch { }
+		});
 	}
 
 	private static void PruneOldBackups(string backupsRoot, int maxBackups)
@@ -2260,6 +2275,7 @@ public class SaveLoadService
 			}
 
 			var nonExistentAssets = new List<(JsonObject ParentObj, string PropertyKey)>();
+			Dictionary<string, string>? cachedAssetFiles = null;
 
 			foreach (var (relPath, entryNode, parentObj, propertyKey, category, subCategory) in assetsToSync)
 			{
@@ -2277,7 +2293,7 @@ public class SaveLoadService
 					}
 					else
 					{
-						string? altPath = FindAssetFileByName(assetsDir, fileName);
+						string? altPath = FindAssetFileByName(assetsDir, fileName, ref cachedAssetFiles);
 						if (altPath != null && File.Exists(altPath))
 						{
 							fullDiskPath = altPath;
@@ -2295,27 +2311,30 @@ public class SaveLoadService
 
 				if (File.Exists(fullDiskPath))
 				{
-					string canonicalBlake3 = RealmMetadataHelper.ComputeBlake3(fullDiskPath);
-					if (!string.IsNullOrEmpty(canonicalBlake3))
+					string existingHash = entryNode is JsonObject itemObj
+						? (itemObj["hash"]?.ToString() ?? "")
+						: (entryNode is JsonValue val ? val.ToString() : "");
+
+					string canonicalBlake3 = existingHash;
+					if (string.IsNullOrEmpty(canonicalBlake3))
 					{
-						if (entryNode is JsonObject itemObj)
+						canonicalBlake3 = RealmMetadataHelper.ComputeBlake3(fullDiskPath);
+						if (!string.IsNullOrEmpty(canonicalBlake3))
 						{
-							string existingHash = itemObj["hash"]?.ToString() ?? "";
-							if (!string.Equals(existingHash, canonicalBlake3, StringComparison.OrdinalIgnoreCase))
+							if (entryNode is JsonObject itemObjRef)
 							{
-								itemObj["hash"] = canonicalBlake3;
+								itemObjRef["hash"] = canonicalBlake3;
 							}
-						}
-						else if (entryNode is JsonValue)
-						{
-							string existingHash = entryNode.ToString();
-							if (!string.Equals(existingHash, canonicalBlake3, StringComparison.OrdinalIgnoreCase))
+							else if (entryNode is JsonValue)
 							{
 								parentObj[propertyKey] = canonicalBlake3;
 							}
 						}
+					}
 
-						RealmMetadataHelper.SyncBlake3Metadata(fullDiskPath);
+					if (!string.IsNullOrEmpty(canonicalBlake3))
+					{
+						RealmMetadataHelper.SyncBlake3Metadata(fullDiskPath, canonicalBlake3);
 					}
 				}
 				else
@@ -2337,11 +2356,23 @@ public class SaveLoadService
 		}
 	}
 
-	private static string? FindAssetFileByName(string searchDir, string fileName)
+	private static string? FindAssetFileByName(string searchDir, string fileName, ref Dictionary<string, string>? cachedFiles)
 	{
 		if (!Directory.Exists(searchDir)) return null;
-		string[] matches = Directory.GetFiles(searchDir, fileName, SearchOption.AllDirectories);
-		return matches.Length > 0 ? matches[0] : null;
+		if (cachedFiles == null)
+		{
+			cachedFiles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+			try
+			{
+				foreach (var file in Directory.EnumerateFiles(searchDir, "*", SearchOption.AllDirectories))
+				{
+					string name = Path.GetFileName(file);
+					cachedFiles.TryAdd(name, file);
+				}
+			}
+			catch { }
+		}
+		return cachedFiles.TryGetValue(fileName, out var path) ? path : null;
 	}
 
 	private static void DeleteEmptyDirectoriesRecursive(string directory)

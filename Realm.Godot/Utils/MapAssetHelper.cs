@@ -472,16 +472,20 @@ public static class MapAssetHelper
 									}
 									else
 									{
-										string hash = RealmMetadataHelper.ComputeBlake3(diskPath);
-										if (!string.IsNullOrEmpty(hash))
+										string existingHash = ExtractHashString(itemKvp.Value);
+										if (string.IsNullOrEmpty(existingHash))
 										{
-											if (itemKvp.Value is JsonObject itemObj)
+											string hash = RealmMetadataHelper.ComputeBlake3(diskPath);
+											if (!string.IsNullOrEmpty(hash))
 											{
-												itemObj["hash"] = hash;
-											}
-											else
-											{
-												subCatObj[fileName] = hash;
+												if (itemKvp.Value is JsonObject itemObj)
+												{
+													itemObj["hash"] = hash;
+												}
+												else
+												{
+													subCatObj[fileName] = hash;
+												}
 											}
 										}
 									}
@@ -547,16 +551,20 @@ public static class MapAssetHelper
 							}
 							else
 							{
-								string hash = RealmMetadataHelper.ComputeBlake3(diskPath);
-								if (!string.IsNullOrEmpty(hash))
+								string existingHash = ExtractHashString(itemKvp.Value);
+								if (string.IsNullOrEmpty(existingHash))
 								{
-									if (itemKvp.Value is JsonObject itemObj)
+									string hash = RealmMetadataHelper.ComputeBlake3(diskPath);
+									if (!string.IsNullOrEmpty(hash))
 									{
-										itemObj["hash"] = hash;
-									}
-									else
-									{
-										catObj[fileName] = hash;
+										if (itemKvp.Value is JsonObject itemObj)
+										{
+											itemObj["hash"] = hash;
+										}
+										else
+										{
+											catObj[fileName] = hash;
+										}
 									}
 								}
 							}

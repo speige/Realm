@@ -1901,7 +1901,7 @@ public static class RealmMetadataHelper
 		return string.IsNullOrEmpty(extension) ? blake3Hash : $"{blake3Hash}{extension}";
 	}
 
-	public static bool SyncBlake3Metadata(string filePath)
+	public static bool SyncBlake3Metadata(string filePath, string? precomputedCanonicalBlake3 = null)
 	{
 		if (!File.Exists(filePath)) return false;
 		string ext = Path.GetExtension(filePath).ToLowerInvariant();
@@ -1909,7 +1909,6 @@ public static class RealmMetadataHelper
 
 		try
 		{
-			string canonicalBlake3 = ComputeBlake3(filePath);
 			string? existingMeta = ExtractMetadata(filePath);
 			JsonObject metaObj;
 			if (!string.IsNullOrWhiteSpace(existingMeta))
@@ -1930,6 +1929,25 @@ public static class RealmMetadataHelper
 				metaObj["format"] = ext.TrimStart('.');
 			}
 
+			if (metaObj.TryGetPropertyValue("blake3", out var existingB3) && existingB3 != null)
+			{
+				string existingHashStr = existingB3.ToString();
+				if (!string.IsNullOrEmpty(precomputedCanonicalBlake3) && string.Equals(existingHashStr, precomputedCanonicalBlake3, StringComparison.OrdinalIgnoreCase))
+				{
+					return true;
+				}
+				if (string.IsNullOrEmpty(precomputedCanonicalBlake3))
+				{
+					string canonical = ComputeBlake3(filePath);
+					if (string.Equals(existingHashStr, canonical, StringComparison.OrdinalIgnoreCase))
+					{
+						return true;
+					}
+					precomputedCanonicalBlake3 = canonical;
+				}
+			}
+
+			string canonicalBlake3 = !string.IsNullOrEmpty(precomputedCanonicalBlake3) ? precomputedCanonicalBlake3 : ComputeBlake3(filePath);
 			metaObj["blake3"] = canonicalBlake3;
 			return AddMetadata(filePath, metaObj.ToJsonString());
 		}
@@ -1974,6 +1992,11 @@ public static class RealmMetadataHelper
 				metaObj = new JsonObject();
 				metaObj["created_utc"] = DateTime.UtcNow.ToString("O");
 				metaObj["format"] = ext.TrimStart('.');
+			}
+
+			if (metaObj.TryGetPropertyValue("blake3", out var existingB3) && existingB3 != null && string.Equals(existingB3.ToString(), canonicalBlake3, StringComparison.OrdinalIgnoreCase))
+			{
+				return bytes;
 			}
 
 			metaObj["blake3"] = canonicalBlake3;
