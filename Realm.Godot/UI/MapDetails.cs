@@ -1206,14 +1206,20 @@ public partial class MapDetails : Control
 			: ServersConfigHelper.GetDefaultServerUrl();
 
 		var distClient = new MapDistributionClient();
+		int lastReportedPercent = 0;
 		bool success = await distClient.DownloadMapPackageFromRegistryAsync(
 			_mapData.MapId,
 			seedServerUrl,
 			progress =>
 			{
-				_downloadProgress = progress * 100.0f;
-				UIStyle.ApplyButtonText(_downloadButton, $"Downloading... {(int)_downloadProgress}%", 16);
-				_downloadSubtitle.Text = $"{_downloadProgress:F0}% ({_mapData.FileSize})";
+				int currentPercent = (int)MathF.Round(progress * 100.0f);
+				if (currentPercent != lastReportedPercent)
+				{
+					lastReportedPercent = currentPercent;
+					_downloadProgress = currentPercent;
+					_downloadButton.Text = $"Downloading... {currentPercent}%";
+					_downloadSubtitle.Text = $"{currentPercent}% ({_mapData.FileSize})";
+				}
 			}
 		);
 

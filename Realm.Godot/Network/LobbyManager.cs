@@ -214,17 +214,6 @@ public partial class LobbyManager : Node
 
         LoadServersConfig();
 
-        try
-        {
-            string keyDir = ProjectSettings.GlobalizePath("user://appdata/keys/");
-            var (_, keyData, _, _) = AuthorshipKeyHelper.GetOrGenerateKeyInfo(keyDir, AuthenticatedUsername);
-            if (!string.IsNullOrWhiteSpace(keyData?.UserName))
-            {
-                AuthenticatedUsername = keyData.UserName;
-            }
-        }
-        catch { }
-
 
         Multiplayer.PeerConnected += OnPeerConnected;
         Multiplayer.PeerDisconnected += OnPeerDisconnected;

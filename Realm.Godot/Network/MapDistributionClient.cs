@@ -116,7 +116,11 @@ public class MapDistributionClient
                             DownloadProgressChanged?.Invoke(p);
                         },
                         maximumConcurrency: 6,
-                        cancellationToken: cancellationToken);
+                        cancellationToken: cancellationToken,
+                        onAssetReady: (virtualPath, assetKey, normalizedHash) =>
+                        {
+                            MapAssetManager.ExtractSingleAsset(virtualPath, normalizedHash, localMapDir, isP2P: false);
+                        });
 
                     if (httpSuccess)
                     {

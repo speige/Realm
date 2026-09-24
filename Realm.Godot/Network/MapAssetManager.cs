@@ -265,6 +265,62 @@ public static class MapAssetManager
         return Path.Combine(GetMapDirectory(mapName, version, manifestHash, isP2P), "manifest.json");
     }
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _ensuredDirectories = new(StringComparer.OrdinalIgnoreCase);
+
+    public static bool ExtractSingleAsset(string virtualPath, string hash, string targetDirectory, bool isP2P = false)
+    {
+        if (string.IsNullOrWhiteSpace(virtualPath) || string.IsNullOrWhiteSpace(hash) || string.IsNullOrWhiteSpace(targetDirectory))
+        {
+            return false;
+        }
+
+        string relativePath = virtualPath;
+        if (relativePath.StartsWith("res://", StringComparison.OrdinalIgnoreCase))
+        {
+            relativePath = relativePath.Substring(6);
+        }
+        relativePath = relativePath.TrimStart('/', '\\');
+
+        string norm = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(hash);
+        string destinationFilePath = Path.Combine(targetDirectory, relativePath);
+
+        if (File.Exists(destinationFilePath))
+        {
+            return true;
+        }
+
+        string? destinationDir = Path.GetDirectoryName(destinationFilePath);
+        if (!string.IsNullOrEmpty(destinationDir) && _ensuredDirectories.TryAdd(destinationDir, true))
+        {
+            if (!Directory.Exists(destinationDir))
+            {
+                Directory.CreateDirectory(destinationDir);
+            }
+        }
+
+        string? casFilePath = (isP2P ? P2PStorage.FindAssetFilePath(norm) : Storage.FindAssetFilePath(norm))
+                           ?? Storage.FindAssetFilePath(norm)
+                           ?? P2PStorage.FindAssetFilePath(norm);
+
+        if (casFilePath != null && File.Exists(casFilePath))
+        {
+            return HardLinkHelper.CreateHardLinkOrCopy(destinationFilePath, casFilePath);
+        }
+
+        byte[]? casBytes = (isP2P ? P2PStorage.GetAssetBytes(norm) : Storage.GetAssetBytes(norm))
+                        ?? Storage.GetAssetBytes(norm)
+                        ?? P2PStorage.GetAssetBytes(norm);
+
+        if (casBytes != null)
+        {
+            File.WriteAllBytes(destinationFilePath, casBytes);
+            return true;
+        }
+
+        MapAssetManager.LogErr($"[MapAssetManager] Could not extract {relativePath}: hash {hash} not found in CAS storage.");
+        return false;
+    }
+
     public static void ExtractManifestFiles(MapManifest manifest, string targetDirectory, bool isP2P = false)
     {
         if (manifest == null || manifest.Files == null || string.IsNullOrWhiteSpace(targetDirectory))
@@ -279,52 +335,16 @@ public static class MapAssetManager
 
         try
         {
-            foreach (var kvp in manifest.Files)
+            Parallel.ForEach(manifest.Files, kvp =>
             {
-                string relativePath = kvp.Key;
-                if (relativePath.StartsWith("res://", StringComparison.OrdinalIgnoreCase))
-                {
-                    relativePath = relativePath.Substring(6);
-                }
-                relativePath = relativePath.TrimStart('/', '\\');
-
-                string hash = kvp.Value;
-                string norm = Realm.Shared.Distribution.ContentAddressableStorage.NormalizeBlake3Hash(hash);
-                string destinationFilePath = Path.Combine(targetDirectory, relativePath);
-
-                string? destinationDir = Path.GetDirectoryName(destinationFilePath);
-                if (!string.IsNullOrEmpty(destinationDir) && !Directory.Exists(destinationDir))
-                {
-                    Directory.CreateDirectory(destinationDir);
-                }
-
-                string? casFilePath = (isP2P ? P2PStorage.FindAssetFilePath(norm) : Storage.FindAssetFilePath(norm))
-                                   ?? Storage.FindAssetFilePath(norm)
-                                   ?? P2PStorage.FindAssetFilePath(norm);
-
-                if (casFilePath != null && File.Exists(casFilePath))
-                {
-                    HardLinkHelper.CreateHardLinkOrCopy(destinationFilePath, casFilePath);
-                }
-                else
-                {
-                    byte[]? casBytes = (isP2P ? P2PStorage.GetAssetBytes(norm) : Storage.GetAssetBytes(norm))
-                                    ?? Storage.GetAssetBytes(norm)
-                                    ?? P2PStorage.GetAssetBytes(norm);
-
-                    if (casBytes != null)
-                    {
-                        File.WriteAllBytes(destinationFilePath, casBytes);
-                    }
-                    else
-                    {
-                        MapAssetManager.LogErr($"[MapAssetManager] Could not extract {relativePath}: hash {hash} not found in CAS storage.");
-                    }
-                }
-            }
+                ExtractSingleAsset(kvp.Key, kvp.Value, targetDirectory, isP2P);
+            });
 
             string manifestPath = Path.Combine(targetDirectory, "manifest.json");
-            File.WriteAllText(manifestPath, manifest.ToJson());
+            if (!File.Exists(manifestPath))
+            {
+                File.WriteAllText(manifestPath, manifest.ToJson());
+            }
         }
         catch (Exception ex)
         {

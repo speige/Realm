@@ -7,7 +7,6 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Realm.Shared.Metadata;
 
 namespace Realm.Shared.Distribution;
 
@@ -123,12 +122,6 @@ public class DistributionServer
                 return;
             }
 
-            if (path.Equals("/api/publish_map/upload_asset", StringComparison.OrdinalIgnoreCase) && method == "POST")
-            {
-                await HandleAssetEndpointAsync(context, method, string.Empty);
-                return;
-            }
-
             if (path.Equals("/api/manifests", StringComparison.OrdinalIgnoreCase) || path.StartsWith("/api/manifests/", StringComparison.OrdinalIgnoreCase) || path.Equals("/api/admin/remove_manifest", StringComparison.OrdinalIgnoreCase))
             {
                 await HandleManifestEndpointAsync(context, method, path);
@@ -226,6 +219,15 @@ public class DistributionServer
 
         if (method == "POST")
         {
+            if (!DistributionSharding.SeederAcceptsHash(_seederId, _capacityPercentage, normalizedHash))
+            {
+                response.StatusCode = (int)HttpStatusCode.Forbidden;
+                byte[] rejectionBytes = Encoding.UTF8.GetBytes("Upload rejected: Asset does not match seeder sharding partition.");
+                await response.OutputStream.WriteAsync(rejectionBytes, 0, rejectionBytes.Length);
+                response.Close();
+                return;
+            }
+
             if (!_storage.CheckFreeDiskSpaceAcceptingUploads())
             {
                 response.StatusCode = 507;
@@ -265,20 +267,6 @@ public class DistributionServer
             }
 
             fileExtension ??= ".bin";
-
-            if (string.IsNullOrEmpty(normalizedHash))
-            {
-                normalizedHash = ContentAddressableStorage.NormalizeBlake3Hash(RealmMetadataHelper.ComputeBlake3(assetBytes, fileExtension));
-            }
-
-            if (!DistributionSharding.SeederAcceptsHash(_seederId, _capacityPercentage, normalizedHash))
-            {
-                response.StatusCode = (int)HttpStatusCode.Forbidden;
-                byte[] rejectionBytes = Encoding.UTF8.GetBytes("Upload rejected: Asset does not match seeder sharding partition.");
-                await response.OutputStream.WriteAsync(rejectionBytes, 0, rejectionBytes.Length);
-                response.Close();
-                return;
-            }
 
             var storeResult = _storage.StoreAsset(assetBytes, fileExtension, metadataJson, authorPublicKey, authorSignature);
 

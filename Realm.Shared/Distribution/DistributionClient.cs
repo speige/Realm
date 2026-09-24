@@ -186,19 +186,33 @@ public class DistributionClient
         string? fallbackHostUrl = null,
         Action<float>? progressCallback = null,
         int maximumConcurrency = 4,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<string, string, string>? onAssetReady = null)
     {
         var missingHashes = new List<(string VirtualPath, string AssetKey, string NormalizedHash)>();
+        var existingHashes = new List<(string VirtualPath, string AssetKey, string NormalizedHash)>();
 
         foreach (var filePair in manifest.Files)
         {
             string assetKey = filePair.Value;
             string normalizedHash = ContentAddressableStorage.NormalizeBlake3Hash(assetKey);
 
-            if (!targetStorage.HasAsset(normalizedHash))
+            if (targetStorage.HasAsset(normalizedHash))
+            {
+                existingHashes.Add((filePair.Key, assetKey, normalizedHash));
+            }
+            else
             {
                 missingHashes.Add((filePair.Key, assetKey, normalizedHash));
             }
+        }
+
+        if (existingHashes.Count > 0 && onAssetReady != null)
+        {
+            Parallel.ForEach(existingHashes, item =>
+            {
+                onAssetReady(item.VirtualPath, item.AssetKey, item.NormalizedHash);
+            });
         }
 
         if (missingHashes.Count == 0)
@@ -227,6 +241,7 @@ public class DistributionClient
 
                 if (downloaded)
                 {
+                    onAssetReady?.Invoke(item.VirtualPath, item.AssetKey, item.NormalizedHash);
                     int currentCompleted = Interlocked.Increment(ref completedCount);
                     float progress = (float)currentCompleted / totalMissing;
                     progressCallback?.Invoke(progress);
@@ -378,7 +393,7 @@ public class DistributionClient
                             }
                         }
 
-                        var storeResult = targetStorage.StoreAsset(downloadedBytes, extension, metadataHeader);
+                        var storeResult = targetStorage.StoreAsset(downloadedBytes, extension, metadataHeader, precomputedBlake3: computedBlake3);
                         if (storeResult.Success)
                         {
                             circuit.RecordSuccess();

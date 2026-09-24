@@ -1221,12 +1221,11 @@ app.MapPost("/api/publish_map/finalize", (PublishMapFinalizeRequest req, DataSto
 
         if (missingHashes.Count > 0)
         {
-            string sampleMissing = string.Join(", ", missingHashes.Take(5));
             return Results.BadRequest(new PublishMapFinalizeResponse
             {
                 Success = false,
                 Status = "MissingAssets",
-                Message = $"Cannot finalize publish: {missingHashes.Count} assets are still missing on the server (e.g. {sampleMissing})."
+                Message = $"Cannot finalize publish: {missingHashes.Count} assets are still missing on the server."
             });
         }
 
@@ -1953,23 +1952,10 @@ app.MapPost("/api/publish_map/upload_asset", async (HttpRequest request, DataSto
     string mapVersion = form.TryGetValue("MapVersion", out var mv) ? mv.ToString() : "1.0";
     string sessionId = form.TryGetValue("SessionId", out var sid) ? sid.ToString() : "";
     
-    if (!string.IsNullOrEmpty(sessionId))
-    {
-        var sessionDoc = db.Get<JsonDocument>("publish_sessions", sessionId);
-        if (sessionDoc == null)
-        {
-            return Results.Json(new { Message = "Invalid or expired publish session." }, statusCode: StatusCodes.Status403Forbidden);
-        }
-    }
-    else if (!string.IsNullOrEmpty(mapTitle))
+    if (!string.IsNullOrEmpty(mapTitle))
     {
         string compositeKey = $"{mapTitle}_{(string.IsNullOrEmpty(mapVersion) ? "1.0" : mapVersion)}";
-        string authorStatsKey = !string.IsNullOrEmpty(publicKey) ? $"{mapTitle}_{mapVersion}_{publicKey}" : compositeKey;
-        var mapLevelStats = db.Get<MapStats>("map_stats", mapTitle);
-        var stats = db.Get<MapStats>("map_stats", authorStatsKey)
-            ?? (!string.IsNullOrEmpty(publicKey) ? db.Get<MapStats>("map_stats", $"{mapTitle}_{publicKey}") : null)
-            ?? db.Get<MapStats>("map_stats", compositeKey)
-            ?? mapLevelStats;
+        var stats = db.Get<MapStats>("map_stats", compositeKey) ?? db.Get<MapStats>("map_stats", mapTitle);
         if (stats == null || !stats.IsGreenlit)
         {
             return Results.Json(new { Message = $"Cannot upload asset: map '{mapTitle}' is not greenlit." }, statusCode: StatusCodes.Status403Forbidden);
@@ -2008,10 +1994,16 @@ app.MapPost("/api/publish_map/upload_asset", async (HttpRequest request, DataSto
         await file.CopyToAsync(ms);
         byte[] fileBytes = ms.ToArray();
         string ext = Path.GetExtension(file.FileName);
-        var storeResult = cas.StoreAsset(fileBytes, ext, null, publicKey, signature);
-        if (!storeResult.Success)
+        cas.StoreAsset(fileBytes, ext, null, publicKey, signature);
+
+        string archiveDir = ".data/assets";
+        if (!Directory.Exists(archiveDir))
+            Directory.CreateDirectory(archiveDir);
+            
+        string filePath = Path.Combine(archiveDir, hash);
+        if (!File.Exists(filePath))
         {
-            return Results.BadRequest(new { Message = storeResult.Message, Hash = hash });
+            await File.WriteAllBytesAsync(filePath, fileBytes);
         }
     }
     

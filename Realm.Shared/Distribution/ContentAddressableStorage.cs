@@ -16,6 +16,7 @@ public class ContentAddressableStorage
     private readonly string _assetsDirectory;
     private readonly string _sidecarCacheDirectory;
     private readonly ConcurrentDictionary<string, object> _fileLocks = new();
+    private readonly ConcurrentDictionary<string, string> _assetPathCache = new(StringComparer.OrdinalIgnoreCase);
 
     public string RootDirectory => _rootDirectory;
     public string AssetsDirectory => _assetsDirectory;
@@ -46,6 +47,11 @@ public class ContentAddressableStorage
             return null;
         }
 
+        if (_assetPathCache.TryGetValue(normalizedHash, out string? cachedPath) && File.Exists(cachedPath))
+        {
+            return cachedPath;
+        }
+
         string shardDirectory = Path.Combine(_assetsDirectory, normalizedHash.Substring(0, 2));
         if (!Directory.Exists(shardDirectory))
         {
@@ -55,7 +61,9 @@ public class ContentAddressableStorage
         string[] matchingFiles = Directory.GetFiles(shardDirectory, $"{normalizedHash}*");
         if (matchingFiles.Length > 0)
         {
-            return matchingFiles[0];
+            string foundPath = matchingFiles[0];
+            _assetPathCache[normalizedHash] = foundPath;
+            return foundPath;
         }
 
         return null;
@@ -150,7 +158,8 @@ public class ContentAddressableStorage
         string? fileExtensionOrPath,
         string? metadataHeadersJson = null,
         string? authorPublicKey = null,
-        string? authorSignature = null)
+        string? authorSignature = null,
+        string? precomputedBlake3 = null)
     {
         if (assetBytes == null || assetBytes.Length == 0)
         {
@@ -163,7 +172,9 @@ public class ContentAddressableStorage
         }
 
         string extension = Path.GetExtension(fileExtensionOrPath ?? string.Empty).ToLowerInvariant();
-        string canonicalBlake3 = RealmMetadataHelper.ComputeBlake3(assetBytes, extension);
+        string canonicalBlake3 = !string.IsNullOrEmpty(precomputedBlake3)
+            ? precomputedBlake3
+            : RealmMetadataHelper.ComputeBlake3(assetBytes, extension);
         string normalizedHash = NormalizeBlake3Hash(canonicalBlake3);
 
         object fileLock = _fileLocks.GetOrAdd(normalizedHash, _ => new object());
@@ -180,6 +191,7 @@ public class ContentAddressableStorage
                     merged = UpdateExistingAssetHeaders(existingFilePath, normalizedHash, metadataHeadersJson, authorPublicKey, authorSignature);
                 }
 
+                _assetPathCache[normalizedHash] = existingFilePath;
                 return (true, "Asset already exists (deduplicated).", true, merged, normalizedHash);
             }
 
@@ -189,7 +201,10 @@ public class ContentAddressableStorage
             }
 
             string shardDirectory = Path.Combine(_assetsDirectory, normalizedHash.Substring(0, 2));
-            Directory.CreateDirectory(shardDirectory);
+            if (!Directory.Exists(shardDirectory))
+            {
+                Directory.CreateDirectory(shardDirectory);
+            }
 
             string finalExtension = !string.IsNullOrEmpty(extension) ? extension : ".bin";
             string finalFilePath = Path.Combine(shardDirectory, $"{normalizedHash}{finalExtension}");
@@ -205,8 +220,13 @@ public class ContentAddressableStorage
 
             File.WriteAllBytes(temporaryFilePath, bytesToWrite);
             File.Move(temporaryFilePath, finalFilePath, true);
+            _assetPathCache[normalizedHash] = finalFilePath;
 
-            string? finalMetadata = metadataToEmbed ?? RealmMetadataHelper.ExtractMetadata(finalFilePath);
+            string? finalMetadata = metadataToEmbed;
+            if (finalMetadata == null && (extension == ".rmesh" || extension == ".ranim"))
+            {
+                finalMetadata = RealmMetadataHelper.ExtractMetadata(finalFilePath);
+            }
             if (!string.IsNullOrWhiteSpace(finalMetadata))
             {
                 UpdateSidecarCache(normalizedHash, finalMetadata);
@@ -314,7 +334,10 @@ public class ContentAddressableStorage
     private string GetSidecarCachePath(string normalizedHash)
     {
         string shardDirectory = Path.Combine(_sidecarCacheDirectory, normalizedHash.Substring(0, 2));
-        Directory.CreateDirectory(shardDirectory);
+        if (!Directory.Exists(shardDirectory))
+        {
+            Directory.CreateDirectory(shardDirectory);
+        }
         return Path.Combine(shardDirectory, $"{normalizedHash}.json");
     }
 
@@ -323,6 +346,10 @@ public class ContentAddressableStorage
         try
         {
             string path = GetSidecarCachePath(normalizedHash);
+            if (File.Exists(path))
+            {
+                return;
+            }
             File.WriteAllText(path, metadataJson, Encoding.UTF8);
         }
         catch

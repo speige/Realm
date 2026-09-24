@@ -3708,7 +3708,7 @@ public partial class MapEditorHUD : Control
 	}
 
 
-	private (NSec.Cryptography.Key Key, string UserName) GetAuthorshipKeyAndUsername()
+	private NSec.Cryptography.Key GetOrGenerateAuthorshipKey()
 	{
 		string keyDir = ProjectSettings.GlobalizePath("user://appdata/keys/");
 		string defaultUsername = LobbyManager.Instance?.AuthenticatedUsername ?? string.Empty;
@@ -3717,13 +3717,7 @@ public partial class MapEditorHUD : Control
 		{
 			ShowFeedback(TranslationServer.Translate("A new authorship key has been generated at ") + keyPath + TranslationServer.Translate(". Please backup this file to retain your authorship identity."));
 		}
-		string username = !string.IsNullOrWhiteSpace(data?.UserName) ? data.UserName : (!string.IsNullOrWhiteSpace(defaultUsername) ? defaultUsername : "MapAuthor");
-		return (key, username);
-	}
-
-	private NSec.Cryptography.Key GetOrGenerateAuthorshipKey()
-	{
-		return GetAuthorshipKeyAndUsername().Key;
+		return key;
 	}
 
 	private void ShowGreenlightStatusDialog(string mapTitle, string mapVersion, int verifiedGoodReviews, int totalReviews, double averageRating, bool isGreenlit)
@@ -4125,7 +4119,8 @@ public partial class MapEditorHUD : Control
 			statusLabel.Text = TranslationServer.Translate("Generating manifest & indexing asset hashes...");
 			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 
-			var (authorshipKey, currentUsername) = GetAuthorshipKeyAndUsername();
+			var authorshipKey = GetOrGenerateAuthorshipKey();
+			string currentUsername = LobbyManager.Instance?.AuthenticatedUsername ?? "MapAuthor";
 			string pubKeyBase64 = Convert.ToBase64String(authorshipKey.PublicKey.Export(KeyBlobFormat.RawPublicKey));
 
 			if (System.IO.File.Exists(activeConfigPath))
@@ -4192,39 +4187,46 @@ public partial class MapEditorHUD : Control
 				}
 
 				int totalMissing = initRes.MissingHashes.Count;
-				var (uploadSuccess, failedAsset, uploadError) = await distClient.UploadMissingAssetsMultiThreadedAsync(
-					workspace,
-					initRes.MissingHashes,
-					hashToRelativePath,
-					currentUsername,
-					pubKeyBase64,
-					authorshipKey,
-					mapTitle,
-					mapVersion,
-					initRes.SessionId,
-					(done, total, fileName) =>
-					{
-						Callable.From(() =>
-						{
-							if (GodotObject.IsInstanceValid(progressBar) && GodotObject.IsInstanceValid(statusLabel))
-							{
-								float fraction = total > 0 ? (float)done / total : 1.0f;
-								progressBar.Value = 70 + fraction * 25;
-								statusLabel.Text = string.Format(TranslationServer.Translate("Uploading asset {0}/{1}: {2}..."), done, total, fileName);
-							}
-						}).CallDeferred();
-					},
-					maximumConcurrency: 8
-				);
+				int uploadedCount = 0;
 
-				if (!uploadSuccess)
+				foreach (var missingHash in initRes.MissingHashes)
 				{
-					progressBar.Value = 100;
-					statusLabel.Text = "❌ " + string.Format(TranslationServer.Translate("Failed to upload asset: {0}"), failedAsset ?? uploadError ?? "Unknown error");
-					statusLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.3f, 0.3f));
-					closeBtn.Visible = true;
-					ShowFeedback($"Failed to upload asset: {failedAsset} ({uploadError})");
-					return;
+					uploadedCount++;
+					if (!hashToRelativePath.TryGetValue(missingHash, out var relPath)) continue;
+					string fullFilePath = System.IO.Path.Combine(workspace, relPath);
+					if (!System.IO.File.Exists(fullFilePath)) continue;
+
+					float fraction = (float)uploadedCount / totalMissing;
+					progressBar.Value = 70 + fraction * 25;
+					statusLabel.Text = string.Format(TranslationServer.Translate("Uploading asset {0}/{1}: {2}..."), uploadedCount, totalMissing, System.IO.Path.GetFileName(fullFilePath));
+					await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+
+					byte[] fileBytes = System.IO.File.ReadAllBytes(fullFilePath);
+					byte[] hashBytes = System.Text.Encoding.UTF8.GetBytes(missingHash);
+					byte[] signatureBytes = SignatureAlgorithm.Ed25519.Sign(authorshipKey, hashBytes);
+					string signatureStr = Convert.ToBase64String(signatureBytes);
+
+					bool uploaded = await distClient.UploadMissingAssetAsync(
+						missingHash,
+						fileBytes,
+						System.IO.Path.GetFileName(fullFilePath),
+						currentUsername,
+						pubKeyBase64,
+						signatureStr,
+						mapTitle,
+						mapVersion,
+						initRes.SessionId
+					);
+
+					if (!uploaded)
+					{
+						progressBar.Value = 100;
+						statusLabel.Text = "❌ " + string.Format(TranslationServer.Translate("Failed to upload asset: {0}"), relPath);
+						statusLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.3f, 0.3f));
+						closeBtn.Visible = true;
+						ShowFeedback($"Failed to upload asset: {relPath}");
+						return;
+					}
 				}
 			}
 
@@ -9385,7 +9387,7 @@ public partial class MapEditorHUD : Control
 				catch { }
 			}
 
-			var (_, author) = GetAuthorshipKeyAndUsername();
+			string author = LobbyManager.Instance?.AuthenticatedUsername ?? "MapAuthor";
 			var manifest = MapManifest.CreateFromDirectory(_tempWorkspacePath, mapTitle, author, mapVersion);
 			string manifestJsonPath = System.IO.Path.Combine(_tempWorkspacePath, "manifest.json");
 			System.IO.File.WriteAllText(manifestJsonPath, manifest.ToJson());
@@ -9972,7 +9974,7 @@ public partial class MapEditorHUD : Control
 			{
 				string mapTitle = GetMapNameFromMetadata();
 				string mapVersion = GetMapVersionFromMetadata();
-				var (_, author) = GetAuthorshipKeyAndUsername();
+				string author = LobbyManager.Instance?.AuthenticatedUsername ?? "MapAuthor";
 				var manifest = MapManifest.CreateFromDirectory(workspacePath, mapTitle, author, mapVersion);
 				return manifest.ComputeManifestBlake3();
 			}
