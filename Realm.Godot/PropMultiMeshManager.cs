@@ -557,9 +557,58 @@ public partial class PropMultiMeshManager : Node3D
 		return group.SubMeshes.Count > 0 ? group : null;
 	}
 
+	public bool HasGroups => _groups.Count > 0;
+
 	public void UpdateMaterialOverrides(string normAssetKey)
 	{
 		UpdateMaterialOverridesForAsset(normAssetKey);
+	}
+
+	public void UpdateAllMaterialOverrides()
+	{
+		if (GameHost.Instance == null || _groups.Count == 0) return;
+
+		foreach (var group in _groups.Values)
+		{
+			if (group == null) continue;
+
+			float brightness = GameHost.Instance.GetModelBrightness(group.AssetKey);
+			Color tint = GameHost.Instance.GetModelColorTint(group.AssetKey);
+			bool ignorePlayerColor = GameHost.Instance.GetModelIgnorePlayerColor(group.AssetKey);
+			bool normalizeLuminance = GameHost.Instance.GetModelNormalizeLuminance(group.AssetKey);
+
+			foreach (var chunkGroup in group.ChunkGroups.Values)
+			{
+				for (int i = 0; i < group.SubMeshes.Count && i < chunkGroup.MultiMeshNodes.Count; i++)
+				{
+					var subInfo = group.SubMeshes[i];
+					var mmNode = chunkGroup.MultiMeshNodes[i];
+
+					if (subInfo.Mesh != null && mmNode.Multimesh != null && mmNode.Multimesh.Mesh != subInfo.Mesh)
+					{
+						mmNode.Multimesh.Mesh = subInfo.Mesh;
+					}
+
+					Material baseMatToUse = subInfo.MaterialOverride;
+					if (baseMatToUse == null && subInfo.SurfaceMaterials != null && subInfo.SurfaceMaterials.Length > 0)
+					{
+						baseMatToUse = subInfo.SurfaceMaterials[0];
+					}
+
+					if (baseMatToUse != null)
+					{
+						var shaderMat = Realm.Godot.Utils.ModelShaderManager.GetOrCreateShaderMaterial(baseMatToUse, normalizeLuminance);
+						mmNode.MaterialOverride = shaderMat;
+						mmNode.SetInstanceShaderParameter(_snModelBrightness, brightness);
+						mmNode.SetInstanceShaderParameter(_snModelColorTint, tint);
+						mmNode.SetInstanceShaderParameter(_snIgnorePlayerColor, ignorePlayerColor ? 1.0f : 0.0f);
+						mmNode.SetInstanceShaderParameter(_snUnitAmbientBoost, 0.0f);
+						mmNode.SetInstanceShaderParameter(_snUnitRimIntensity, 0.0f);
+						mmNode.SetInstanceShaderParameter(_snHideInShroud, 1.0f);
+					}
+				}
+			}
+		}
 	}
 
 	public void UpdateMaterialOverridesForAsset(string normAssetKey)

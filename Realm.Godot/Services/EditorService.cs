@@ -2986,10 +2986,7 @@ public class EditorService
 	{
 		try
 		{
-			string dir = Path.GetDirectoryName(fullPath);
 			string name = Path.GetFileName(fullPath);
-			GameHost.Instance?.LoadUnitMetadata(dir);
-			GameHost.Instance?.LoadModelYOffsetsFromMetadataJson(dir);
 			MapEditorHUD.Instance?.ReadMetadataAndRefreshTextures();
 			MapEditorHUD.Instance?.ShowFeedback(string.Format(TranslationServer.Translate("{0} updated externally — reloaded."), name));
 			customCallback?.Invoke();

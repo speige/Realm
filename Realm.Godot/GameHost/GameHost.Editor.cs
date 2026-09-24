@@ -769,18 +769,14 @@ public partial class GameHost
 		if (key.Contains("/props/", StringComparison.OrdinalIgnoreCase) || key.Contains("\\props\\", StringComparison.OrdinalIgnoreCase) || key.StartsWith("props/", StringComparison.OrdinalIgnoreCase)) return true;
 		if (key.Contains("/resources/", StringComparison.OrdinalIgnoreCase) || key.Contains("\\resources\\", StringComparison.OrdinalIgnoreCase) || key.StartsWith("resources/", StringComparison.OrdinalIgnoreCase)) return true;
 
-		string resolved = ModelCache.ResolveModelPath(key);
+		if (norm.Contains("/props/", StringComparison.OrdinalIgnoreCase) || norm.Contains("\\props\\", StringComparison.OrdinalIgnoreCase) || norm.StartsWith("props/", StringComparison.OrdinalIgnoreCase)) return true;
+		if (norm.Contains("/resources/", StringComparison.OrdinalIgnoreCase) || norm.Contains("\\resources\\", StringComparison.OrdinalIgnoreCase) || norm.StartsWith("resources/", StringComparison.OrdinalIgnoreCase)) return true;
+
+		string resolved = ModelCache.ResolveModelPath(norm);
 		if (!string.IsNullOrEmpty(resolved))
 		{
 			if (resolved.Contains("/props/", StringComparison.OrdinalIgnoreCase) || resolved.Contains("\\props\\", StringComparison.OrdinalIgnoreCase)) return true;
 			if (resolved.Contains("/resources/", StringComparison.OrdinalIgnoreCase) || resolved.Contains("\\resources\\", StringComparison.OrdinalIgnoreCase)) return true;
-		}
-
-		string resolvedNorm = ModelCache.ResolveModelPath(norm);
-		if (!string.IsNullOrEmpty(resolvedNorm))
-		{
-			if (resolvedNorm.Contains("/props/", StringComparison.OrdinalIgnoreCase) || resolvedNorm.Contains("\\props\\", StringComparison.OrdinalIgnoreCase)) return true;
-			if (resolvedNorm.Contains("/resources/", StringComparison.OrdinalIgnoreCase) || resolvedNorm.Contains("\\resources\\", StringComparison.OrdinalIgnoreCase)) return true;
 		}
 
 		return false;
@@ -805,20 +801,16 @@ public partial class GameHost
 		if (key.Contains("/weapons/", StringComparison.OrdinalIgnoreCase) || key.Contains("\\weapons\\", StringComparison.OrdinalIgnoreCase) || key.StartsWith("weapons/", StringComparison.OrdinalIgnoreCase)) return true;
 		if (key.Contains("/items/", StringComparison.OrdinalIgnoreCase) || key.Contains("\\items\\", StringComparison.OrdinalIgnoreCase) || key.StartsWith("items/", StringComparison.OrdinalIgnoreCase)) return true;
 
-		string resolved = ModelCache.ResolveModelPath(key);
+		if (norm.Contains("/attachments/", StringComparison.OrdinalIgnoreCase) || norm.Contains("\\attachments\\", StringComparison.OrdinalIgnoreCase) || norm.StartsWith("attachments/", StringComparison.OrdinalIgnoreCase)) return true;
+		if (norm.Contains("/weapons/", StringComparison.OrdinalIgnoreCase) || norm.Contains("\\weapons\\", StringComparison.OrdinalIgnoreCase) || norm.StartsWith("weapons/", StringComparison.OrdinalIgnoreCase)) return true;
+		if (norm.Contains("/items/", StringComparison.OrdinalIgnoreCase) || norm.Contains("\\items\\", StringComparison.OrdinalIgnoreCase) || norm.StartsWith("items/", StringComparison.OrdinalIgnoreCase)) return true;
+
+		string resolved = ModelCache.ResolveModelPath(norm);
 		if (!string.IsNullOrEmpty(resolved))
 		{
 			if (resolved.Contains("/attachments/", StringComparison.OrdinalIgnoreCase) || resolved.Contains("\\attachments\\", StringComparison.OrdinalIgnoreCase)) return true;
 			if (resolved.Contains("/weapons/", StringComparison.OrdinalIgnoreCase) || resolved.Contains("\\weapons\\", StringComparison.OrdinalIgnoreCase)) return true;
 			if (resolved.Contains("/items/", StringComparison.OrdinalIgnoreCase) || resolved.Contains("\\items\\", StringComparison.OrdinalIgnoreCase)) return true;
-		}
-
-		string resolvedNorm = ModelCache.ResolveModelPath(norm);
-		if (!string.IsNullOrEmpty(resolvedNorm))
-		{
-			if (resolvedNorm.Contains("/attachments/", StringComparison.OrdinalIgnoreCase) || resolvedNorm.Contains("\\attachments\\", StringComparison.OrdinalIgnoreCase)) return true;
-			if (resolvedNorm.Contains("/weapons/", StringComparison.OrdinalIgnoreCase) || resolvedNorm.Contains("\\weapons\\", StringComparison.OrdinalIgnoreCase)) return true;
-			if (resolvedNorm.Contains("/items/", StringComparison.OrdinalIgnoreCase) || resolvedNorm.Contains("\\items\\", StringComparison.OrdinalIgnoreCase)) return true;
 		}
 
 		return false;
@@ -852,8 +844,8 @@ public partial class GameHost
 			if (AttachmentRegistry.TryGetValue(normAsset, out _)) return true;
 		}
 
-		if (objOrId is Prop3D || IsPropOrResourceKey(primaryKey) || IsPropOrResourceKey(normPrimary) || IsPropOrResourceKey(assetKey) || IsPropOrResourceKey(normAsset)
-			|| IsAttachmentKey(primaryKey) || IsAttachmentKey(normPrimary) || IsAttachmentKey(assetKey) || IsAttachmentKey(normAsset))
+		if (objOrId is Prop3D || IsPropOrResourceKey(normPrimary) || (!string.IsNullOrEmpty(normAsset) && !string.Equals(normAsset, normPrimary, StringComparison.OrdinalIgnoreCase) && IsPropOrResourceKey(normAsset))
+			|| IsAttachmentKey(normPrimary) || (!string.IsNullOrEmpty(normAsset) && !string.Equals(normAsset, normPrimary, StringComparison.OrdinalIgnoreCase) && IsAttachmentKey(normAsset)))
 		{
 			return true;
 		}
@@ -924,6 +916,10 @@ public partial class GameHost
 	public void UpdateMaterialOverridesForAsset(string normAssetKey)
 	{
 		if (string.IsNullOrEmpty(normAssetKey)) return;
+		if (AllProps.Count == 0 && AllUnits.Count == 0 && _editorPreviewNode == null && (PropMultiMeshManager.Instance == null || !PropMultiMeshManager.Instance.HasGroups))
+		{
+			return;
+		}
 
 		float brightness = GetModelBrightness(normAssetKey);
 		Color tint = GetModelColorTint(normAssetKey);
@@ -950,8 +946,63 @@ public partial class GameHost
 			}
 		}
 
+		if (_editorPreviewNode != null && GodotObject.IsInstanceValid(_editorPreviewNode) && MatchesEntityOrAssetKey(_editorPreviewNode, normAssetKey))
+		{
+			ApplyMaterialOverridesToNode(_editorPreviewNode, brightness, tint, normalizeLuminance, ignorePlayerColor, _editorPreviewNode is Unit3D);
+		}
+
 		PropMultiMeshManager.Instance?.UpdateMaterialOverrides(normAssetKey);
 		PropMultiMeshManager.Instance?.MarkDirty(normAssetKey);
+	}
+
+	public void UpdateAllMaterialOverrides()
+	{
+		if (AllProps.Count == 0 && AllUnits.Count == 0 && _editorPreviewNode == null && (PropMultiMeshManager.Instance == null || !PropMultiMeshManager.Instance.HasGroups))
+		{
+			return;
+		}
+
+		foreach (var prop in AllProps)
+		{
+			if (GodotObject.IsInstanceValid(prop))
+			{
+				string assetKey = GetModelAssetKey(prop);
+				float brightness = GetModelBrightness(assetKey);
+				Color tint = GetModelColorTint(assetKey);
+				bool ignorePlayerColor = GetModelIgnorePlayerColor(assetKey);
+				bool normalizeLuminance = GetModelNormalizeLuminance(assetKey);
+				ApplyMaterialOverridesToNode(prop, brightness, tint, normalizeLuminance, ignorePlayerColor, false);
+			}
+		}
+
+		foreach (var unit in AllUnits)
+		{
+			if (GodotObject.IsInstanceValid(unit))
+			{
+				string assetKey = GetModelAssetKey(unit);
+				float brightness = GetModelBrightness(assetKey);
+				Color tint = GetModelColorTint(assetKey);
+				bool ignorePlayerColor = GetModelIgnorePlayerColor(assetKey);
+				bool normalizeLuminance = GetModelNormalizeLuminance(assetKey);
+				ApplyMaterialOverridesToNode(unit, brightness, tint, normalizeLuminance, ignorePlayerColor, true);
+				if (!ignorePlayerColor)
+				{
+					unit.UpdatePlayerColorVisual();
+				}
+			}
+		}
+
+		if (_editorPreviewNode != null && GodotObject.IsInstanceValid(_editorPreviewNode))
+		{
+			string assetKey = GetModelAssetKey(_editorPreviewNode);
+			float brightness = GetModelBrightness(assetKey);
+			Color tint = GetModelColorTint(assetKey);
+			bool ignorePlayerColor = GetModelIgnorePlayerColor(assetKey);
+			bool normalizeLuminance = GetModelNormalizeLuminance(assetKey);
+			ApplyMaterialOverridesToNode(_editorPreviewNode, brightness, tint, normalizeLuminance, ignorePlayerColor, _editorPreviewNode is Unit3D);
+		}
+
+		PropMultiMeshManager.Instance?.UpdateAllMaterialOverrides();
 	}
 
 	public void ApplyAllGlobalOverridesToObject(object objOrNode)
@@ -1367,15 +1418,9 @@ public partial class GameHost
 								{
 									ModelIgnorePlayerColor[normKey] = true;
 								}
-								else
+								else if (!ModelIgnorePlayerColor.ContainsKey(normKey))
 								{
-									var modelNode = ModelCache.GetModel(normKey) as Node;
-									if (modelNode != null && !ModelShaderManager.ModelHasPlayerMask(modelNode))
-									{
-										ModelIgnorePlayerColor[normKey] = true;
-										_modelYOffsetSavePending = true;
-										EditorHasUnsavedChanges = true;
-									}
+									ModelIgnorePlayerColor[normKey] = false;
 								}
 
 								string itemSpawn = itemObj["spawn_shader"]?.ToString() ?? itemObj["SpawnShader"]?.ToString();
@@ -1449,15 +1494,7 @@ public partial class GameHost
 				}
 			}
 
-			foreach (var key in ModelBrightness.Keys
-				.Concat(ModelColorTint.Keys)
-				.Concat(ModelDespillPlayerColor.Keys)
-				.Concat(ModelNormalizeLuminance.Keys)
-				.Concat(ModelIgnorePlayerColor.Keys)
-				.Distinct())
-			{
-				UpdateMaterialOverridesForAsset(key);
-			}
+			UpdateAllMaterialOverrides();
 		}
 		catch (Exception ex)
 		{

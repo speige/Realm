@@ -3152,18 +3152,14 @@ public partial class MapEditorHUD : Control
 	{
 		if (string.IsNullOrEmpty(relativePath)) return false;
 		string normalized = relativePath.Replace('\\', '/');
-		string[] parts = normalized.Split('/');
-		foreach (var part in parts)
+		if (normalized.StartsWith(".git/", StringComparison.OrdinalIgnoreCase) || normalized.Contains("/.git/", StringComparison.OrdinalIgnoreCase) || normalized.Equals(".git", StringComparison.OrdinalIgnoreCase) ||
+			normalized.StartsWith(".vs/", StringComparison.OrdinalIgnoreCase) || normalized.Contains("/.vs/", StringComparison.OrdinalIgnoreCase) || normalized.Equals(".vs", StringComparison.OrdinalIgnoreCase) ||
+			normalized.StartsWith(".godot/", StringComparison.OrdinalIgnoreCase) || normalized.Contains("/.godot/", StringComparison.OrdinalIgnoreCase) || normalized.Equals(".godot", StringComparison.OrdinalIgnoreCase) ||
+			normalized.StartsWith(".idea/", StringComparison.OrdinalIgnoreCase) || normalized.Contains("/.idea/", StringComparison.OrdinalIgnoreCase) || normalized.Equals(".idea", StringComparison.OrdinalIgnoreCase) ||
+			normalized.StartsWith("bin/", StringComparison.OrdinalIgnoreCase) || normalized.Contains("/bin/", StringComparison.OrdinalIgnoreCase) || normalized.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
+			normalized.StartsWith("obj/", StringComparison.OrdinalIgnoreCase) || normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase) || normalized.Equals("obj", StringComparison.OrdinalIgnoreCase))
 		{
-			if (part.Equals(".git", StringComparison.OrdinalIgnoreCase) ||
-				part.Equals(".vs", StringComparison.OrdinalIgnoreCase) ||
-				part.Equals(".godot", StringComparison.OrdinalIgnoreCase) ||
-				part.Equals(".idea", StringComparison.OrdinalIgnoreCase) ||
-				part.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
-				part.Equals("obj", StringComparison.OrdinalIgnoreCase))
-			{
-				return true;
-			}
+			return true;
 		}
 		return false;
 	}
@@ -3204,19 +3200,29 @@ public partial class MapEditorHUD : Control
 			System.IO.Directory.CreateDirectory(_tempWorkspacePath);
 		}
 		
-		foreach (var file in System.IO.Directory.GetFiles(sourceFolder, "*", System.IO.SearchOption.AllDirectories))
+		var allFiles = System.IO.Directory.GetFiles(sourceFolder, "*", System.IO.SearchOption.AllDirectories);
+		var filesToCopy = new List<(string Source, string Target)>(allFiles.Length);
+		var createdDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		foreach (var file in allFiles)
 		{
 			string relativePath = file.Substring(sourceFolder.Length + 1);
 			if (IsIgnoredPath(relativePath)) continue;
 
 			string targetFile = System.IO.Path.Combine(_tempWorkspacePath, relativePath);
 			string targetDir = System.IO.Path.GetDirectoryName(targetFile);
-			if (!string.IsNullOrEmpty(targetDir) && !System.IO.Directory.Exists(targetDir))
+			if (!string.IsNullOrEmpty(targetDir) && createdDirs.Add(targetDir))
 			{
 				System.IO.Directory.CreateDirectory(targetDir);
 			}
-			CopyFileClearingReadOnly(file, targetFile);
+			filesToCopy.Add((file, targetFile));
 		}
+
+		System.Threading.Tasks.Parallel.ForEach(filesToCopy, pair =>
+		{
+			CopyFileClearingReadOnly(pair.Source, pair.Target);
+		});
+
 		MapWorkspaceService.EnsureWitFile(_tempWorkspacePath);
 		MapWorkspaceService.EnsureWasmEntryPoint(_tempWorkspacePath);
 		MapWorkspaceService.EnsureCsproj(_tempWorkspacePath, System.IO.Path.GetFileName(sourceFolder));
@@ -3230,22 +3236,29 @@ public partial class MapEditorHUD : Control
 		}
 		
 		string tempTerrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
-
-
 		_lastTerrainSyncTime = GetMaxTerrainWriteTime(tempTerrainPath);
 
-		foreach (var file in System.IO.Directory.GetFiles(_tempWorkspacePath, "*", System.IO.SearchOption.AllDirectories))
+		var allFiles = System.IO.Directory.GetFiles(_tempWorkspacePath, "*", System.IO.SearchOption.AllDirectories);
+		var filesToCopy = new List<(string Source, string Target)>(allFiles.Length);
+		var createdDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		foreach (var file in allFiles)
 		{
 			string relativePath = file.Substring(_tempWorkspacePath.Length + 1);
 			if (IsIgnoredPath(relativePath)) continue;
 			string targetFile = System.IO.Path.Combine(targetFolder, relativePath);
 			string targetDir = System.IO.Path.GetDirectoryName(targetFile);
-			if (!string.IsNullOrEmpty(targetDir) && !System.IO.Directory.Exists(targetDir))
+			if (!string.IsNullOrEmpty(targetDir) && createdDirs.Add(targetDir))
 			{
 				System.IO.Directory.CreateDirectory(targetDir);
 			}
-			CopyFileClearingReadOnly(file, targetFile);
+			filesToCopy.Add((file, targetFile));
 		}
+
+		System.Threading.Tasks.Parallel.ForEach(filesToCopy, pair =>
+		{
+			CopyFileClearingReadOnly(pair.Source, pair.Target);
+		});
 		
 		if (OperatingSystem.IsWindows())
 		{
@@ -3586,14 +3599,23 @@ public partial class MapEditorHUD : Control
 			return false;
 		}
 
-		_lastUsedFolder = selectedFolder;
-		_currentSourceFolder = selectedFolder;
-
-		ShowFeedback(TranslationServer.Translate("Loading map..."));
-		await System.Threading.Tasks.Task.Run(() => CopyFolderToTempWorkspace(selectedFolder));
-
+		_isSyncing = true;
 		try
 		{
+			ModelCache.Clear();
+			PathUtils.ClearCache();
+
+			_lastUsedFolder = selectedFolder;
+			_currentSourceFolder = selectedFolder;
+
+			ShowFeedback(TranslationServer.Translate("Loading map..."));
+			await System.Threading.Tasks.Task.Run(() => CopyFolderToTempWorkspace(selectedFolder));
+
+			string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+			string metadataPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
+			_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
+			_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
+
 			await MapWorkspaceService.EnsureGlbAssetsOptimizedCooperativeAsync(_tempWorkspacePath, async (current, total, fileName) =>
 			{
 				ShowFeedback(string.Format(TranslationServer.Translate("Optimizing 3D asset {0}/{1}: {2}..."), current, total, fileName));
@@ -3608,7 +3630,6 @@ public partial class MapEditorHUD : Control
 
 			LoadMapProperties();
 			ReadMetadataAndRefreshTextures();
-			string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
 			bool success = GameHost.Instance?.LoadMapFromFile(terrainPath, ensureGlbOptimized: false) ?? false;
 
 			if (success)
@@ -3618,7 +3639,7 @@ public partial class MapEditorHUD : Control
 					VSCodeManager.Instance.SaveRecentMapDir(selectedFolder);
 				}
 				_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
-				_lastMetadataSyncTime = GetLastWriteTimeSafe(System.IO.Path.Combine(_tempWorkspacePath, "metadata.json"));
+				_lastMetadataSyncTime = GetLastWriteTimeSafe(metadataPath);
 				_editorService?.StartWorkspaceWatcher(_tempWorkspacePath);
 				ShowFeedback(string.Format(TranslationServer.Translate("Map loaded successfully from folder {0}!"), System.IO.Path.GetFileName(selectedFolder)));
 				SaveCurrentDirectoryBlake3();
@@ -3634,6 +3655,10 @@ public partial class MapEditorHUD : Control
 		{
 			GD.PrintErr($"[MapEditorHUD] Failed to load map folder: {ex.Message}");
 			return false;
+		}
+		finally
+		{
+			_isSyncing = false;
 		}
 	}
 

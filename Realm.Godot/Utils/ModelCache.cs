@@ -7,6 +7,7 @@ namespace Realm.Godot.Utils
 	public static class ModelCache
 	{
 		private static readonly Dictionary<string, PackedScene> _cachedScenes = new(StringComparer.OrdinalIgnoreCase);
+		private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _resolvedModelPaths = new(StringComparer.OrdinalIgnoreCase);
 
 		static ModelCache()
 		{
@@ -17,6 +18,18 @@ namespace Realm.Godot.Utils
 		{
 			if (string.IsNullOrEmpty(modelPath)) return null;
 
+			if (_resolvedModelPaths.TryGetValue(modelPath, out var cachedPath))
+			{
+				return string.IsNullOrEmpty(cachedPath) ? null : cachedPath;
+			}
+
+			string resolved = ResolveModelPathInternal(modelPath);
+			_resolvedModelPaths[modelPath] = resolved ?? string.Empty;
+			return resolved;
+		}
+
+		private static string ResolveModelPathInternal(string modelPath)
+		{
 			string cleanPath = modelPath.TrimStart('/', '\\');
 			string withRmesh = cleanPath;
 			if (withRmesh.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) || withRmesh.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
@@ -326,6 +339,16 @@ namespace Realm.Godot.Utils
 		public static void Clear()
 		{
 			_cachedScenes.Clear();
+			_resolvedModelPaths.Clear();
+		}
+
+		public static void InvalidateModelPath(string modelPath)
+		{
+			if (!string.IsNullOrEmpty(modelPath))
+			{
+				_cachedScenes.Remove(modelPath);
+				_resolvedModelPaths.TryRemove(modelPath, out _);
+			}
 		}
 	}
 }

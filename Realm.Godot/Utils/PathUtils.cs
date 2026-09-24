@@ -5,6 +5,8 @@ using System.IO;
 public static class PathUtils
 {
 	private static string _cachedProjectRoot;
+	private static string[] _cachedDataDirs;
+	private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _cachedPaths = new(StringComparer.OrdinalIgnoreCase);
 
 	public static bool IsDevelopmentBuild
 	{
@@ -22,7 +24,7 @@ public static class PathUtils
 			string exeDir = OS.GetExecutablePath().GetBaseDir().Replace("\\", "/").TrimEnd('/');
 			if (Directory.Exists(exeDir))
 			{
-				string[] dataDirs = Directory.GetDirectories(exeDir, "data_*");
+				string[] dataDirs = GetDataDirs(exeDir);
 				if (dataDirs.Length > 0 && baseDir.Equals(dataDirs[0].Replace("\\", "/").TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
 				{
 					return false;
@@ -32,6 +34,23 @@ public static class PathUtils
 			return true;
 #endif
 		}
+	}
+
+	private static string[] GetDataDirs(string exeDir)
+	{
+		if (_cachedDataDirs != null)
+		{
+			return _cachedDataDirs;
+		}
+
+		if (string.IsNullOrEmpty(exeDir) || !Directory.Exists(exeDir))
+		{
+			_cachedDataDirs = Array.Empty<string>();
+			return _cachedDataDirs;
+		}
+
+		_cachedDataDirs = Directory.GetDirectories(exeDir, "data_*");
+		return _cachedDataDirs;
 	}
 
 	public static string GetProjectRoot()
@@ -58,7 +77,7 @@ public static class PathUtils
 		string exeDir = OS.GetExecutablePath().GetBaseDir().Replace("\\", "/").TrimEnd('/');
 		if (!string.IsNullOrWhiteSpace(exeDir) && Directory.Exists(exeDir))
 		{
-			string[] dataDirs = Directory.GetDirectories(exeDir, "data_*");
+			string[] dataDirs = GetDataDirs(exeDir);
 			if (dataDirs.Length > 0)
 			{
 				_cachedProjectRoot = dataDirs[0].Replace("\\", "/").TrimEnd('/');
@@ -81,10 +100,15 @@ public static class PathUtils
 		}
 
 		string normalizedRelative = relativePath.Replace("\\", "/").TrimStart('/');
+		if (_cachedPaths.TryGetValue(normalizedRelative, out string cached))
+		{
+			return cached;
+		}
 
 		string primaryPath = Path.Combine(GetProjectRoot(), normalizedRelative).Replace("\\", "/");
 		if (File.Exists(primaryPath) || Directory.Exists(primaryPath))
 		{
+			_cachedPaths[normalizedRelative] = primaryPath;
 			return primaryPath;
 		}
 
@@ -94,6 +118,7 @@ public static class PathUtils
 			string directPath = Path.Combine(baseDir, normalizedRelative).Replace("\\", "/");
 			if (File.Exists(directPath) || Directory.Exists(directPath))
 			{
+				_cachedPaths[normalizedRelative] = directPath;
 				return directPath;
 			}
 		}
@@ -104,16 +129,18 @@ public static class PathUtils
 			string exeDirectPath = Path.Combine(exeDir, normalizedRelative).Replace("\\", "/");
 			if (File.Exists(exeDirectPath) || Directory.Exists(exeDirectPath))
 			{
+				_cachedPaths[normalizedRelative] = exeDirectPath;
 				return exeDirectPath;
 			}
 
-			string[] dataDirs = Directory.GetDirectories(exeDir, "data_*");
+			string[] dataDirs = GetDataDirs(exeDir);
 			foreach (var dataDir in dataDirs)
 			{
 				string normalizedDataDir = dataDir.Replace("\\", "/").TrimEnd('/');
 				string dataDirPath = Path.Combine(normalizedDataDir, normalizedRelative).Replace("\\", "/");
 				if (File.Exists(dataDirPath) || Directory.Exists(dataDirPath))
 				{
+					_cachedPaths[normalizedRelative] = dataDirPath;
 					return dataDirPath;
 				}
 			}
@@ -122,15 +149,18 @@ public static class PathUtils
 		string globalizedRes = ProjectSettings.GlobalizePath("res://" + normalizedRelative).Replace("\\", "/");
 		if (!string.IsNullOrWhiteSpace(globalizedRes) && (File.Exists(globalizedRes) || Directory.Exists(globalizedRes)))
 		{
+			_cachedPaths[normalizedRelative] = globalizedRes;
 			return globalizedRes;
 		}
 
 		string parentRootPath = Path.GetFullPath(Path.Combine(GetProjectRoot(), "..", normalizedRelative)).Replace("\\", "/");
 		if (File.Exists(parentRootPath) || Directory.Exists(parentRootPath))
 		{
+			_cachedPaths[normalizedRelative] = parentRootPath;
 			return parentRootPath;
 		}
 
+		_cachedPaths[normalizedRelative] = primaryPath;
 		return primaryPath;
 	}
 
@@ -148,5 +178,12 @@ public static class PathUtils
 		}
 
 		return ProjectSettings.GlobalizePath(path);
+	}
+
+	public static void ClearCache()
+	{
+		_cachedProjectRoot = null;
+		_cachedDataDirs = null;
+		_cachedPaths.Clear();
 	}
 }
