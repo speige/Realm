@@ -525,6 +525,8 @@ public class SaveLoadService
 				}
 			}
 
+			MapWorkspaceService.EnsureLicenseFile(directory);
+
 			if (foundWorld)
 			{
 				var updatedEditor = new EditorState(
@@ -1524,6 +1526,7 @@ public class SaveLoadService
 		var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
 		set.Add("GameBuildNumber");
+		set.Add("license");
 		AddTypeMembersToSet(typeof(Realm.Ecs.Definitions.MapProperties), set);
 		set.Add(nameof(Realm.Ecs.Definitions.MapProperties));
 
@@ -2008,6 +2011,8 @@ public class SaveLoadService
 	public static void CleanMetadataJsonSchema(JsonObject root)
 	{
 		if (root == null) return;
+
+		root["license"] = MetadataService.UgcLicenseUrl;
 
 		root.Remove("Assets");
 		root.Remove("Ratings");

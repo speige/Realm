@@ -768,6 +768,7 @@ public partial class StorageMenu : Control
 		_exportMapButton.Disabled = true;
 		UIStyle.ApplyButtonText(_exportMapButton, "Exporting...", 14);
 
+		MapWorkspaceService.EnsureLicenseFile(sourceDir);
 		bool success = await _mapStorageService.ExportMapAsync(sourceDir, destinationPath, compressionLevel: 1);
 
 		_exportMapButton.Disabled = false;

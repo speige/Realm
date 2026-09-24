@@ -3659,6 +3659,7 @@ public class {mapName} : IMapScript
 				}
 			}
 
+			SaveLoadService.CleanMetadataJsonSchema(root);
 			MapJsonFormatter.SaveFormattedJson(metaPath, root);
 			LoadUnitMetadata(dir);
 		}

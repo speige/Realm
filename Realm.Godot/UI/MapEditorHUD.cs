@@ -3267,6 +3267,7 @@ public partial class MapEditorHUD : Control
 
 	private async System.Threading.Tasks.Task SaveMapToFolderAsync(string targetFolder)
 	{
+		MapWorkspaceService.EnsureLicenseFile(_tempWorkspacePath);
 		string tempTerrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
 		if (GameHost.Instance != null)
 		{
@@ -3282,6 +3283,7 @@ public partial class MapEditorHUD : Control
 
 			await System.Threading.Tasks.Task.Run(() => CopyTempWorkspaceToFolder(targetFolder));
 
+			MapWorkspaceService.EnsureLicenseFile(targetFolder);
 			MapAssetHelper.PruneNonExistentAssetsFromManifest(targetFolder);
 
 			SaveCurrentDirectoryBlake3();
@@ -4003,6 +4005,7 @@ public partial class MapEditorHUD : Control
 			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 
 			string tempTerrainPath = System.IO.Path.Combine(workspace, "terrain.json");
+			MapWorkspaceService.EnsureLicenseFile(workspace);
 			GameHost.Instance.SaveMapToFile(tempTerrainPath, performReload: false);
 			GameHost.Instance.EditorHasUnsavedChanges = false;
 
@@ -9245,6 +9248,7 @@ public partial class MapEditorHUD : Control
 			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 
 			string tempTerrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+			MapWorkspaceService.EnsureLicenseFile(_tempWorkspacePath);
 			GameHost.Instance.SaveMapToFile(tempTerrainPath, performReload: false);
 			GameHost.Instance.EditorHasUnsavedChanges = false;
 

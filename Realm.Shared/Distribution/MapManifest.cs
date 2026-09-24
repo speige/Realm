@@ -538,6 +538,8 @@ public class MapManifest
             string.Equals(fileName, "global.json", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(fileName, "NuGet.config", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(fileName, "AGENTS.md", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(fileName, "LICENSE.md", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(fileName, "LICENSE", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(fileName, ".gitignore", StringComparison.OrdinalIgnoreCase) ||
             fileName.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) ||
             fileName.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase) ||

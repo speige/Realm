@@ -26,6 +26,11 @@ Users and third-party developers may not:
 - Scrape data from official endpoints.
 - Route third-party builds or forks through Official Services.
 
-4. INDEPENDENT HOSTING
-Third-party forks or standalone distributions must route through their own independently hosted
-backend infrastructure, databases, and endpoints.
+4. INDEPENDENT HOSTING & STANDALONE BUILDS
+Third-party forks, standalone distributions, or independently published games built with the Realm Engine code operate as entirely distinct software products. They must route through their own independently hosted backend infrastructure, user registries, databases, and endpoints. Creation of an independent standalone build using Realm Engine does not entitle that software, its developers, or its end users to inclusion in the Realm Platform network, nor does it confer access to the Realm Platform UGC registry.
+
+5. MONETIZATION & IN-GAME ECONOMIES
+Creators may accept voluntary donations or offer cosmetic, non-gameplay-altering 
+rewards for their UGC within the Realm Platform. Creators may not implement 
+pay-to-win mechanics, lock gameplay balance/features behind paywalls, or circumvent 
+the Platform Operator's designated monetization APIs.

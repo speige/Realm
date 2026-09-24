@@ -493,6 +493,7 @@ public class MapStorageService
 
         try
         {
+            MapWorkspaceService.EnsureLicenseFile(sourceDirectory);
             MapArchiveHelper.Create7zArchive(sourceDirectory, destination7zPath, compressionLevel: compressionLevel);
             return Task.FromResult(true);
         }

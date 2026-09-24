@@ -14,6 +14,9 @@ namespace Realm.Godot.Services;
 
 public class MapMetadata
 {
+	[JsonPropertyName("license")]
+	public string License { get; set; } = MetadataService.UgcLicenseUrl;
+
 	[JsonPropertyName("GameBuildNumber")]
 	public string? GameBuildNumber { get; set; }
 
@@ -580,6 +583,8 @@ public class MapValidationResult
 
 public class MetadataService
 {
+	public const string UgcLicenseUrl = "https://www.realm-game.com/RealmPlatform_UGC_License_v1.txt";
+
 	private static MetadataService? _defaultFallbackInstance;
 	public static MetadataService Instance => ServiceLocator.TryGet<MetadataService>() ?? (_defaultFallbackInstance ??= new MetadataService());
 
@@ -810,6 +815,8 @@ public class MetadataService
 		{
 			metadata.GameBuildNumber = Realm.Shared.RealmVersion.GameBuildNumber;
 		}
+
+		metadata.License = UgcLicenseUrl;
 
 		if (metadata.ExtensionData != null)
 		{
