@@ -12,6 +12,11 @@ on:
         type: boolean
         required: false
         default: false
+      VersionNumber:
+        description: 'Version Number to embed in published .dll and .exe (e.g. 0.0.1-Pre-Alpha_Rev_G)'
+        type: string
+        required: false
+        default: ''
 
 jobs:
   build:
@@ -27,7 +32,8 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Apply Version
-        run: powershell -ExecutionPolicy Bypass -File scripts/sync-version.ps1
+        id: apply_version
+        run: powershell -ExecutionPolicy Bypass -File scripts/sync-version.ps1 -VersionNumber "${{ inputs.VersionNumber || github.event.inputs.VersionNumber }}"
 
       - name: Restore
         run: dotnet restore Realm.slnx
@@ -113,27 +119,12 @@ jobs:
         run: |
           $osPlatform = "Windows"
           $systemArchitecture = "x64"
-          $rawVersion = ""
-          $exePath = "$PWD\publish\Realm.exe"
-          if (Test-Path $exePath) {
-            $rawVersion = (Get-Item $exePath).VersionInfo.ProductVersion
-            if (-not $rawVersion -or $rawVersion.Trim() -eq "") {
-              $rawVersion = (Get-Item $exePath).VersionInfo.FileVersion
-            }
+          $version = if ($env:VERSION_NUMBER -and $env:VERSION_NUMBER.Trim() -ne "") {
+            $env:VERSION_NUMBER.Trim()
+          } else {
+            "0.0.1_Pre-Alpha"
           }
-          if (-not $rawVersion -or $rawVersion.Trim() -eq "") {
-            $dllPath = Get-ChildItem -Path "$PWD\publish" -Filter "Realm.Godot.dll" -Recurse | Select-Object -First 1 -ExpandProperty FullName
-            if ($dllPath -and (Test-Path $dllPath)) {
-              $rawVersion = (Get-Item $dllPath).VersionInfo.ProductVersion
-              if (-not $rawVersion -or $rawVersion.Trim() -eq "") {
-                $rawVersion = (Get-Item $dllPath).VersionInfo.FileVersion
-              }
-            }
-          }
-          if (-not $rawVersion -or $rawVersion.Trim() -eq "") {
-            $rawVersion = "0.0.1_Pre-Alpha"
-          }
-          $version = $rawVersion.Split('+')[0].Trim()
+          $version = $version.Split('+')[0].Trim()
           $archiveName = "Realm-${osPlatform}-${systemArchitecture}_${version}.7z"
           7z a -t7z -m0=lzma2 -mx=9 $archiveName .\publish\*
           echo "ARCHIVE_NAME=$archiveName" >> $env:GITHUB_ENV
