@@ -5,6 +5,8 @@ using SharpCompress.Writers.SevenZip;
 using SharpCompress.Common;
 using SharpCompress.Readers;
 
+using SharpCompress.Compressors.LZMA;
+
 namespace Realm.Shared.Distribution;
 
 public static class MapArchiveHelper
@@ -27,14 +29,39 @@ public static class MapArchiveHelper
             File.Delete(destination7zPath);
         }
 
-        using var outputStream = File.Create(destination7zPath);
+        int dictSize;
+        int fastBytes;
+        if (compressionLevel <= 1)
+        {
+            dictSize = 64 * 1024;
+            fastBytes = 16;
+        }
+        else if (compressionLevel <= 3)
+        {
+            dictSize = 1024 * 1024;
+            fastBytes = 32;
+        }
+        else if (compressionLevel <= 5)
+        {
+            dictSize = 16 * 1024 * 1024;
+            fastBytes = 32;
+        }
+        else
+        {
+            dictSize = 32 * 1024 * 1024;
+            fastBytes = 64;
+        }
+
+        using var outputStream = new FileStream(destination7zPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536);
         var options = new SevenZipWriterOptions(CompressionType.LZMA2)
         {
-            CompressionLevel = compressionLevel
+            CompressionLevel = compressionLevel,
+            LzmaProperties = new LzmaEncoderProperties(true, dictSize, fastBytes),
+            BufferSize = 65536
         };
         using var writer = new SevenZipWriter(outputStream, options);
         var allFiles = Directory.GetFiles(sourceDirectory, "*.*", SearchOption.AllDirectories);
-        var filesToArchive = new List<string>();
+        var filesToArchive = new List<string>(allFiles.Length);
         foreach (var file in allFiles)
         {
             string relativePath = Path.GetRelativePath(sourceDirectory, file).Replace('\\', '/');
@@ -57,7 +84,7 @@ public static class MapArchiveHelper
             string file = filesToArchive[i];
             string relativePath = Path.GetRelativePath(sourceDirectory, file).Replace('\\', '/');
             progressCallback?.Invoke((float)(i + 1) / Math.Max(1, total), relativePath);
-            using var fileStream = File.OpenRead(file);
+            using var fileStream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
             writer.Write(relativePath, fileStream, File.GetLastWriteTimeUtc(file));
         }
     }

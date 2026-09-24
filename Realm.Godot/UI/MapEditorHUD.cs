@@ -3274,6 +3274,7 @@ public partial class MapEditorHUD : Control
 		{
 			GameHost.Instance.SaveMapToFile(tempTerrainPath);
 			GameHost.Instance.EditorHasUnsavedChanges = false;
+			InvalidateMetadataCache();
 		}
 
 		ShowFeedback(TranslationServer.Translate("Saving map folder..."));
@@ -9432,16 +9433,24 @@ public partial class MapEditorHUD : Control
 			statusLabel.Text = TranslationServer.Translate("Compressing package into .7z archive...");
 			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 
+			long lastProgressUpdateTicks = 0;
 			await System.Threading.Tasks.Task.Run(() =>
 			{
 				MapArchiveHelper.Create7zArchive(_tempWorkspacePath, destinationPath, (pct, file) =>
 				{
+					long now = System.Environment.TickCount64;
+					if (now - lastProgressUpdateTicks < 50 && pct < 1.0f)
+					{
+						return;
+					}
+					lastProgressUpdateTicks = now;
+					string fileName = System.IO.Path.GetFileName(file);
 					Callable.From(() =>
 					{
 						if (GodotObject.IsInstanceValid(progressBar) && GodotObject.IsInstanceValid(statusLabel))
 						{
 							progressBar.Value = 80 + pct * 18;
-							statusLabel.Text = string.Format(TranslationServer.Translate("Compressing {0} ({1}%)..."), System.IO.Path.GetFileName(file), (int)(pct * 100));
+							statusLabel.Text = string.Format(TranslationServer.Translate("Compressing {0} ({1}%)..."), fileName, (int)(pct * 100));
 						}
 					}).CallDeferred();
 				}, compressionLevel: 1);
@@ -9546,6 +9555,7 @@ public partial class MapEditorHUD : Control
 
 			GameHost.Instance.SaveMapToFile(tempTerrainPath);
 			GameHost.Instance.EditorHasUnsavedChanges = false;
+			InvalidateMetadataCache();
 
 			if (OperatingSystem.IsWindows())
 			{
@@ -9872,8 +9882,25 @@ public partial class MapEditorHUD : Control
 		return true;
 	}
 
-	public string GetMapNameFromMetadata()
+	private string? _cachedMapName;
+	private string? _cachedMapVersion;
+	private long _lastMapNameCacheTicks;
+
+	public void InvalidateMetadataCache()
 	{
+		_cachedMapName = null;
+		_cachedMapVersion = null;
+		_lastMapNameCacheTicks = 0;
+	}
+
+	public string GetMapNameFromMetadata(bool forceReload = false)
+	{
+		long now = System.Environment.TickCount64;
+		if (!forceReload && !string.IsNullOrEmpty(_cachedMapName) && (now - _lastMapNameCacheTicks < 2000))
+		{
+			return _cachedMapName;
+		}
+
 		try
 		{
 			string workspacePath = MapWorkspaceService.GetActiveWorkspacePath();
@@ -9886,6 +9913,8 @@ public partial class MapEditorHUD : Control
 				{
 					if (root.TryGetPropertyValue("MapName", out var n) && TrySanitizeCandidate(n?.ToString(), out var manifestMapName))
 					{
+						_cachedMapName = manifestMapName;
+						_lastMapNameCacheTicks = now;
 						return manifestMapName;
 					}
 				}
@@ -9894,7 +9923,11 @@ public partial class MapEditorHUD : Control
 			if (MetadataService.Instance.TryLoadMetadata(workspacePath, out var metadata))
 			{
 				if (TrySanitizeCandidate(metadata.MapProperties?.MapName, out var name1))
+				{
+					_cachedMapName = name1;
+					_lastMapNameCacheTicks = now;
 					return name1;
+				}
 			}
 
 			string mapJsonPath = System.IO.Path.Combine(workspacePath, "map.json");
@@ -9904,7 +9937,11 @@ public partial class MapEditorHUD : Control
 				if (mapDoc != null && mapDoc.TryGetPropertyValue("MapProperties", out var mp) && mp is System.Text.Json.Nodes.JsonObject mpObj)
 				{
 					if (mpObj.TryGetPropertyValue("MapName", out var n) && TrySanitizeCandidate(n?.ToString(), out var mapDocName))
+					{
+						_cachedMapName = mapDocName;
+						_lastMapNameCacheTicks = now;
 						return mapDocName;
+					}
 				}
 			}
 
@@ -9912,26 +9949,44 @@ public partial class MapEditorHUD : Control
 			{
 				string candidate = System.IO.Path.GetFileNameWithoutExtension(GameHost.Instance.ActiveMapName);
 				if (TrySanitizeCandidate(candidate, out var activeMapName))
+				{
+					_cachedMapName = activeMapName;
+					_lastMapNameCacheTicks = now;
 					return activeMapName;
+				}
 			}
 
 			if (!string.IsNullOrEmpty(workspacePath))
 			{
 				string candidate = System.IO.Path.GetFileName(workspacePath);
 				if (TrySanitizeCandidate(candidate, out var workspaceName))
+				{
+					_cachedMapName = workspaceName;
+					_lastMapNameCacheTicks = now;
 					return workspaceName;
+				}
 			}
 
+			_cachedMapName = "Untitled Map";
+			_lastMapNameCacheTicks = now;
 			return "Untitled Map";
 		}
 		catch
 		{
+			_cachedMapName = "Untitled Map";
+			_lastMapNameCacheTicks = now;
 			return "Untitled Map";
 		}
 	}
 
-	public string GetMapVersionFromMetadata()
+	public string GetMapVersionFromMetadata(bool forceReload = false)
 	{
+		long now = System.Environment.TickCount64;
+		if (!forceReload && !string.IsNullOrEmpty(_cachedMapVersion) && (now - _lastMapNameCacheTicks < 2000))
+		{
+			return _cachedMapVersion;
+		}
+
 		try
 		{
 			string workspacePath = !string.IsNullOrEmpty(_tempWorkspacePath) ? _tempWorkspacePath : MapWorkspaceService.GetActiveWorkspacePath();
@@ -9943,14 +9998,22 @@ public partial class MapEditorHUD : Control
 				if (root != null && root.TryGetPropertyValue("Version", out var verNode) && verNode != null)
 				{
 					string v = verNode.ToString().Trim();
-					if (!string.IsNullOrEmpty(v)) return v;
+					if (!string.IsNullOrEmpty(v))
+					{
+						_cachedMapVersion = v;
+						return v;
+					}
 				}
 			}
 
 			if (MetadataService.Instance.TryLoadMetadata(workspacePath, out var metadata))
 			{
 				string? ver = metadata.MapProperties?.Version;
-				if (!string.IsNullOrWhiteSpace(ver)) return ver.Trim();
+				if (!string.IsNullOrWhiteSpace(ver))
+				{
+					_cachedMapVersion = ver.Trim();
+					return _cachedMapVersion;
+				}
 			}
 
 			string metaJsonPath = System.IO.Path.Combine(workspacePath, "metadata.json");
@@ -9962,12 +10025,20 @@ public partial class MapEditorHUD : Control
 					if (doc["MapProperties"] is JsonObject props)
 					{
 						string? v = props["MapVersion"]?.ToString() ?? props["Version"]?.ToString();
-						if (!string.IsNullOrWhiteSpace(v)) return v.Trim();
+						if (!string.IsNullOrWhiteSpace(v))
+						{
+							_cachedMapVersion = v.Trim();
+							return _cachedMapVersion;
+						}
 					}
 					else
 					{
 						string? v = doc["Version"]?.ToString() ?? doc["MapVersion"]?.ToString();
-						if (!string.IsNullOrWhiteSpace(v)) return v.Trim();
+						if (!string.IsNullOrWhiteSpace(v))
+						{
+							_cachedMapVersion = v.Trim();
+							return _cachedMapVersion;
+						}
 					}
 				}
 			}
@@ -9979,14 +10050,20 @@ public partial class MapEditorHUD : Control
 				if (mapDoc != null && mapDoc.TryGetPropertyValue("MapProperties", out var mp) && mp is System.Text.Json.Nodes.JsonObject mpObj)
 				{
 					string? v = mpObj["MapVersion"]?.ToString() ?? mpObj["Version"]?.ToString();
-					if (!string.IsNullOrWhiteSpace(v)) return v.Trim();
+					if (!string.IsNullOrWhiteSpace(v))
+					{
+						_cachedMapVersion = v.Trim();
+						return _cachedMapVersion;
+					}
 				}
 			}
 
+			_cachedMapVersion = "1.0.0";
 			return "1.0.0";
 		}
 		catch
 		{
+			_cachedMapVersion = "1.0.0";
 			return "1.0.0";
 		}
 	}
@@ -10465,6 +10542,7 @@ public partial class MapEditorHUD : Control
 			System.IO.Directory.CreateDirectory(texDir);
 
 			MapWorkspaceService.NormalizeMetadataTextureEntries(wsPath);
+			InvalidateMetadataCache();
 
 			_swatchTextureCache.Clear();
 			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)

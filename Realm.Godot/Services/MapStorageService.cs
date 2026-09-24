@@ -484,23 +484,23 @@ public class MapStorageService
         return await distClient.DownloadMapPackageFromRegistryAsync(mapId, serverUrl, progressCallback, cancellationToken);
     }
 
-    public Task<bool> ExportMapAsync(string sourceDirectory, string destination7zPath, int compressionLevel = 1)
+    public async Task<bool> ExportMapAsync(string sourceDirectory, string destination7zPath, int compressionLevel = 1)
     {
         if (string.IsNullOrWhiteSpace(sourceDirectory) || !Directory.Exists(sourceDirectory))
         {
-            return Task.FromResult(false);
+            return false;
         }
 
         try
         {
             MapWorkspaceService.EnsureLicenseFile(sourceDirectory);
-            MapArchiveHelper.Create7zArchive(sourceDirectory, destination7zPath, compressionLevel: compressionLevel);
-            return Task.FromResult(true);
+            await Task.Run(() => MapArchiveHelper.Create7zArchive(sourceDirectory, destination7zPath, compressionLevel: compressionLevel));
+            return true;
         }
         catch (Exception ex)
         {
             MapAssetManager.LogErr($"[MapStorageService] Export failed: {ex.Message}");
-            return Task.FromResult(false);
+            return false;
         }
     }
 
