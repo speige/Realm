@@ -475,6 +475,23 @@ public class DistributionClient
         }
     }
 
+    public async Task<bool> CheckAssetExistsAsync(string hash, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(hash)) return false;
+        string normalized = ContentAddressableStorage.NormalizeBlake3Hash(hash);
+        string url = $"{_registryServerUrl}/api/assets/{normalized}";
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Head, url);
+            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public async Task<bool> UploadMissingAssetAsync(
         string hash,
         byte[] fileBytes,
@@ -487,6 +504,11 @@ public class DistributionClient
         string? sessionId = null,
         CancellationToken cancellationToken = default)
     {
+        if (await CheckAssetExistsAsync(hash, cancellationToken))
+        {
+            return true;
+        }
+
         string url = $"{_registryServerUrl}/api/publish_map/upload_asset";
         using var form = new MultipartFormDataContent();
         form.Add(new StringContent(hash), "Hash");
@@ -530,7 +552,7 @@ public class DistributionClient
         string mapVersion,
         string? sessionId = null,
         Action<int, int, string>? progressCallback = null,
-        int maximumConcurrency = 8,
+        int maximumConcurrency = 4,
         CancellationToken cancellationToken = default)
     {
         int totalMissing = missingHashes.Count;
@@ -570,6 +592,13 @@ public class DistributionClient
             try
             {
                 if (firstErrorAsset != null || cancellationToken.IsCancellationRequested) return;
+
+                if (await CheckAssetExistsAsync(missingHash, cancellationToken))
+                {
+                    int done = Interlocked.Increment(ref completedCount);
+                    progressCallback?.Invoke(done, totalMissing, Path.GetFileName(fullFilePath));
+                    return;
+                }
 
                 byte[] fileBytes = await File.ReadAllBytesAsync(fullFilePath, cancellationToken);
                 byte[] hashBytes = Encoding.UTF8.GetBytes(missingHash);

@@ -3865,53 +3865,15 @@ public partial class MapEditorHUD : Control
 		{
 			mapTitle = "UntitledMap";
 		}
-		string mapVersion = "1.0.0";
+		string mapVersion = GetMapVersionFromMetadata();
+		if (string.IsNullOrWhiteSpace(mapVersion))
+		{
+			mapVersion = "1.0.0";
+		}
 		string metaJsonPath = System.IO.Path.Combine(workspace, "metadata.json");
 		string mapJsonPath = System.IO.Path.Combine(workspace, "map.json");
 		string activeConfigPath = System.IO.File.Exists(metaJsonPath) ? metaJsonPath : mapJsonPath;
-
-		if (System.IO.File.Exists(activeConfigPath))
-		{
-			try
-			{
-				var doc = JsonNode.Parse(System.IO.File.ReadAllText(activeConfigPath));
-				if (doc != null)
-				{
-					if (doc["MapProperties"] is JsonObject props)
-					{
-						mapTitle = props["MapTitle"]?.ToString() ?? props["MapName"]?.ToString() ?? props["Name"]?.ToString() ?? mapTitle;
-						mapVersion = props["MapVersion"]?.ToString() ?? props["Version"]?.ToString() ?? mapVersion;
-					}
-					else
-					{
-						mapTitle = doc["MapName"]?.ToString() ?? doc["MapTitle"]?.ToString() ?? mapTitle;
-						mapVersion = doc["Version"]?.ToString() ?? doc["MapVersion"]?.ToString() ?? mapVersion;
-					}
-				}
-			}
-			catch { }
-		}
-
 		string manifestJsonPath = System.IO.Path.Combine(workspace, "manifest.json");
-		if (System.IO.File.Exists(manifestJsonPath))
-		{
-			try
-			{
-				var manifestDoc = JsonNode.Parse(System.IO.File.ReadAllText(manifestJsonPath));
-				if (manifestDoc != null)
-				{
-					if (manifestDoc["Version"] != null)
-					{
-						mapVersion = manifestDoc["Version"]?.ToString() ?? mapVersion;
-					}
-					if (manifestDoc["MapName"] != null)
-					{
-						mapTitle = manifestDoc["MapName"]?.ToString() ?? mapTitle;
-					}
-				}
-			}
-			catch { }
-		}
 
 		var popup = new Panel();
 		popup.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
@@ -4051,6 +4013,7 @@ public partial class MapEditorHUD : Control
 			MapWorkspaceService.EnsureLicenseFile(workspace);
 			GameHost.Instance.SaveMapToFile(tempTerrainPath, performReload: false);
 			GameHost.Instance.EditorHasUnsavedChanges = false;
+			InvalidateMetadataCache();
 
 			if (OperatingSystem.IsWindows())
 			{
@@ -4222,47 +4185,46 @@ public partial class MapEditorHUD : Control
 					hashToRelativePath[pair.Value] = pair.Key;
 				}
 
-				int totalMissing = initRes.MissingHashes.Count;
-				int uploadedCount = 0;
-
-				foreach (var missingHash in initRes.MissingHashes)
-				{
-					uploadedCount++;
-					if (!hashToRelativePath.TryGetValue(missingHash, out var relPath)) continue;
-					string fullFilePath = System.IO.Path.Combine(workspace, relPath);
-					if (!System.IO.File.Exists(fullFilePath)) continue;
-
-					float fraction = (float)uploadedCount / totalMissing;
-					progressBar.Value = 70 + fraction * 25;
-					statusLabel.Text = string.Format(TranslationServer.Translate("Uploading asset {0}/{1}: {2}..."), uploadedCount, totalMissing, System.IO.Path.GetFileName(fullFilePath));
-					await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-
-					byte[] fileBytes = System.IO.File.ReadAllBytes(fullFilePath);
-					byte[] hashBytes = System.Text.Encoding.UTF8.GetBytes(missingHash);
-					byte[] signatureBytes = SignatureAlgorithm.Ed25519.Sign(authorshipKey, hashBytes);
-					string signatureStr = Convert.ToBase64String(signatureBytes);
-
-					bool uploaded = await distClient.UploadMissingAssetAsync(
-						missingHash,
-						fileBytes,
-						System.IO.Path.GetFileName(fullFilePath),
-						currentUsername,
-						pubKeyBase64,
-						signatureStr,
-						mapTitle,
-						mapVersion,
-						initRes.SessionId
-					);
-
-					if (!uploaded)
+				long lastProgressTicks = 0;
+				var (uploadSuccess, failedAsset, errorMsg) = await distClient.UploadMissingAssetsMultiThreadedAsync(
+					workspace,
+					initRes.MissingHashes,
+					hashToRelativePath,
+					currentUsername,
+					pubKeyBase64,
+					authorshipKey,
+					mapTitle,
+					mapVersion,
+					initRes.SessionId,
+					progressCallback: (done, total, fileName) =>
 					{
-						progressBar.Value = 100;
-						statusLabel.Text = "❌ " + string.Format(TranslationServer.Translate("Failed to upload asset: {0}"), relPath);
-						statusLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.3f, 0.3f));
-						closeBtn.Visible = true;
-						ShowFeedback($"Failed to upload asset: {relPath}");
-						return;
-					}
+						long now = System.Environment.TickCount64;
+						if (now - lastProgressTicks < 50 && done < total)
+						{
+							return;
+						}
+						lastProgressTicks = now;
+						Callable.From(() =>
+						{
+							if (GodotObject.IsInstanceValid(progressBar) && GodotObject.IsInstanceValid(statusLabel))
+							{
+								float fraction = total > 0 ? (float)done / total : 1.0f;
+								progressBar.Value = 70 + fraction * 25;
+								statusLabel.Text = string.Format(TranslationServer.Translate("Uploading asset {0}/{1}: {2}..."), done, total, fileName);
+							}
+						}).CallDeferred();
+					},
+					maximumConcurrency: 4
+				);
+
+				if (!uploadSuccess)
+				{
+					progressBar.Value = 100;
+					statusLabel.Text = "❌ " + string.Format(TranslationServer.Translate("Failed to upload asset: {0}"), failedAsset);
+					statusLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.3f, 0.3f));
+					closeBtn.Visible = true;
+					ShowFeedback($"Failed to upload asset: {failedAsset} ({errorMsg})");
+					return;
 				}
 			}
 
