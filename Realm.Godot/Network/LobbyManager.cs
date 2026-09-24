@@ -777,14 +777,8 @@ public partial class LobbyManager : Node
         return true;
     }
 
-    public void Disconnect()
+    public void UnregisterActiveLobbyFromRegistry()
     {
-        GD.Print("[LobbyManager] Disconnecting...");
-        _countdownRemaining = 0;
-        _countdownMapName = null;
-        StopHostDiagnosticsTimer();
-        _chatHistory.Clear();
-
         if (IsHost && !string.IsNullOrEmpty(ActiveLobbyId) && !string.IsNullOrEmpty(_hostToken))
         {
             string lobbyIdToClose = ActiveLobbyId;
@@ -804,13 +798,23 @@ public partial class LobbyManager : Node
             });
             _hostToken = null;
         }
-        
 
         Diagnostics.StopHostListener();
         _wsCts?.Cancel();
         _hostWebSocket?.Dispose();
         _hostWebSocket = null;
         ActiveLobbyId = null;
+    }
+
+    public void Disconnect()
+    {
+        GD.Print("[LobbyManager] Disconnecting...");
+        _countdownRemaining = 0;
+        _countdownMapName = null;
+        StopHostDiagnosticsTimer();
+        _chatHistory.Clear();
+
+        UnregisterActiveLobbyFromRegistry();
 
 
 
@@ -2228,6 +2232,7 @@ public partial class LobbyManager : Node
             CountdownFinished?.Invoke();
             if (IsHost && _countdownMapName != null)
             {
+                UnregisterActiveLobbyFromRegistry();
                 Rpc(nameof(LoadMap), _countdownMapName);
             }
             return;

@@ -957,6 +957,11 @@ private void UpdateSelectedMapUI()
 			_countdownPopup = null;
 			_countdownTextLabel = null;
 		}
+
+		if (LobbyManager.Instance != null && LobbyManager.Instance.IsHost)
+		{
+			LobbyManager.Instance.UnregisterActiveLobbyFromRegistry();
+		}
 	}
 
 	private void PopulatePlayersList()
