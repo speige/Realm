@@ -1536,18 +1536,7 @@ public class SaveLoadService
 				set.Add(jsonAttr.Name);
 			}
 		}
-
-		foreach (var field in typeof(GameHost).GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
-		{
-			if (field.Name.StartsWith("Model", StringComparison.OrdinalIgnoreCase))
-			{
-				set.Add(field.Name);
-			}
-		}
-		set.Add("ModelOffsets");
-		set.Add("ModelSpawnShaders");
-		set.Add("ModelDeathShaders");
-		set.Add("ModelDespawnShaders");
+		set.Add("Models");
 		set.Add("textures");
 		set.Add("decals");
 		set.Add("vfx_spritesheets");
@@ -2021,6 +2010,39 @@ public class SaveLoadService
 		if (root == null) return;
 
 		root.Remove("Assets");
+		root.Remove("Ratings");
+		root.Remove("Greenlight");
+		root.Remove("ModelOffsets");
+		root.Remove("ModelScales");
+		root.Remove("ModelCollisionCircleRatios");
+		root.Remove("ModelObstacleRadii");
+		root.Remove("ModelBrightness");
+		root.Remove("ModelColorTint");
+		root.Remove("ModelDespillPlayerColor");
+		root.Remove("ModelNormalizeLuminance");
+		root.Remove("ModelIgnorePlayerColor");
+		root.Remove("ModelSpawnShaders");
+		root.Remove("ModelDeathShaders");
+		root.Remove("ModelNormalModes");
+
+		if (root.TryGetPropertyValue("Models", out var modelsNode) && modelsNode is JsonObject modelsObject)
+		{
+			var allowedModelProperties = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+			{
+				"Offsets", "Scales", "CollisionCircleRatios", "ObstacleRadii", "Brightness",
+				"ColorTint", "DespillPlayerColor", "NormalizeLuminance", "IgnorePlayerColor",
+				"SpawnShaders", "DeathShaders"
+			};
+			foreach (var keyValuePair in modelsObject)
+			{
+				if (keyValuePair.Value is JsonObject itemObject)
+				{
+					itemObject.Remove("hash");
+					var propertiesToRemove = itemObject.Select(property => property.Key).Where(property => !allowedModelProperties.Contains(property)).ToList();
+					foreach (var property in propertiesToRemove) itemObject.Remove(property);
+				}
+			}
+		}
 
 		if (root.TryGetPropertyValue("textures", out var texturesNode) && texturesNode is JsonObject texturesObject)
 		{

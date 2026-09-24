@@ -964,11 +964,43 @@ public class VSCodeManager
 									var existingTextures = unionedAssets["textures"] as JsonObject ?? new JsonObject();
 									foreach (var kvp in tObj)
 									{
-										if (kvp.Value != null) existingTextures[kvp.Key] = kvp.Value.DeepClone();
+										if (kvp.Value is JsonObject incomingObj)
+										{
+											if (existingTextures.TryGetPropertyValue(kvp.Key, out var existNode) && existNode is JsonObject existObj)
+											{
+												foreach (var p in incomingObj)
+												{
+													existObj[p.Key] = p.Value?.DeepClone();
+												}
+											}
+											else
+											{
+												existingTextures[kvp.Key] = incomingObj.DeepClone();
+											}
+										}
+										else if (kvp.Value != null)
+										{
+											existingTextures[kvp.Key] = kvp.Value.DeepClone();
+										}
 									}
 									unionedAssets["textures"] = existingTextures;
 								}
+								MapWorkspaceService.NormalizeTextureEntries(unionedAssets, mapDir);
 								Realm.Godot.Utils.MapAssetHelper.SaveAssetsToManifest(mapDir, unionedAssets, removeFromMetadata: true);
+								if (unionedAssets["textures"] is JsonObject normTextures)
+								{
+									var targetTextures = new JsonObject();
+									foreach (var kvp in normTextures)
+									{
+										if (kvp.Value is JsonObject itemObj)
+										{
+											var cleanItem = itemObj.DeepClone() as JsonObject ?? new JsonObject();
+											cleanItem.Remove("hash");
+											targetTextures[kvp.Key] = cleanItem;
+										}
+									}
+									rootObj["textures"] = targetTextures;
+								}
 								SaveLoadService.CleanMetadataJsonSchema(rootObj);
 								content = rootObj.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
 							}

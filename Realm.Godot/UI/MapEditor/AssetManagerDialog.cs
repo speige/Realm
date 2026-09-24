@@ -2550,7 +2550,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 				["scale"] = defaultScale,
 				["y_offset"] = autoYOffset,
 				["default_asset_type"] = subCat,
-				["despill_player_color"] = true,
+				["despill_player_color"] = false,
 				["normalize_luminance"] = true,
 				["ignore_player_color"] = isPropOrRes,
 				["team_color"] = convRes.SupportsTeamColor
@@ -2583,7 +2583,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 								Scale = defaultScale,
 								YOffset = autoYOffset,
 								PathingType = 9,
-								DespillPlayerColor = true,
+								DespillPlayerColor = false,
 								NormalizeLuminance = true
 							});
 						}
@@ -2605,7 +2605,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 								Scale = defaultScale,
 								YOffset = autoYOffset,
 								PathingType = 32,
-								DespillPlayerColor = true,
+								DespillPlayerColor = false,
 								NormalizeLuminance = true
 							});
 						}
@@ -2627,7 +2627,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 								Scale = defaultScale,
 								YOffset = autoYOffset,
 								PathingType = 255,
-								DespillPlayerColor = true,
+								DespillPlayerColor = false,
 								NormalizeLuminance = true,
 								IgnorePlayerColor = true
 							});
@@ -2650,7 +2650,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 								Scale = defaultScale,
 								YOffset = autoYOffset,
 								PathingType = 255,
-								DespillPlayerColor = true,
+								DespillPlayerColor = false,
 								NormalizeLuminance = true,
 								IgnorePlayerColor = true
 							});
@@ -2767,7 +2767,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 					["scale"] = defaultScale,
 					["y_offset"] = autoYOffset,
 					["default_asset_type"] = targetSub,
-					["despill_player_color"] = true,
+					["despill_player_color"] = false,
 					["normalize_luminance"] = true,
 					["ignore_player_color"] = isPropOrRes
 				};
@@ -2799,7 +2799,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 									Scale = defaultScale,
 									YOffset = autoYOffset,
 									PathingType = 9,
-									DespillPlayerColor = true,
+									DespillPlayerColor = false,
 									NormalizeLuminance = true
 								});
 							}
@@ -2821,7 +2821,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 									Scale = defaultScale,
 									YOffset = autoYOffset,
 									PathingType = 32,
-									DespillPlayerColor = true,
+									DespillPlayerColor = false,
 									NormalizeLuminance = true
 								});
 							}
@@ -2843,7 +2843,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 									Scale = defaultScale,
 									YOffset = autoYOffset,
 									PathingType = 255,
-									DespillPlayerColor = true,
+									DespillPlayerColor = false,
 									NormalizeLuminance = true,
 									IgnorePlayerColor = true
 								});
@@ -2866,7 +2866,7 @@ public partial class AssetManagerDialog : FloatingDialogBase
 									Scale = defaultScale,
 									YOffset = autoYOffset,
 									PathingType = 255,
-									DespillPlayerColor = true,
+									DespillPlayerColor = false,
 									NormalizeLuminance = true,
 									IgnorePlayerColor = true
 								});

@@ -63,6 +63,8 @@ public static class MapAssetHelper
 			AttachMetadataAttributesToUnionedAssets(unionedAssets, metadataRoot, targetDirectory);
 		}
 
+		MapWorkspaceService.NormalizeTextureEntries(unionedAssets, targetDirectory);
+
 		EnsureAllAssetsHaveBlake3Hashes(unionedAssets, targetDirectory);
 
 		return unionedAssets;
@@ -233,6 +235,21 @@ public static class MapAssetHelper
 		if (string.IsNullOrEmpty(directory)) return;
 
 		string manifestPath = Path.Combine(directory, "manifest.json");
+		if (!File.Exists(manifestPath) || new FileInfo(manifestPath).Length == 0)
+		{
+			string templateManifest = MapWorkspaceService.GetTemplatePath("manifest.json");
+			if (!string.IsNullOrEmpty(templateManifest) && File.Exists(templateManifest))
+			{
+				try
+				{
+					File.Copy(templateManifest, manifestPath, true);
+				}
+				catch
+				{
+				}
+			}
+		}
+
 		if (File.Exists(manifestPath) && new FileInfo(manifestPath).Length > 0)
 		{
 			try
@@ -418,29 +435,8 @@ public static class MapAssetHelper
 			return;
 		}
 
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelOffsets");
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelScales");
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelCollisionCircleRatios");
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelObstacleRadii");
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelBrightness");
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelColorTint");
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelDespillPlayerColor");
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelNormalizeLuminance");
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelIgnorePlayerColor");
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelSpawnShaders");
-		EnsureMetadataTopLevelObject(metadataRoot, "ModelDeathShaders");
-
-		var offsetsObject = metadataRoot["ModelOffsets"]!.AsObject();
-		var scalesObject = metadataRoot["ModelScales"]!.AsObject();
-		var collisionCircleObject = metadataRoot["ModelCollisionCircleRatios"]!.AsObject();
-		var obstacleRadiiObject = metadataRoot["ModelObstacleRadii"]!.AsObject();
-		var brightnessObject = metadataRoot["ModelBrightness"]!.AsObject();
-		var colorTintObject = metadataRoot["ModelColorTint"]!.AsObject();
-		var despillObject = metadataRoot["ModelDespillPlayerColor"]!.AsObject();
-		var normalizeLuminanceObject = metadataRoot["ModelNormalizeLuminance"]!.AsObject();
-		var ignorePlayerColorObject = metadataRoot["ModelIgnorePlayerColor"]!.AsObject();
-		var spawnShadersObject = metadataRoot["ModelSpawnShaders"]!.AsObject();
-		var deathShadersObject = metadataRoot["ModelDeathShaders"]!.AsObject();
+		EnsureMetadataTopLevelObject(metadataRoot, "Models");
+		var modelsObject = metadataRoot["Models"]!.AsObject();
 
 		foreach (var subCategoryKeyValuePair in glbObject)
 		{
@@ -451,47 +447,53 @@ public static class MapAssetHelper
 					string fileName = itemKeyValuePair.Key;
 					if (itemKeyValuePair.Value is JsonObject modelProperties)
 					{
+						if (!modelsObject.ContainsKey(fileName) || modelsObject[fileName] is not JsonObject)
+						{
+							modelsObject[fileName] = new JsonObject();
+						}
+						var modelEntry = modelsObject[fileName]!.AsObject();
+
 						if (modelProperties.TryGetPropertyValue("y_offset", out var yOffsetNode) && yOffsetNode != null && float.TryParse(yOffsetNode.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float yOffset))
 						{
-							offsetsObject[fileName] = yOffset;
+							modelEntry["Offsets"] = yOffset;
 						}
 						if (modelProperties.TryGetPropertyValue("scale", out var scaleNode) && scaleNode != null && float.TryParse(scaleNode.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float scale))
 						{
-							scalesObject[fileName] = scale;
+							modelEntry["Scales"] = scale;
 						}
 						if (modelProperties.TryGetPropertyValue("collision_circle_ratio", out var ratioNode) && ratioNode != null && float.TryParse(ratioNode.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float ratio))
 						{
-							collisionCircleObject[fileName] = ratio;
+							modelEntry["CollisionCircleRatios"] = ratio;
 						}
 						if (modelProperties.TryGetPropertyValue("collision_radius", out var radiusNode) && radiusNode != null && float.TryParse(radiusNode.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float radius))
 						{
-							obstacleRadiiObject[fileName] = radius;
+							modelEntry["ObstacleRadii"] = radius;
 						}
 						if (modelProperties.TryGetPropertyValue("brightness", out var brightnessNode) && brightnessNode != null && float.TryParse(brightnessNode.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float brightness))
 						{
-							brightnessObject[fileName] = brightness;
+							modelEntry["Brightness"] = brightness;
 						}
 						if (modelProperties.TryGetPropertyValue("despill_player_color", out var despillNode) && despillNode != null && bool.TryParse(despillNode.ToString(), out bool despill))
 						{
-							despillObject[fileName] = despill;
+							modelEntry["DespillPlayerColor"] = despill;
 						}
 						if (modelProperties.TryGetPropertyValue("normalize_luminance", out var normalizeLuminanceNode) && normalizeLuminanceNode != null && bool.TryParse(normalizeLuminanceNode.ToString(), out bool normalizeLuminance))
 						{
-							normalizeLuminanceObject[fileName] = normalizeLuminance;
+							modelEntry["NormalizeLuminance"] = normalizeLuminance;
 						}
 						if (modelProperties.TryGetPropertyValue("ignore_player_color", out var ignorePlayerColorNode) && ignorePlayerColorNode != null && bool.TryParse(ignorePlayerColorNode.ToString(), out bool ignorePlayerColor))
 						{
-							ignorePlayerColorObject[fileName] = ignorePlayerColor;
+							modelEntry["IgnorePlayerColor"] = ignorePlayerColor;
 						}
 						if (modelProperties.TryGetPropertyValue("spawn_shader", out var spawnShaderNode) && spawnShaderNode != null)
 						{
 							string spawnShader = spawnShaderNode.ToString();
-							if (!string.IsNullOrWhiteSpace(spawnShader)) spawnShadersObject[fileName] = spawnShader;
+							if (!string.IsNullOrWhiteSpace(spawnShader)) modelEntry["SpawnShaders"] = spawnShader;
 						}
 						if (modelProperties.TryGetPropertyValue("death_shader", out var deathShaderNode) && deathShaderNode != null)
 						{
 							string deathShader = deathShaderNode.ToString();
-							if (!string.IsNullOrWhiteSpace(deathShader)) deathShadersObject[fileName] = deathShader;
+							if (!string.IsNullOrWhiteSpace(deathShader)) modelEntry["DeathShaders"] = deathShader;
 						}
 					}
 				}
@@ -528,14 +530,11 @@ public static class MapAssetHelper
 
 			if (categoryKey == "glb")
 			{
-				foreach (var mapKey in new[] { "ModelOffsets", "ModelScales", "ModelCollisionCircleRatios", "ModelObstacleRadii", "ModelBrightness", "ModelColorTint", "ModelDespillPlayerColor", "ModelNormalizeLuminance", "ModelIgnorePlayerColor", "ModelSpawnShaders", "ModelDeathShaders" })
+				if (metadataRoot.TryGetPropertyValue("Models", out var modelsNode) && modelsNode is JsonObject modelsObject)
 				{
-					if (metadataRoot.TryGetPropertyValue(mapKey, out var mapNode) && mapNode is JsonObject mapObject)
+					if (modelsObject.Remove(fileName))
 					{
-						if (mapObject.Remove(fileName))
-						{
-							modified = true;
-						}
+						modified = true;
 					}
 				}
 			}
@@ -659,30 +658,20 @@ public static class MapAssetHelper
 			}
 		}
 
-		string[] modelDictNames = new[]
+		if (metadataRoot.TryGetPropertyValue("Models", out var modelsNode) && modelsNode is JsonObject modelsObj)
 		{
-			"ModelOffsets", "ModelScales", "ModelCollisionCircleRatios", "ModelObstacleRadii",
-			"ModelBrightness", "ModelColorTint", "ModelDespillPlayerColor", "ModelNormalizeLuminance",
-			"ModelIgnorePlayerColor", "ModelSpawnShaders", "ModelDeathShaders"
-		};
-
-		foreach (var dictName in modelDictNames)
-		{
-			if (metadataRoot.TryGetPropertyValue(dictName, out var dictNode) && dictNode is JsonObject dictObj)
+			foreach (var prop in modelsObj)
 			{
-				foreach (var prop in dictObj)
+				string rawName = prop.Key;
+				string? existingSub = FindExistingGlbSubCategory(unionedAssets, rawName);
+				if (string.IsNullOrEmpty(existingSub))
 				{
-					string rawName = prop.Key;
-					string? existingSub = FindExistingGlbSubCategory(unionedAssets, rawName);
-					if (string.IsNullOrEmpty(existingSub))
+					string? diskPath = FindModelOnDisk(targetDirectory, null, rawName, out string foundSub);
+					if (!string.IsNullOrEmpty(diskPath))
 					{
-						string? diskPath = FindModelOnDisk(targetDirectory, null, rawName, out string foundSub);
-						if (!string.IsNullOrEmpty(diskPath))
-						{
-							string fileName = Path.GetFileName(diskPath);
-							existingSub = !string.IsNullOrEmpty(foundSub) ? foundSub : "props";
-							EnsureGlbEntryExists(unionedAssets, existingSub, fileName, diskPath);
-						}
+						string fileName = Path.GetFileName(diskPath);
+						existingSub = !string.IsNullOrEmpty(foundSub) ? foundSub : "props";
+						EnsureGlbEntryExists(unionedAssets, existingSub, fileName, diskPath);
 					}
 				}
 			}
@@ -1038,17 +1027,7 @@ public static class MapAssetHelper
 			return;
 		}
 
-		var offsetsObject = metadataRoot["ModelOffsets"] as JsonObject;
-		var scalesObject = metadataRoot["ModelScales"] as JsonObject;
-		var collisionCircleObject = metadataRoot["ModelCollisionCircleRatios"] as JsonObject;
-		var obstacleRadiiObject = metadataRoot["ModelObstacleRadii"] as JsonObject;
-		var brightnessObject = metadataRoot["ModelBrightness"] as JsonObject;
-		var colorTintObject = metadataRoot["ModelColorTint"] as JsonObject;
-		var despillObject = metadataRoot["ModelDespillPlayerColor"] as JsonObject;
-		var normalizeLuminanceObject = metadataRoot["ModelNormalizeLuminance"] as JsonObject;
-		var ignorePlayerColorObject = metadataRoot["ModelIgnorePlayerColor"] as JsonObject;
-		var spawnShadersObject = metadataRoot["ModelSpawnShaders"] as JsonObject;
-		var deathShadersObject = metadataRoot["ModelDeathShaders"] as JsonObject;
+		var modelsObject = metadataRoot["Models"] as JsonObject;
 
 		foreach (var subCategoryKeyValuePair in glbObject)
 		{
@@ -1074,49 +1053,65 @@ public static class MapAssetHelper
 						subCategoryObject[fileName] = modelObject;
 					}
 
-					if (offsetsObject != null && (offsetsObject.TryGetPropertyValue(fileName, out var offsetNode) || offsetsObject.TryGetPropertyValue(baseName, out offsetNode)))
+					JsonObject? modelEntry = null;
+					if (modelsObject != null)
 					{
-						modelObject["y_offset"] = offsetNode?.DeepClone();
+						if (modelsObject.TryGetPropertyValue(fileName, out var entryNode) && entryNode is JsonObject entryObj)
+						{
+							modelEntry = entryObj;
+						}
+						else if (modelsObject.TryGetPropertyValue(baseName, out var baseEntryNode) && baseEntryNode is JsonObject baseEntryObj)
+						{
+							modelEntry = baseEntryObj;
+						}
 					}
-					if (scalesObject != null && (scalesObject.TryGetPropertyValue(fileName, out var scaleNode) || scalesObject.TryGetPropertyValue(baseName, out scaleNode)))
+
+					if (modelEntry != null)
 					{
-						modelObject["scale"] = scaleNode?.DeepClone();
-					}
-					if (collisionCircleObject != null && (collisionCircleObject.TryGetPropertyValue(fileName, out var circleNode) || collisionCircleObject.TryGetPropertyValue(baseName, out circleNode)))
-					{
-						modelObject["collision_circle_ratio"] = circleNode?.DeepClone();
-					}
-					if (obstacleRadiiObject != null && (obstacleRadiiObject.TryGetPropertyValue(fileName, out var radiusNode) || obstacleRadiiObject.TryGetPropertyValue(baseName, out radiusNode)))
-					{
-						modelObject["collision_radius"] = radiusNode?.DeepClone();
-					}
-					if (brightnessObject != null && (brightnessObject.TryGetPropertyValue(fileName, out var brightNode) || brightnessObject.TryGetPropertyValue(baseName, out brightNode)))
-					{
-						modelObject["brightness"] = brightNode?.DeepClone();
-					}
-					if (colorTintObject != null && (colorTintObject.TryGetPropertyValue(fileName, out var tintNode) || colorTintObject.TryGetPropertyValue(baseName, out tintNode)))
-					{
-						modelObject["tint"] = tintNode?.DeepClone();
-					}
-					if (despillObject != null && (despillObject.TryGetPropertyValue(fileName, out var despillNode) || despillObject.TryGetPropertyValue(baseName, out despillNode)))
-					{
-						modelObject["despill_player_color"] = despillNode?.DeepClone();
-					}
-					if (normalizeLuminanceObject != null && (normalizeLuminanceObject.TryGetPropertyValue(fileName, out var lumNode) || normalizeLuminanceObject.TryGetPropertyValue(baseName, out lumNode)))
-					{
-						modelObject["normalize_luminance"] = lumNode?.DeepClone();
-					}
-					if (ignorePlayerColorObject != null && (ignorePlayerColorObject.TryGetPropertyValue(fileName, out var ipcNode) || ignorePlayerColorObject.TryGetPropertyValue(baseName, out ipcNode)))
-					{
-						modelObject["ignore_player_color"] = ipcNode?.DeepClone();
-					}
-					if (spawnShadersObject != null && (spawnShadersObject.TryGetPropertyValue(fileName, out var spawnNode) || spawnShadersObject.TryGetPropertyValue(baseName, out spawnNode)))
-					{
-						modelObject["spawn_shader"] = spawnNode?.DeepClone();
-					}
-					if (deathShadersObject != null && (deathShadersObject.TryGetPropertyValue(fileName, out var deathNode) || deathShadersObject.TryGetPropertyValue(baseName, out deathNode)))
-					{
-						modelObject["death_shader"] = deathNode?.DeepClone();
+						if (modelEntry.TryGetPropertyValue("Offsets", out var offsetNode))
+						{
+							modelObject["y_offset"] = offsetNode?.DeepClone();
+						}
+						if (modelEntry.TryGetPropertyValue("Scales", out var scaleNode))
+						{
+							modelObject["scale"] = scaleNode?.DeepClone();
+						}
+						if (modelEntry.TryGetPropertyValue("CollisionCircleRatios", out var circleNode))
+						{
+							modelObject["collision_circle_ratio"] = circleNode?.DeepClone();
+						}
+						if (modelEntry.TryGetPropertyValue("ObstacleRadii", out var radiusNode))
+						{
+							modelObject["collision_radius"] = radiusNode?.DeepClone();
+						}
+						if (modelEntry.TryGetPropertyValue("Brightness", out var brightNode))
+						{
+							modelObject["brightness"] = brightNode?.DeepClone();
+						}
+						if (modelEntry.TryGetPropertyValue("ColorTint", out var tintNode))
+						{
+							modelObject["tint"] = tintNode?.DeepClone();
+						}
+						if (modelEntry.TryGetPropertyValue("DespillPlayerColor", out var despillNode))
+						{
+							modelObject["despill_player_color"] = despillNode?.DeepClone();
+						}
+						if (modelEntry.TryGetPropertyValue("NormalizeLuminance", out var lumNode))
+						{
+							modelObject["normalize_luminance"] = lumNode?.DeepClone();
+						}
+						if (modelEntry.TryGetPropertyValue("IgnorePlayerColor", out var ipcNode))
+						{
+							modelObject["ignore_player_color"] = ipcNode?.DeepClone();
+						}
+						if (modelEntry.TryGetPropertyValue("SpawnShaders", out var spawnNode))
+						{
+							modelObject["spawn_shader"] = spawnNode?.DeepClone();
+						}
+						if (modelEntry.TryGetPropertyValue("DeathShaders", out var deathNode))
+						{
+							modelObject["death_shader"] = deathNode?.DeepClone();
+						}
 					}
 				}
 			}

@@ -11,6 +11,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using Realm.Godot.Services;
 using Realm.Godot.Utils;
 using Realm.Godot.VFX;
 
@@ -451,7 +452,7 @@ public partial class GameHost
 
 	public bool GetModelDespillPlayerColor(object objOrId)
 	{
-		if (objOrId == null) return true;
+		if (objOrId == null) return false;
 		string primaryKey = GetSelectedEntityOrAssetKey(objOrId);
 		string normPrimary = NormalizeModelAssetKey(primaryKey);
 		if (!string.IsNullOrEmpty(normPrimary) && ModelDespillPlayerColor.TryGetValue(normPrimary, out bool b1))
@@ -469,7 +470,7 @@ public partial class GameHost
 			if (PropRegistry.TryGetValue(primaryKey, out var propMeta)) return propMeta.DespillPlayerColor;
 		}
 
-		return true;
+		return false;
 	}
 
 	public void SetModelDespillPlayerColor(string assetKey, bool despillPlayerColor)
@@ -1127,80 +1128,59 @@ public partial class GameHost
 			ModelSpawnShaders.Clear();
 			ModelDeathShaders.Clear();
 
-			foreach (var kvp in metadata.ModelSpawnShaders)
+			if (metadata.Models != null)
 			{
-				if (!string.IsNullOrWhiteSpace(kvp.Value))
+				foreach (var kvp in metadata.Models)
 				{
-					ModelSpawnShaders[NormalizeModelAssetKey(kvp.Key)] = kvp.Value.Trim();
+					string normKey = NormalizeModelAssetKey(kvp.Key);
+					var model = kvp.Value;
+					if (model == null) continue;
+
+					if (!string.IsNullOrWhiteSpace(model.SpawnShaders))
+					{
+						ModelSpawnShaders[normKey] = model.SpawnShaders.Trim();
+					}
+					if (!string.IsNullOrWhiteSpace(model.DeathShaders))
+					{
+						ModelDeathShaders[normKey] = model.DeathShaders.Trim();
+					}
+					if (model.Offsets.HasValue && IsValidModelYOffset(kvp.Key, model.Offsets.Value))
+					{
+						ModelYOffsets[normKey] = model.Offsets.Value;
+					}
+					if (model.Scales.HasValue && IsValidModelScale(kvp.Key, model.Scales.Value))
+					{
+						ModelScales[normKey] = model.Scales.Value;
+					}
+					if (model.CollisionCircleRatios.HasValue && IsValidModelCollisionRatio(kvp.Key, model.CollisionCircleRatios.Value))
+					{
+						ModelCollisionCircleRatios[normKey] = model.CollisionCircleRatios.Value;
+					}
+					if (model.ObstacleRadii.HasValue && model.ObstacleRadii.Value > 0f)
+					{
+						ModelObstacleRadii[normKey] = model.ObstacleRadii.Value;
+					}
+					if (model.Brightness.HasValue)
+					{
+						ModelBrightness[normKey] = model.Brightness.Value;
+					}
+					if (!string.IsNullOrWhiteSpace(model.ColorTint) && Color.HtmlIsValid(model.ColorTint))
+					{
+						ModelColorTint[normKey] = Color.FromHtml(model.ColorTint);
+					}
+					if (model.DespillPlayerColor.HasValue)
+					{
+						ModelDespillPlayerColor[normKey] = model.DespillPlayerColor.Value;
+					}
+					if (model.NormalizeLuminance.HasValue)
+					{
+						ModelNormalizeLuminance[normKey] = model.NormalizeLuminance.Value;
+					}
+					if (model.IgnorePlayerColor.HasValue)
+					{
+						ModelIgnorePlayerColor[normKey] = model.IgnorePlayerColor.Value;
+					}
 				}
-			}
-
-			foreach (var kvp in metadata.ModelDeathShaders)
-			{
-				if (!string.IsNullOrWhiteSpace(kvp.Value))
-				{
-					ModelDeathShaders[NormalizeModelAssetKey(kvp.Key)] = kvp.Value.Trim();
-				}
-			}
-
-			foreach (var kvp in metadata.ModelOffsets)
-			{
-				if (IsValidModelYOffset(kvp.Key, kvp.Value))
-				{
-					ModelYOffsets[NormalizeModelAssetKey(kvp.Key)] = kvp.Value;
-				}
-			}
-
-			foreach (var kvp in metadata.ModelScales)
-			{
-				if (IsValidModelScale(kvp.Key, kvp.Value))
-				{
-					ModelScales[NormalizeModelAssetKey(kvp.Key)] = kvp.Value;
-				}
-			}
-
-			foreach (var kvp in metadata.ModelCollisionCircleRatios)
-			{
-				if (IsValidModelCollisionRatio(kvp.Key, kvp.Value))
-				{
-					ModelCollisionCircleRatios[NormalizeModelAssetKey(kvp.Key)] = kvp.Value;
-				}
-			}
-
-			foreach (var kvp in metadata.ModelObstacleRadii)
-			{
-				if (kvp.Value > 0f)
-				{
-					ModelObstacleRadii[NormalizeModelAssetKey(kvp.Key)] = kvp.Value;
-				}
-			}
-
-			foreach (var kvp in metadata.ModelBrightness)
-			{
-				ModelBrightness[NormalizeModelAssetKey(kvp.Key)] = kvp.Value;
-			}
-
-			foreach (var kvp in metadata.ModelColorTint)
-			{
-				if (!string.IsNullOrWhiteSpace(kvp.Value) && Color.HtmlIsValid(kvp.Value))
-				{
-					ModelColorTint[NormalizeModelAssetKey(kvp.Key)] = Color.FromHtml(kvp.Value);
-				}
-			}
-
-			foreach (var kvp in metadata.ModelDespillPlayerColor)
-			{
-				ModelDespillPlayerColor[NormalizeModelAssetKey(kvp.Key)] = kvp.Value;
-			}
-
-			foreach (var kvp in metadata.ModelNormalizeLuminance)
-			{
-				ModelNormalizeLuminance[NormalizeModelAssetKey(kvp.Key)] = kvp.Value;
-			}
-
-			foreach (var kvp in metadata.ModelIgnorePlayerColor)
-			{
-				ModelIgnorePlayerColor[NormalizeModelAssetKey(kvp.Key)] = kvp.Value;
 			}
 
 			void ProcessEntities<T>(IEnumerable<T> items, float defaultScale, Func<T, string> getId, Func<T, string> getModelPath, Func<T, float> getYOffset, Func<T, float> getScale, Func<T, float> getCollisionCircle, Func<T, float> getBrightness, Func<T, string> getTint, Func<T, bool> getDespillPlayerColor, Func<T, bool> getNormalizeLuminance)
@@ -1310,17 +1290,13 @@ public partial class GameHost
 									ModelColorTint[NormalizeModelAssetKey(itemKvp.Key)] = Color.FromHtml(itemObj["ColorTint"]!.ToString());
 								}
 								string normKey = NormalizeModelAssetKey(itemKvp.Key);
-								if (itemObj.ContainsKey("despill_player_color") && bool.TryParse(itemObj["despill_player_color"]?.ToString(), out bool dpcVal))
+								if (itemObj.ContainsKey("DespillPlayerColor") && bool.TryParse(itemObj["DespillPlayerColor"]?.ToString(), out bool dpcVal))
 								{
 									ModelDespillPlayerColor[normKey] = dpcVal;
 								}
-								else if (itemObj.ContainsKey("DespillPlayerColor") && bool.TryParse(itemObj["DespillPlayerColor"]?.ToString(), out bool dpcVal2))
-								{
-									ModelDespillPlayerColor[normKey] = dpcVal2;
-								}
 								else if (!ModelDespillPlayerColor.ContainsKey(normKey))
 								{
-									ModelDespillPlayerColor[normKey] = true;
+									ModelDespillPlayerColor[normKey] = false;
 								}
 								if (itemObj.ContainsKey("normalize_luminance") && bool.TryParse(itemObj["normalize_luminance"]?.ToString(), out bool nlVal))
 								{
@@ -1471,22 +1447,40 @@ public partial class GameHost
 			var metaService = _metadataService ?? Realm.Godot.Services.MetadataService.Instance;
 			metaService.UpdateMetadata(mapDir, meta =>
 			{
-				foreach (var kvp in ModelYOffsets) meta.ModelOffsets[kvp.Key] = kvp.Value;
-				foreach (var kvp in ModelScales) meta.ModelScales[kvp.Key] = kvp.Value;
-				foreach (var kvp in ModelCollisionCircleRatios) meta.ModelCollisionCircleRatios[kvp.Key] = kvp.Value;
-				foreach (var kvp in ModelObstacleRadii) meta.ModelObstacleRadii[kvp.Key] = kvp.Value;
-				foreach (var kvp in ModelBrightness) meta.ModelBrightness[kvp.Key] = kvp.Value;
-				foreach (var kvp in ModelColorTint) meta.ModelColorTint[kvp.Key] = $"#{kvp.Value.ToHtml(false)}";
-				foreach (var kvp in ModelDespillPlayerColor) meta.ModelDespillPlayerColor[kvp.Key] = kvp.Value;
-				foreach (var kvp in ModelNormalizeLuminance) meta.ModelNormalizeLuminance[kvp.Key] = kvp.Value;
-				foreach (var kvp in ModelIgnorePlayerColor) meta.ModelIgnorePlayerColor[kvp.Key] = kvp.Value;
-				foreach (var kvp in ModelSpawnShaders)
+				if (meta.Models == null) meta.Models = new Dictionary<string, ModelMetadata>(StringComparer.OrdinalIgnoreCase);
+
+				var allKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+				foreach (var k in ModelYOffsets.Keys) allKeys.Add(k);
+				foreach (var k in ModelScales.Keys) allKeys.Add(k);
+				foreach (var k in ModelCollisionCircleRatios.Keys) allKeys.Add(k);
+				foreach (var k in ModelObstacleRadii.Keys) allKeys.Add(k);
+				foreach (var k in ModelBrightness.Keys) allKeys.Add(k);
+				foreach (var k in ModelColorTint.Keys) allKeys.Add(k);
+				foreach (var k in ModelDespillPlayerColor.Keys) allKeys.Add(k);
+				foreach (var k in ModelNormalizeLuminance.Keys) allKeys.Add(k);
+				foreach (var k in ModelIgnorePlayerColor.Keys) allKeys.Add(k);
+				foreach (var k in ModelSpawnShaders.Keys) allKeys.Add(k);
+				foreach (var k in ModelDeathShaders.Keys) allKeys.Add(k);
+
+				foreach (var key in allKeys)
 				{
-					if (!string.IsNullOrWhiteSpace(kvp.Value)) meta.ModelSpawnShaders[kvp.Key] = kvp.Value;
-				}
-				foreach (var kvp in ModelDeathShaders)
-				{
-					if (!string.IsNullOrWhiteSpace(kvp.Value)) meta.ModelDeathShaders[kvp.Key] = kvp.Value;
+					if (!meta.Models.TryGetValue(key, out var modelMeta) || modelMeta == null)
+					{
+						modelMeta = new ModelMetadata();
+						meta.Models[key] = modelMeta;
+					}
+
+					if (ModelYOffsets.TryGetValue(key, out float yVal)) modelMeta.Offsets = yVal;
+					if (ModelScales.TryGetValue(key, out float sVal)) modelMeta.Scales = sVal;
+					if (ModelCollisionCircleRatios.TryGetValue(key, out float cVal)) modelMeta.CollisionCircleRatios = cVal;
+					if (ModelObstacleRadii.TryGetValue(key, out float rVal)) modelMeta.ObstacleRadii = rVal;
+					if (ModelBrightness.TryGetValue(key, out float bVal)) modelMeta.Brightness = bVal;
+					if (ModelColorTint.TryGetValue(key, out Color tVal)) modelMeta.ColorTint = $"#{tVal.ToHtml(false)}";
+					if (ModelDespillPlayerColor.TryGetValue(key, out bool dVal)) modelMeta.DespillPlayerColor = dVal;
+					if (ModelNormalizeLuminance.TryGetValue(key, out bool nVal)) modelMeta.NormalizeLuminance = nVal;
+					if (ModelIgnorePlayerColor.TryGetValue(key, out bool iVal)) modelMeta.IgnorePlayerColor = iVal;
+					if (ModelSpawnShaders.TryGetValue(key, out string? ssVal) && !string.IsNullOrWhiteSpace(ssVal)) modelMeta.SpawnShaders = ssVal;
+					if (ModelDeathShaders.TryGetValue(key, out string? dsVal) && !string.IsNullOrWhiteSpace(dsVal)) modelMeta.DeathShaders = dsVal;
 				}
 
 				void UpdateEntityShaders(List<GameHost.UnitMetadata> entities)
@@ -1687,6 +1681,7 @@ public partial class GameHost
 
 		MapEditorHUD.Instance?.ClearTempWorkspaceExternal();
 		MapEditorHUD.Instance?.GenerateVSCodeFilesExternal();
+		MapEditorHUD.Instance?.ReadMetadataAndRefreshTextures();
 		MapEditorHUD.Instance?.ShowFeedbackExternal("Map reset: cleared all entities & terrain");
 		MapEditorHUD.Instance?.RegenerateMinimap();
 	}

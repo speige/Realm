@@ -265,7 +265,7 @@ public partial class GlbThumbnailRenderer : Node
 					glbBytes = rmeshBytes;
 				}
 
-				bool despill = GameHost.Instance == null || GameHost.Instance.GetModelDespillPlayerColor(request.FilePath);
+				bool despill = GameHost.Instance != null && GameHost.Instance.GetModelDespillPlayerColor(request.FilePath);
 				if (despill)
 				{
 					glbBytes = Realm.Shared.GlbInMemoryColorPreprocessor.PreprocessGlbInMemory(glbBytes, chromaKey);
@@ -276,7 +276,7 @@ public partial class GlbThumbnailRenderer : Node
 			{
 				byte[] rawGlb = File.ReadAllBytes(request.FilePath);
 				string? chromaKey = Realm.Shared.Metadata.RealmMetadataHelper.ExtractChromaKey(request.FilePath);
-				bool despill = GameHost.Instance == null || GameHost.Instance.GetModelDespillPlayerColor(request.FilePath);
+				bool despill = GameHost.Instance != null && GameHost.Instance.GetModelDespillPlayerColor(request.FilePath);
 				byte[] processedGlb = despill ? Realm.Shared.GlbInMemoryColorPreprocessor.PreprocessGlbInMemory(rawGlb, chromaKey) : rawGlb;
 				err = doc.AppendFromBuffer(processedGlb, "", state);
 			}

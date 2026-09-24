@@ -13,7 +13,7 @@ public partial class ObjectManagerDialog : FloatingDialogBase
 	private readonly Dictionary<TreeItem, Node3D> _treeItemToObjectMap = new();
 
 	public ObjectManagerDialog(MapEditorHUD hud)
-		: base(hud, TranslationServer.Translate("Object Manager"), new Vector2(480, 600))
+		: base(hud, TranslationServer.Translate("Placed Objects"), new Vector2(480, 600))
 	{
 		SetUncompressedPanelTexture("res://Assets/UI/map_editor_panel.png", 30, 40, 50, 50);
 		BuildControls();

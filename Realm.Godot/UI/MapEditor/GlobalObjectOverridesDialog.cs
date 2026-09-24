@@ -142,7 +142,7 @@ public partial class GlobalObjectOverridesDialog : FloatingDialogBase
 			GameHost.Instance.RefreshAllPlacedObjectModels(_currentAssetKey);
 		});
 
-		_chkDespillPlayerColor = AddCheckBox(grid, TranslationServer.Translate("Despill Player Color"), true, (pressed) =>
+		_chkDespillPlayerColor = AddCheckBox(grid, TranslationServer.Translate("Despill Player Color"), false, (pressed) =>
 		{
 			if (_isUpdatingUI || GameHost.Instance == null || string.IsNullOrEmpty(_currentAssetKey)) return;
 			GameHost.Instance.SetModelDespillPlayerColor(_currentAssetKey, pressed);

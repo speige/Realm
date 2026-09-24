@@ -455,9 +455,7 @@
 
                 const knownTopKeys = [
                     'MapProperties', 'CustomUnits', 'CustomBuildings', 'CustomResources', 'CustomProps',
-                    'CustomAbilities', 'CustomItems', 'CustomUpgrades', 'CustomWeapons', 'Assets', 
-                    'ModelOffsets', 'ModelScales', 'ModelCollisionCircleRatios', 'ModelBrightness', 'ModelDespillPlayerColor',
-                    'ModelIgnorePlayerColor'
+                    'CustomAbilities', 'CustomItems', 'CustomUpgrades', 'CustomWeapons', 'Assets', 'Models'
                 ];
                 for (const [key, val] of Object.entries(units)) {
                     if (!knownTopKeys.includes(key) && val && typeof val === 'object' && !Array.isArray(val) && (val.UnitId || val.MaxHp !== undefined || val.CostGold !== undefined || val.AttackType !== undefined || val.PathingCapabilities || val.MovementType)) {
@@ -479,7 +477,7 @@
                         }
                     }
                     if (u.DespillPlayerColor === undefined || u.DespillPlayerColor === null) {
-                        u.DespillPlayerColor = true;
+                        u.DespillPlayerColor = false;
                     }
                     delete u.NormalMode;
                     delete u.RecalculateNormals;

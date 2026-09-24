@@ -2152,6 +2152,14 @@ void fragment() {
 				}
 				if (!System.IO.File.Exists(rtexPath))
 				{
+					rtexPath = PathUtils.FindPath($"Assets/textures/{name}.rtex");
+				}
+				if (!System.IO.File.Exists(rtexPath))
+				{
+					rtexPath = PathUtils.FindPath($"MapTemplate/Assets/textures/{name}.rtex");
+				}
+				if (!System.IO.File.Exists(rtexPath))
+				{
 					rtexPath = ProjectSettings.GlobalizePath($"res://Assets/2d/TileSheets/{name}.rtex");
 				}
 				if (!System.IO.File.Exists(rtexPath))

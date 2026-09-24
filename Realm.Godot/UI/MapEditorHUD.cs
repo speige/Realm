@@ -662,17 +662,20 @@ public partial class MapEditorHUD : Control
 		_btnTestMap = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnTestMap");
 		SetupOptionButton(_btnTestMap, "\uf11b TEST", () => TestMapAction(), 13, "Launch single-player mode on the current editor map");
 
+		_btnPublish = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnPublish");
+		SetupOptionButton(_btnPublish, "\uf093 PUBLISH", () => PublishMapActionExternal(), 13, "Publish/export map to custom map registry");
+
 		_btnExportMap = GetNodeOrNull<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnExportMap");
 		if (_btnExportMap == null)
 		{
 			_btnExportMap = new Button();
 			_btnExportMap.Name = "BtnExportMap";
 			_btnExportMap.Set("icon_max_width", 0);
-			int insertIndex = _contentFile.GetChildren().IndexOf(_btnPublish);
+			int insertIndex = _contentFile.GetChildren().IndexOf(_btnTestMap);
 			if (insertIndex >= 0)
 			{
 				_contentFile.AddChild(_btnExportMap);
-				_contentFile.MoveChild(_btnExportMap, insertIndex);
+				_contentFile.MoveChild(_btnExportMap, insertIndex + 1);
 			}
 			else
 			{
@@ -680,9 +683,6 @@ public partial class MapEditorHUD : Control
 			}
 		}
 		SetupOptionButton(_btnExportMap, "\uf56e EXPORT (.7Z)", () => ExportMapAction(), 13, "Export prepared map package (.7z) with compiled WASM for hosting and CAS storage");
-
-		_btnPublish = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnPublish");
-		SetupOptionButton(_btnPublish, "\uf093 PUBLISH", () => PublishMapActionExternal(), 13, "Publish/export map to custom map registry");
 
 		_btnResetMap = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnResetMap");
 		SetupOptionButton(_btnResetMap, "\uf12d RESET MAP", () =>
@@ -706,7 +706,7 @@ public partial class MapEditorHUD : Control
 
 		_btnObjectManager = new Button();
 		_btnObjectManager.Name = "BtnObjectManager";
-		SetupOptionButton(_btnObjectManager, "\uf0cb OBJECT MANAGER", () => OpenObjectManagerDialog(), 13, "Open Object Manager dialog to list and locate all placed objects");
+		SetupOptionButton(_btnObjectManager, "\uf0cb OBJECTS", () => OpenObjectManagerDialog(), 13, "Open dialog to list and locate all placed objects");
 		_contentFile.AddChild(_btnObjectManager);
 
 		_btnEditorSettings = new Button();
@@ -719,7 +719,16 @@ public partial class MapEditorHUD : Control
 		_btnAuthorSignature.Name = "BtnAuthorSignature";
 		_btnAuthorSignature.Set("icon_max_width", 0);
 		SetupOptionButton(_btnAuthorSignature, "✍️ " + TranslationServer.Translate("AUTHOR SIGNATURE"), () => _authorSignatureDialog?.OpenDialog(), 13, "View author identity key, signature details, and backup location");
-		_contentFile.AddChild(_btnAuthorSignature);
+		int pubIdx = _contentFile.GetChildren().IndexOf(_btnPublish);
+		if (pubIdx >= 0)
+		{
+			_contentFile.AddChild(_btnAuthorSignature);
+			_contentFile.MoveChild(_btnAuthorSignature, pubIdx + 1);
+		}
+		else
+		{
+			_contentFile.AddChild(_btnAuthorSignature);
+		}
 
 		_accordionViewport = GetNode<VBoxContainer>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion");
 		_btnHeaderViewport = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/ViewportAccordion/BtnHeaderViewport");
@@ -1566,6 +1575,7 @@ public partial class MapEditorHUD : Control
 		StyleRowButton(_btnSave);
 		StyleRowButton(_btnTestMap);
 		StyleRowButton(_btnPublish);
+		StyleRowButton(_btnExportMap);
 		StyleRowButton(_btnResetMap);
 		StyleRowButton(_btnGenerateMap);
 		StyleRowButton(_btnImportMinimap);
@@ -3068,6 +3078,9 @@ public partial class MapEditorHUD : Control
 		string unitsPath = System.IO.Path.Combine(_tempWorkspacePath, "metadata.json");
 		System.IO.Directory.CreateDirectory(_tempWorkspacePath);
 		MapWorkspaceService.SetupWorkspace(_tempWorkspacePath, "MapScript");
+		string terrainPath = System.IO.Path.Combine(_tempWorkspacePath, "terrain.json");
+		_lastTerrainSyncTime = GetMaxTerrainWriteTime(terrainPath);
+		_lastMetadataSyncTime = GetLastWriteTimeSafe(unitsPath);
 	}
 
 	private long GetLastWriteTimeSafe(string path)
@@ -6184,7 +6197,9 @@ public partial class MapEditorHUD : Control
 			SafeReparent(_btnLoad, fileGrid1);
 			SafeReparent(_btnSave, fileGrid1);
 			SafeReparent(_btnTestMap, fileGrid1);
+			SafeReparent(_btnExportMap, fileGrid1);
 			SafeReparent(_btnPublish, fileGrid1);
+			SafeReparent(_btnAuthorSignature, fileGrid1);
 
 			var fileGrid2 = new GridContainer();
 			fileGrid2.Columns = 2;
@@ -7416,6 +7431,7 @@ public partial class MapEditorHUD : Control
 
 					if (!slot.IsFiller && !string.IsNullOrEmpty(slot.BaseName))
 					{
+						btn.Visible = true;
 						Texture2D tex = GetSwatchTexture(slotIndex);
 						if (tex != null)
 						{
@@ -7443,14 +7459,7 @@ public partial class MapEditorHUD : Control
 					}
 					else
 					{
-						var emptyBox = new ColorRect();
-						emptyBox.Color = new Color(0.15f, 0.15f, 0.15f, 0.8f);
-						emptyBox.MouseFilter = MouseFilterEnum.Ignore;
-						emptyBox.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-						emptyBox.GrowHorizontal = GrowDirection.Both;
-						emptyBox.GrowVertical = GrowDirection.Both;
-						btn.AddChild(emptyBox);
-						btn.TooltipText = $"Slot {slotIndex} (Empty)";
+						btn.Visible = false;
 					}
 
 					btn.GuiInput += (@event) =>
@@ -9829,14 +9838,10 @@ public partial class MapEditorHUD : Control
 						{
 							float rounded = (float)Math.Round(radius, 2);
 							GameHost.Instance.ModelObstacleRadii[normKey] = rounded;
-							if (root["ModelObstacleRadii"] is JsonObject radiiObj)
-							{
-								radiiObj[normKey] = rounded;
-							}
-							else
-							{
-								root["ModelObstacleRadii"] = new JsonObject { [normKey] = rounded };
-							}
+							if (!root.ContainsKey("Models") || root["Models"] is not JsonObject) root["Models"] = new JsonObject();
+							var modelsObj = (JsonObject)root["Models"]!;
+							if (!modelsObj.ContainsKey(normKey) || modelsObj[normKey] is not JsonObject) modelsObj[normKey] = new JsonObject();
+							((JsonObject)modelsObj[normKey]!)["ObstacleRadii"] = rounded;
 						}
 					}
 				}
@@ -9878,7 +9883,7 @@ public partial class MapEditorHUD : Control
 						["scale"] = defaultScale,
 						["y_offset"] = autoYOffset,
 						["default_asset_type"] = subCategory.ToLowerInvariant(),
-						["despill_player_color"] = true,
+						["despill_player_color"] = false,
 						["normalize_luminance"] = true,
 						["ignore_player_color"] = isPropOrRes
 					};
@@ -9886,11 +9891,12 @@ public partial class MapEditorHUD : Control
 					catObj[subCategory] = subObj;
 					assetsObj[category] = catObj;
 
-					if (!root.ContainsKey("ModelOffsets") || root["ModelOffsets"] is not JsonObject) root["ModelOffsets"] = new JsonObject();
-					((JsonObject)root["ModelOffsets"])[fileName] = autoYOffset;
-
-					if (!root.ContainsKey("ModelScales") || root["ModelScales"] is not JsonObject) root["ModelScales"] = new JsonObject();
-					((JsonObject)root["ModelScales"])[fileName] = defaultScale;
+					if (!root.ContainsKey("Models") || root["Models"] is not JsonObject) root["Models"] = new JsonObject();
+					var modelsMap = (JsonObject)root["Models"]!;
+					if (!modelsMap.ContainsKey(fileName) || modelsMap[fileName] is not JsonObject) modelsMap[fileName] = new JsonObject();
+					var modelEntry = (JsonObject)modelsMap[fileName]!;
+					modelEntry["Offsets"] = autoYOffset;
+					modelEntry["Scales"] = defaultScale;
 
 					GameHost.Instance?.SetModelYOffset(fileName, autoYOffset);
 					GameHost.Instance?.SetModelScale(fileName, defaultScale);
@@ -9941,7 +9947,7 @@ public partial class MapEditorHUD : Control
 							["YOffset"] = autoYOffset,
 							["PathingType"] = defaultPathing,
 							["ModelPath"] = fileName,
-							["DespillPlayerColor"] = true,
+							["DespillPlayerColor"] = false,
 							["NormalizeLuminance"] = true,
 							["IgnorePlayerColor"] = isPropOrRes
 						};
@@ -10214,6 +10220,8 @@ public partial class MapEditorHUD : Control
 
 			string texDir = System.IO.Path.Combine(wsPath, "Assets", "textures");
 			System.IO.Directory.CreateDirectory(texDir);
+
+			MapWorkspaceService.NormalizeMetadataTextureEntries(wsPath);
 
 			_swatchTextureCache.Clear();
 			if (GameHost.Instance != null && GameHost.Instance.GroundTerrain != null)

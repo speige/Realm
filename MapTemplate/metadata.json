@@ -3,101 +3,200 @@
 		{
 			"AbilityId": "fireball",
 			"AbilityType": "target_spell",
+			"AppliedStatusEffects": null,
 			"AreaOfEffectRadius": 4,
+			"CastSound": null,
 			"Cooldown": 12,
 			"Damage": 50,
 			"Description": "[X] Bola de fuego — Daño 50 en área (radio 4)",
+			"Healing": 0,
 			"IconPath": "res://Assets/UI/fire_spell.png",
 			"ManaCost": 0,
 			"Name": "Bola de fuego",
-			"TargetRange": 12
+			"SummonCount": 0,
+			"SummonDuration": 0,
+			"SummonedUnitId": null,
+			"TargetRange": 12,
+			"VisualEffect": null
 		},
 		{
 			"AbilityId": "holylight",
 			"AbilityType": "target_spell",
+			"AppliedStatusEffects": null,
 			"AreaOfEffectRadius": 4,
+			"CastSound": null,
 			"Cooldown": 15,
+			"Damage": 0,
 			"Description": "[X] Luz sagrada — Cura 60 en área (radio 4)",
 			"Healing": 60,
 			"IconPath": "res://Assets/UI/magic_upgrade_arrow.png",
 			"ManaCost": 0,
 			"Name": "Luz sagrada",
-			"TargetRange": 12
+			"SummonCount": 0,
+			"SummonDuration": 0,
+			"SummonedUnitId": null,
+			"TargetRange": 12,
+			"VisualEffect": null
 		},
 		{
 			"AbilityId": "lightning",
 			"AbilityType": "target_spell",
+			"AppliedStatusEffects": null,
 			"AreaOfEffectRadius": 2,
+			"CastSound": null,
 			"Cooldown": 18,
 			"Damage": 80,
 			"Description": "[X] Rayo — Daño 80 en área (radio 2)",
+			"Healing": 0,
 			"IconPath": "res://Assets/UI/lightning_spell.png",
 			"ManaCost": 0,
 			"Name": "Rayo",
-			"TargetRange": 12
+			"SummonCount": 0,
+			"SummonDuration": 0,
+			"SummonedUnitId": null,
+			"TargetRange": 12,
+			"VisualEffect": null
 		}
 	],
+	"CustomAttachments": [],
 	"CustomBuildings": [
 		{
-			"Animations": {},
-			"CollisionCircle": 1.25,
+			"Abilities": null,
+			"Animations": null,
+			"Armor": 0,
+			"ArmorType": null,
+			"AttackCooldown": 0,
+			"AttackType": null,
+			"Brightness": 0.5,
+			"BuildOptions": null,
+			"CollisionCircle": 0,
+			"CostGold": 0,
+			"CostStone": 0,
+			"CostWood": 0,
+			"Damage": 0,
+			"DeathShader": null,
 			"Description": "",
-			"ModelPath": "ice_castle_1.glb",
-			"Name": "Castle",
-			"NormalMode": "Flat",
+			"DespawnShader": null,
+			"DespillPlayerColor": false,
+			"GoldBounty": 0,
+			"IgnorePlayerColor": false,
+			"IsHero": false,
+			"MaxHp": 0,
+			"ModelPath": "clock_tower_building.rmesh",
+			"Name": "ClockTower",
 			"NormalizeLuminance": true,
+			"ObjectAttachments": null,
+			"ObstacleRadius": null,
+			"PathingCapabilities": null,
 			"PathingType": 32,
+			"PopCost": 0,
+			"PortraitModelPath": null,
+			"ProductionTime": 0,
+			"ProjectileModelPath": null,
+			"Range": 0,
 			"Scale": 1.5,
-			"UnitId": "ice_castle_1",
-			"YOffset": 1.5000001
+			"ScanRadius": 0,
+			"SoundEvents": null,
+			"Sounds": null,
+			"SpawnShader": null,
+			"Speed": 0,
+			"StartingItems": null,
+			"StatusEffects": null,
+			"Targets": null,
+			"Tint": null,
+			"UnitId": "ClockTower",
+			"Upgrades": null,
+			"Weapons": null,
+			"XpBounty": 0,
+			"YOffset": 1.5021
 		},
 		{
+			"Abilities": null,
 			"Animations": {},
+			"Armor": 0,
+			"ArmorType": null,
+			"AttackCooldown": 0,
+			"AttackType": null,
 			"Brightness": 0.5,
+			"BuildOptions": null,
 			"CollisionCircle": 1.25,
+			"CostGold": 0,
+			"CostStone": 0,
+			"CostWood": 0,
+			"Damage": 0,
+			"DeathShader": null,
 			"Description": "",
+			"DespawnShader": null,
+			"DespillPlayerColor": false,
+			"GoldBounty": 0,
 			"IgnorePlayerColor": false,
-			"ModelPath": "timber_framed_house.glb",
+			"IsHero": false,
+			"MaxHp": 0,
+			"ModelPath": "timber_framed_house.rmesh",
 			"Name": "House",
-			"NormalMode": "Flat",
 			"NormalizeLuminance": true,
+			"ObjectAttachments": null,
+			"ObstacleRadius": null,
+			"PathingCapabilities": null,
 			"PathingType": 32,
+			"PopCost": 0,
+			"PortraitModelPath": null,
+			"ProductionTime": 0,
+			"ProjectileModelPath": null,
+			"Range": 0,
 			"Scale": 1.5,
+			"ScanRadius": 0,
+			"SoundEvents": null,
+			"Sounds": null,
+			"SpawnShader": null,
+			"Speed": 0,
+			"StartingItems": null,
+			"StatusEffects": null,
+			"Targets": null,
 			"Tint": "#ffffff",
 			"UnitId": "timber_framed_house",
+			"Upgrades": null,
+			"Weapons": null,
+			"XpBounty": 0,
 			"YOffset": 1.5000001
 		}
 	],
 	"CustomItems": [],
 	"CustomProps": [
 		{
-			"Animations": {},
 			"Brightness": 0.5,
 			"CollisionCircle": 1,
+			"DeathShader": null,
 			"Description": "",
+			"DespawnShader": null,
+			"DespillPlayerColor": false,
 			"IgnorePlayerColor": true,
-			"ModelPath": "crystal_cluster_29.glb",
+			"ModelPath": "crystal_cluster_29.rmesh",
 			"Name": "Crystals",
-			"NormalMode": "Flat",
 			"NormalizeLuminance": true,
 			"PathingType": 255,
+			"PortraitModelPath": null,
 			"Scale": 1.25,
+			"SpawnShader": null,
 			"Tint": "#ffffff",
 			"UnitId": "crystal_cluster_29",
 			"YOffset": 1.2500001
 		},
 		{
-			"Animations": {},
 			"Brightness": 0.5,
 			"CollisionCircle": 0.45000002,
+			"DeathShader": null,
 			"Description": "",
+			"DespawnShader": null,
+			"DespillPlayerColor": false,
 			"IgnorePlayerColor": true,
-			"ModelPath": "spiked_wooden_stake.glb",
+			"ModelPath": "spiked_wooden_stake.rmesh",
 			"Name": "Spike Pole",
-			"NormalMode": "Flat",
 			"NormalizeLuminance": true,
 			"PathingType": 255,
+			"PortraitModelPath": null,
 			"Scale": 1.25,
+			"SpawnShader": null,
 			"Tint": "#ffffff",
 			"UnitId": "spiked_wooden_stake",
 			"YOffset": 1.2000002
@@ -105,33 +204,47 @@
 	],
 	"CustomResources": [
 		{
-			"Animations": {},
 			"Brightness": 0.5,
 			"CollisionCircle": 1,
+			"DeathShader": null,
 			"Description": "",
+			"DespawnShader": null,
+			"DespillPlayerColor": false,
+			"GrowthRate": 0,
+			"HarvestRate": 0,
 			"IgnorePlayerColor": true,
-			"ModelPath": "coniferous_tree_1.glb",
+			"MaxCapacity": 0,
+			"MaxWorkers": 0,
+			"ModelPath": "coniferous_tree_1.rmesh",
 			"Name": "Tree",
-			"NormalMode": "Flat",
 			"NormalizeLuminance": true,
 			"PathingType": 255,
+			"PortraitModelPath": null,
 			"Scale": 2.75,
+			"SpawnShader": null,
 			"Tint": "#ffffff",
 			"UnitId": "coniferous_tree_1",
 			"YOffset": 2.7491
 		},
 		{
-			"Animations": {},
 			"Brightness": 0.5,
 			"CollisionCircle": 1,
+			"DeathShader": null,
 			"Description": "",
+			"DespawnShader": null,
+			"DespillPlayerColor": false,
+			"GrowthRate": 0,
+			"HarvestRate": 0,
 			"IgnorePlayerColor": true,
-			"ModelPath": "palm_tree.glb",
+			"MaxCapacity": 0,
+			"MaxWorkers": 0,
+			"ModelPath": "palm_tree.rmesh",
 			"Name": "Palm Tree",
-			"NormalMode": "Flat",
 			"NormalizeLuminance": true,
 			"PathingType": 255,
+			"PortraitModelPath": null,
 			"Scale": 2.75,
+			"SpawnShader": null,
 			"Tint": "#ffffff",
 			"UnitId": "palm_tree",
 			"YOffset": 2.7498
@@ -139,212 +252,307 @@
 	],
 	"CustomUnits": [
 		{
-			"Animations": {
-				"Attack": [
-					"Upward Thrust - Upward Weapon Thrust.ranim"
-				],
-				"Dance": [
-					"Northern Soul Floor Spin - Northern Soul Dance Spin On Floor.ranim"
-				],
-				"Death": [
-					"Death - Death From Standing Idle.ranim"
-				],
-				"Idle": [
-					"Bored - Standing Around Bored Idle.ranim"
-				],
-				"Labor": [
-					"Heavy Weapon Swing - Two Handed Heavy Weapon Swing.ranim"
-				],
-				"Spell_Cast": [
-					"Magic Spell Casting - Casting A Spell With One Hand.ranim"
-				],
-				"Walk": [
-					"Standard Walk - Standard Walk.ranim"
-				]
-			},
-			"CollisionCircle": 0.5,
+			"Abilities": null,
+			"Animations": null,
+			"Armor": 0,
+			"ArmorType": null,
+			"AttackCooldown": 0,
+			"AttackType": null,
+			"Brightness": 0.5,
+			"BuildOptions": null,
+			"CollisionCircle": 0,
+			"CostGold": 0,
+			"CostStone": 0,
+			"CostWood": 0,
+			"Damage": 0,
+			"DeathShader": null,
 			"Description": "",
-			"ModelPath": "fantasy_warrior_unit_1.glb",
-			"Name": "Kevin",
-			"NormalMode": "Flat",
+			"DespawnShader": null,
+			"DespillPlayerColor": false,
+			"GoldBounty": 0,
+			"IgnorePlayerColor": false,
+			"IsHero": false,
+			"MaxHp": 0,
+			"ModelPath": "orc_warrior_7.rmesh",
+			"Name": "Chad",
 			"NormalizeLuminance": true,
+			"ObjectAttachments": null,
+			"ObstacleRadius": null,
+			"PathingCapabilities": null,
 			"PathingType": 9,
+			"PopCost": 0,
+			"PortraitModelPath": null,
+			"ProductionTime": 0,
+			"ProjectileModelPath": null,
+			"Range": 0,
 			"Scale": 1,
-			"UnitId": "fantasy_warrior_unit_1",
-			"YOffset": 0.8000002
+			"ScanRadius": 0,
+			"SoundEvents": null,
+			"Sounds": null,
+			"SpawnShader": null,
+			"Speed": 0,
+			"StartingItems": null,
+			"StatusEffects": null,
+			"Targets": null,
+			"Tint": null,
+			"UnitId": "Chad",
+			"Upgrades": null,
+			"Weapons": null,
+			"XpBounty": 0,
+			"YOffset": 0.8367
 		},
 		{
-			"Animations": {
-				"Attack": [
-					"Upward Thrust - Upward Weapon Thrust.ranim"
-				],
-				"Dance": [
-					"Northern Soul Floor Spin - Northern Soul Dance Spin On Floor.ranim"
-				],
-				"Death": [
-					"Death - Death From Standing Idle.ranim"
-				],
-				"Idle": [
-					"Bored - Standing Around Bored Idle.ranim"
-				],
-				"Labor": [
-					"Heavy Weapon Swing - Two Handed Heavy Weapon Swing.ranim"
-				],
-				"Spell_Cast": [
-					"Magic Spell Casting - Casting A Spell With One Hand.ranim"
-				],
-				"Walk": [
-					"Standard Walk - Standard Walk.ranim"
-				]
-			},
+			"Abilities": null,
+			"Animations": null,
+			"Armor": 0,
+			"ArmorType": null,
+			"AttackCooldown": 0,
+			"AttackType": null,
 			"Brightness": 0.5,
-			"CollisionCircle": 0.5,
+			"BuildOptions": null,
+			"CollisionCircle": 0,
+			"CostGold": 0,
+			"CostStone": 0,
+			"CostWood": 0,
+			"Damage": 0,
+			"DeathShader": null,
 			"Description": "",
+			"DespawnShader": null,
+			"DespillPlayerColor": false,
+			"GoldBounty": 0,
 			"IgnorePlayerColor": false,
-			"ModelPath": "orc_warrior_7.glb",
-			"Name": "Chad",
-			"NormalMode": "Flat",
+			"IsHero": false,
+			"MaxHp": 0,
+			"ModelPath": "fantasy_warrior_unit_1.rmesh",
+			"Name": "Kevin",
 			"NormalizeLuminance": true,
+			"ObjectAttachments": null,
+			"ObstacleRadius": null,
+			"PathingCapabilities": null,
 			"PathingType": 9,
+			"PopCost": 0,
+			"PortraitModelPath": null,
+			"ProductionTime": 0,
+			"ProjectileModelPath": null,
+			"Range": 0,
 			"Scale": 1,
-			"Tint": "#ffffff",
-			"UnitId": "orc_warrior_7",
-			"YOffset": 0.7500002
+			"ScanRadius": 0,
+			"SoundEvents": null,
+			"Sounds": null,
+			"SpawnShader": null,
+			"Speed": 0,
+			"StartingItems": null,
+			"StatusEffects": null,
+			"Targets": null,
+			"Tint": null,
+			"UnitId": "Kevin",
+			"Upgrades": null,
+			"Weapons": null,
+			"XpBounty": 0,
+			"YOffset": 0.909
 		}
 	],
 	"CustomUpgrades": [],
+	"CustomVfx": [],
 	"CustomWeapons": [],
-	"MapProperties": {},
-	"ModelBrightness": {
-		"coniferous_tree_1.glb": 0.5,
-		"crystal_cluster_29.glb": 0.5,
-		"orc_warrior_7.glb": 0.5,
-		"palm_tree.glb": 0.5,
-		"spiked_wooden_stake.glb": 0.5,
-		"timber_framed_house.glb": 0.5
+	"Dependencies": [],
+	"GameBuildNumber": "v0.0.2",
+	"MapProperties": {
+		"Author": null,
+		"CameraBoundsBottom": null,
+		"CameraBoundsLeft": null,
+		"CameraBoundsRight": null,
+		"CameraBoundsTop": null,
+		"Changelog": null,
+		"HowToPlayInstructions": null,
+		"HowToPlayObjective": null,
+		"LoadingBodyText": null,
+		"LoadingImage": null,
+		"LoadingMusic": null,
+		"LoadingSubtitle": null,
+		"LoadingTitle": null,
+		"MapDescription": null,
+		"MapHeight": null,
+		"MapName": null,
+		"MapType": null,
+		"MapWidth": null,
+		"MinimapImage": null,
+		"PlayableHeight": null,
+		"PlayableWidth": null,
+		"PlayerSlots": null,
+		"ShadowIntensity": null,
+		"ShroudType": null,
+		"SuggestedPlayers": null,
+		"Tags": null,
+		"Teams": null,
+		"TerrainBaseHeight": null,
+		"Version": null,
+		"WeatherType": null
 	},
-	"ModelCollisionCircleRatios": {
-		"coniferous_tree_1.glb": 1,
-		"crystal_cluster_29.glb": 1,
-		"fantasy_warrior_unit_1.glb": 0.5,
-		"ice_castle_1.glb": 1.25,
-		"orc_warrior_7.glb": 0.5,
-		"palm_tree.glb": 1,
-		"spiked_wooden_stake.glb": 0.45000002,
-		"timber_framed_house.glb": 1.25
+	"Models": {
+		"chad.rmesh": {
+			"Brightness": 0.5,
+			"CollisionCircleRatios": 0,
+			"ColorTint": "#ffffff",
+			"DespillPlayerColor": false,
+			"IgnorePlayerColor": false,
+			"NormalizeLuminance": true,
+			"Offsets": 0.8367,
+			"Scales": 1
+		},
+		"clock_tower_building.rmesh": {
+			"CollisionCircleRatios": 0,
+			"DespillPlayerColor": false,
+			"Scales": 1.5
+		},
+		"clocktower.rmesh": {
+			"Brightness": 0.5,
+			"CollisionCircleRatios": 0,
+			"ColorTint": "#ffffff",
+			"DespillPlayerColor": false,
+			"IgnorePlayerColor": false,
+			"NormalizeLuminance": true,
+			"Offsets": 1.5021,
+			"Scales": 1.5
+		},
+		"coniferous_tree_1.rmesh": {
+			"Brightness": 0.5,
+			"CollisionCircleRatios": 3.3,
+			"ColorTint": "#ffffff",
+			"DespillPlayerColor": false,
+			"IgnorePlayerColor": true,
+			"NormalizeLuminance": true,
+			"Offsets": 2.7491,
+			"Scales": 2.75
+		},
+		"crystal_cluster_29.rmesh": {
+			"Brightness": 0.5,
+			"CollisionCircleRatios": 2.6000001,
+			"ColorTint": "#ffffff",
+			"DespillPlayerColor": false,
+			"IgnorePlayerColor": true,
+			"NormalizeLuminance": true,
+			"Offsets": 1.2500001,
+			"Scales": 1.25
+		},
+		"fantasy_warrior_unit_1.rmesh": {
+			"CollisionCircleRatios": 0,
+			"DespillPlayerColor": false,
+			"Scales": 1
+		},
+		"ice_castle_1.rmesh": {
+			"DespillPlayerColor": false
+		},
+		"kevin.rmesh": {
+			"Brightness": 0.5,
+			"CollisionCircleRatios": 0,
+			"ColorTint": "#ffffff",
+			"DespillPlayerColor": false,
+			"IgnorePlayerColor": false,
+			"NormalizeLuminance": true,
+			"Offsets": 0.909,
+			"Scales": 1
+		},
+		"orc_warrior_7.rmesh": {
+			"CollisionCircleRatios": 0,
+			"DespillPlayerColor": false,
+			"Scales": 1
+		},
+		"ornate_spear_1.rmesh": {
+			"DespillPlayerColor": false
+		},
+		"palm_tree.rmesh": {
+			"Brightness": 0.5,
+			"CollisionCircleRatios": 3.9,
+			"ColorTint": "#ffffff",
+			"DespillPlayerColor": false,
+			"IgnorePlayerColor": true,
+			"NormalizeLuminance": true,
+			"Offsets": 2.7498,
+			"Scales": 2.75
+		},
+		"spiked_wooden_stake.rmesh": {
+			"Brightness": 0.5,
+			"CollisionCircleRatios": 0.95,
+			"ColorTint": "#ffffff",
+			"DespillPlayerColor": false,
+			"IgnorePlayerColor": true,
+			"NormalizeLuminance": true,
+			"Offsets": 1.2000002,
+			"Scales": 1.25
+		},
+		"timber_framed_house.rmesh": {
+			"Brightness": 0.5,
+			"CollisionCircleRatios": 1.25,
+			"ColorTint": "#ffffff",
+			"DespillPlayerColor": false,
+			"IgnorePlayerColor": false,
+			"NormalizeLuminance": true,
+			"Offsets": 1.5000001,
+			"Scales": 1.5
+		},
+		"wooden_spear_2.rmesh": {
+			"DespillPlayerColor": false,
+			"IgnorePlayerColor": true
+		}
 	},
-	"ModelDeathShaders": {},
-	"ModelIgnorePlayerColor": {
-		"coniferous_tree_1.glb": true,
-		"crystal_cluster_29.glb": true,
-		"orc_warrior_7.glb": false,
-		"palm_tree.glb": true,
-		"spiked_wooden_stake.glb": true,
-		"timber_framed_house.glb": false
+	"decals": {
+		"acid_drip.rtex": {},
+		"arcane_spark.rtex": {}
 	},
-	"ModelNormalModes": {
-		"coniferous_tree_1.glb": "Flat",
-		"crystal_cluster_29.glb": "Flat",
-		"fantasy_warrior_unit_1.glb": "Flat",
-		"ice_castle_1.glb": "Flat",
-		"orc_warrior_7.glb": "Flat",
-		"ornate_spear_1.glb": "Flat",
-		"palm_tree.glb": "Flat",
-		"spiked_wooden_stake.glb": "Flat",
-		"timber_framed_house.glb": "Flat",
-		"wooden_spear_2.glb": "Flat"
-	},
-	"ModelNormalizeLuminance": {
-		"coniferous_tree_1.glb": true,
-		"crystal_cluster_29.glb": true,
-		"fantasy_warrior_unit_1.glb": true,
-		"ice_castle_1.glb": true,
-		"orc_warrior_7.glb": true,
-		"palm_tree.glb": true,
-		"spiked_wooden_stake.glb": true,
-		"timber_framed_house.glb": true
-	},
-	"ModelObstacleRadii": {},
-	"ModelOffsets": {
-		"coniferous_tree_1.glb": 2.7491,
-		"crystal_cluster_29.glb": 1.2500001,
-		"fantasy_warrior_unit_1.glb": 0.8000002,
-		"ice_castle_1.glb": 1.5000001,
-		"orc_warrior_7.glb": 0.7500002,
-		"palm_tree.glb": 2.7498,
-		"spiked_wooden_stake.glb": 1.2000002,
-		"timber_framed_house.glb": 1.5000001
-	},
-	"ModelScales": {
-		"coniferous_tree_1.glb": 2.75,
-		"crystal_cluster_29.glb": 1.25,
-		"fantasy_warrior_unit_1.glb": 1,
-		"ice_castle_1.glb": 1.5,
-		"orc_warrior_7.glb": 1,
-		"palm_tree.glb": 2.75,
-		"spiked_wooden_stake.glb": 1.25,
-		"timber_framed_house.glb": 1.5
-	},
-	"ModelSpawnShaders": {},
-	"decals": {},
+	"icons": {},
+	"noise_textures": {},
+	"ribbons": {},
+	"skyboxes": {},
 	"textures": {
 		"ancient_jungle_mossy_stone.rtex": {
-			"scale_factor": 4,
+			"Scale_Factor": 4,
 			"swatchIndex": 0
 		},
 		"ancient_jungle_overgrown_path.rtex": {
-			"scale_factor": 4,
+			"Scale_Factor": 4,
 			"swatchIndex": 1
 		},
 		"deep_trench_dense_mud.rtex": {
-			"scale_factor": 4,
+			"Scale_Factor": 4,
 			"swatchIndex": 2
 		},
 		"dusty_canyon_granite_basin.rtex": {
-			"scale_factor": 3.0931616,
+			"Scale_Factor": 3.0932,
 			"swatchIndex": 3
 		},
 		"dusty_canyon_scarce_soil.rtex": {
-			"scale_factor": 0.4576266,
+			"Scale_Factor": 0.4576,
 			"swatchIndex": 4
 		},
 		"frozen_tundra_mud.rtex": {
-			"scale_factor": 0.86515486,
+			"Scale_Factor": 0.8652,
 			"swatchIndex": 5
 		},
 		"mangrove_swamp_bog_grass.rtex": {
-			"scale_factor": 4,
+			"Scale_Factor": 4,
 			"swatchIndex": 6
 		},
 		"petrified_forest_gray_granite.rtex": {
-			"scale_factor": 2.6072075,
+			"Scale_Factor": 2.6072,
 			"swatchIndex": 7
 		},
 		"sunken_ruins_crushed_granite.rtex": {
-			"scale_factor": 4,
+			"Scale_Factor": 4,
 			"swatchIndex": 8
 		},
 		"sunken_ruins_mossy_stone.rtex": {
-			"scale_factor": 4,
+			"Scale_Factor": 4,
 			"swatchIndex": 9
 		},
 		"sunken_ruins_reef_stone.rtex": {
-			"scale_factor": 1.1258137,
+			"Scale_Factor": 1.1258,
 			"swatchIndex": 10
 		},
 		"whispering_woods_soft_grass.rtex": {
-			"scale_factor": 1.3309579,
+			"Scale_Factor": 1.331,
 			"swatchIndex": 11
 		}
 	},
-	"vfx_spritesheets": {
-		"arcane_surge_sheet.rtex": {
-			"columns": 4,
-			"rows": 4
-		},
-		"solar_flare_sheet.rtex": {
-			"columns": 4,
-			"rows": 4
-		}
-	}
+	"vfx_spritesheets": {}
 }

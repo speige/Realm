@@ -23,12 +23,6 @@ public class MapMetadata
 	[JsonPropertyName("Dependencies")]
 	public List<MapDependencyMetadata> Dependencies { get; set; } = new();
 
-	[JsonPropertyName("Ratings")]
-	public MapRatingMetadata Ratings { get; set; } = new();
-
-	[JsonPropertyName("Greenlight")]
-	public MapGreenlightMetadata Greenlight { get; set; } = new();
-
 	[JsonPropertyName("CustomUnits")]
 	public List<GameHost.UnitMetadata> CustomUnits { get; set; } = new();
 
@@ -59,38 +53,8 @@ public class MapMetadata
 	[JsonPropertyName("CustomVfx")]
 	public List<VfxAttachmentConfig> CustomVfx { get; set; } = new();
 
-	[JsonPropertyName("ModelOffsets")]
-	public Dictionary<string, float> ModelOffsets { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-
-	[JsonPropertyName("ModelScales")]
-	public Dictionary<string, float> ModelScales { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-
-	[JsonPropertyName("ModelCollisionCircleRatios")]
-	public Dictionary<string, float> ModelCollisionCircleRatios { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-
-	[JsonPropertyName("ModelObstacleRadii")]
-	public Dictionary<string, float> ModelObstacleRadii { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-
-	[JsonPropertyName("ModelBrightness")]
-	public Dictionary<string, float> ModelBrightness { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-
-	[JsonPropertyName("ModelColorTint")]
-	public Dictionary<string, string> ModelColorTint { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-
-	[JsonPropertyName("ModelDespillPlayerColor")]
-	public Dictionary<string, bool> ModelDespillPlayerColor { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-
-	[JsonPropertyName("ModelNormalizeLuminance")]
-	public Dictionary<string, bool> ModelNormalizeLuminance { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-
-	[JsonPropertyName("ModelIgnorePlayerColor")]
-	public Dictionary<string, bool> ModelIgnorePlayerColor { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-
-	[JsonPropertyName("ModelSpawnShaders")]
-	public Dictionary<string, string> ModelSpawnShaders { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-
-	[JsonPropertyName("ModelDeathShaders")]
-	public Dictionary<string, string> ModelDeathShaders { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+	[JsonPropertyName("Models")]
+	public Dictionary<string, ModelMetadata> Models { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
 	[JsonPropertyName("textures")]
 	public Dictionary<string, JsonNode> Textures { get; set; } = new(StringComparer.OrdinalIgnoreCase);
@@ -416,58 +380,69 @@ public class MapMetadata
 		return false;
 	}
 
+	private ModelMetadata GetOrCreateModel(string modelKey)
+	{
+		Models ??= new Dictionary<string, ModelMetadata>(StringComparer.OrdinalIgnoreCase);
+		if (!Models.TryGetValue(modelKey, out var model) || model == null)
+		{
+			model = new ModelMetadata();
+			Models[modelKey] = model;
+		}
+		return model;
+	}
+
 	public void SetModelYOffset(string modelKey, float yOffset)
 	{
 		if (string.IsNullOrWhiteSpace(modelKey)) return;
-		ModelOffsets[modelKey] = yOffset;
+		GetOrCreateModel(modelKey).Offsets = yOffset;
 	}
 
 	public void SetModelScale(string modelKey, float scale)
 	{
 		if (string.IsNullOrWhiteSpace(modelKey)) return;
-		ModelScales[modelKey] = scale;
+		GetOrCreateModel(modelKey).Scales = scale;
 	}
 
 	public void SetModelCollisionCircleRatio(string modelKey, float ratio)
 	{
 		if (string.IsNullOrWhiteSpace(modelKey)) return;
-		ModelCollisionCircleRatios[modelKey] = ratio;
+		GetOrCreateModel(modelKey).CollisionCircleRatios = ratio;
 	}
 
 	public void SetModelObstacleRadius(string modelKey, float radius)
 	{
 		if (string.IsNullOrWhiteSpace(modelKey)) return;
-		ModelObstacleRadii[modelKey] = radius;
+		GetOrCreateModel(modelKey).ObstacleRadii = radius;
 	}
 
 	public void SetModelBrightness(string modelKey, float brightness)
 	{
 		if (string.IsNullOrWhiteSpace(modelKey)) return;
-		ModelBrightness[modelKey] = brightness;
+		GetOrCreateModel(modelKey).Brightness = brightness;
 	}
 
 	public void SetModelColorTint(string modelKey, string tint)
 	{
 		if (string.IsNullOrWhiteSpace(modelKey)) return;
-		ModelColorTint[modelKey] = tint;
+		GetOrCreateModel(modelKey).ColorTint = tint;
 	}
 
 	public void SetModelDespillPlayerColor(string modelKey, bool despill)
 	{
 		if (string.IsNullOrWhiteSpace(modelKey)) return;
-		ModelDespillPlayerColor[modelKey] = despill;
+		GetOrCreateModel(modelKey).DespillPlayerColor = despill;
 	}
 
 	public void SetModelNormalizeLuminance(string modelKey, bool normalize)
 	{
 		if (string.IsNullOrWhiteSpace(modelKey)) return;
-		ModelNormalizeLuminance[modelKey] = normalize;
+		GetOrCreateModel(modelKey).NormalizeLuminance = normalize;
 	}
 
 	public void SetModelIgnorePlayerColor(string modelKey, bool ignore)
 	{
 		if (string.IsNullOrWhiteSpace(modelKey)) return;
-		ModelIgnorePlayerColor[modelKey] = ignore;
+		GetOrCreateModel(modelKey).IgnorePlayerColor = ignore;
 	}
 }
 
@@ -546,34 +521,51 @@ public class MapDependencyMetadata
 	public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
-public class MapRatingMetadata
+public class ModelMetadata
 {
-	public float AverageRating { get; set; }
-	public int RatingCount { get; set; }
-	public int Upvotes { get; set; }
-	public int Downvotes { get; set; }
-	public List<MapReviewMetadata> CommunityReviews { get; set; } = new();
+	[JsonPropertyName("Brightness")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public float? Brightness { get; set; }
 
-	[JsonExtensionData]
-	public Dictionary<string, JsonElement>? ExtensionData { get; set; }
-}
+	[JsonPropertyName("CollisionCircleRatios")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public float? CollisionCircleRatios { get; set; }
 
-public class MapReviewMetadata
-{
-	public string Author { get; set; } = string.Empty;
-	public float Score { get; set; }
-	public string ReviewText { get; set; } = string.Empty;
-	public string DateUtc { get; set; } = string.Empty;
-}
+	[JsonPropertyName("ColorTint")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? ColorTint { get; set; }
 
-public class MapGreenlightMetadata
-{
-	public bool IsGreenlit { get; set; }
-	public string Status { get; set; } = "Pending";
-	public int VotesRequired { get; set; }
-	public int CurrentVotes { get; set; }
-	public string? ApprovedUtc { get; set; }
-	public string? BypassToken { get; set; }
+	[JsonPropertyName("DespillPlayerColor")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? DespillPlayerColor { get; set; }
+
+	[JsonPropertyName("IgnorePlayerColor")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? IgnorePlayerColor { get; set; }
+
+	[JsonPropertyName("NormalizeLuminance")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? NormalizeLuminance { get; set; }
+
+	[JsonPropertyName("ObstacleRadii")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public float? ObstacleRadii { get; set; }
+
+	[JsonPropertyName("Offsets")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public float? Offsets { get; set; }
+
+	[JsonPropertyName("Scales")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public float? Scales { get; set; }
+
+	[JsonPropertyName("SpawnShaders")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? SpawnShaders { get; set; }
+
+	[JsonPropertyName("DeathShaders")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? DeathShaders { get; set; }
 
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement>? ExtensionData { get; set; }
@@ -764,14 +756,6 @@ public class MetadataService
 			}
 		}
 
-		if (metadata.Ratings != null)
-		{
-			if (metadata.Ratings.AverageRating < 0f || metadata.Ratings.AverageRating > 5f)
-			{
-				result.Warnings.Add($"AverageRating {metadata.Ratings.AverageRating} is out of expected 0-5 range.");
-			}
-		}
-
 		if (metadata.MapProperties != null && metadata.MapProperties.PlayerSlots != null)
 		{
 			var slotIds = new HashSet<int>();
@@ -802,8 +786,6 @@ public class MetadataService
 
 		metadata.MapProperties ??= new MapInfoMetadata();
 		metadata.Dependencies ??= new List<MapDependencyMetadata>();
-		metadata.Ratings ??= new MapRatingMetadata();
-		metadata.Greenlight ??= new MapGreenlightMetadata();
 		metadata.CustomUnits ??= new List<GameHost.UnitMetadata>();
 		metadata.CustomBuildings ??= new List<GameHost.UnitMetadata>();
 		metadata.CustomResources ??= new List<GameHost.ResourceMetadata>();
@@ -815,17 +797,7 @@ public class MetadataService
 		metadata.CustomAttachments ??= new List<GameHost.AttachmentMetadata>();
 		metadata.CustomVfx ??= new List<VfxAttachmentConfig>();
 
-		metadata.ModelOffsets ??= new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
-		metadata.ModelScales ??= new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
-		metadata.ModelCollisionCircleRatios ??= new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
-		metadata.ModelObstacleRadii ??= new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
-		metadata.ModelBrightness ??= new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
-		metadata.ModelColorTint ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-		metadata.ModelDespillPlayerColor ??= new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-		metadata.ModelNormalizeLuminance ??= new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-		metadata.ModelIgnorePlayerColor ??= new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-		metadata.ModelSpawnShaders ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-		metadata.ModelDeathShaders ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		metadata.Models ??= new Dictionary<string, ModelMetadata>(StringComparer.OrdinalIgnoreCase);
 		metadata.Textures ??= new Dictionary<string, JsonNode>(StringComparer.OrdinalIgnoreCase);
 		metadata.Decals ??= new Dictionary<string, JsonNode>(StringComparer.OrdinalIgnoreCase);
 		metadata.VfxSpritesheets ??= new Dictionary<string, JsonNode>(StringComparer.OrdinalIgnoreCase);
@@ -1112,100 +1084,87 @@ public class MetadataService
 		return metadata.CustomVfx.RemoveAll(v => string.Equals(v.VfxId, vfxId, StringComparison.OrdinalIgnoreCase)) > 0;
 	}
 
+	private static ModelMetadata GetOrCreateModel(MapMetadata metadata, string modelKey)
+	{
+		metadata.Models ??= new Dictionary<string, ModelMetadata>(StringComparer.OrdinalIgnoreCase);
+		if (!metadata.Models.TryGetValue(modelKey, out var model) || model == null)
+		{
+			model = new ModelMetadata();
+			metadata.Models[modelKey] = model;
+		}
+		return model;
+	}
+
 	public void SetModelYOffset(MapMetadata metadata, string modelKey, float yOffset)
 	{
 		if (metadata == null || string.IsNullOrWhiteSpace(modelKey)) return;
-		metadata.ModelOffsets[modelKey] = yOffset;
+		GetOrCreateModel(metadata, modelKey).Offsets = yOffset;
 	}
 
 	public void SetModelScale(MapMetadata metadata, string modelKey, float scale)
 	{
 		if (metadata == null || string.IsNullOrWhiteSpace(modelKey)) return;
-		metadata.ModelScales[modelKey] = scale;
+		GetOrCreateModel(metadata, modelKey).Scales = scale;
 	}
 
 	public void SetModelCollisionCircleRatio(MapMetadata metadata, string modelKey, float ratio)
 	{
 		if (metadata == null || string.IsNullOrWhiteSpace(modelKey)) return;
-		metadata.ModelCollisionCircleRatios[modelKey] = ratio;
+		GetOrCreateModel(metadata, modelKey).CollisionCircleRatios = ratio;
 	}
 
 	public void SetModelObstacleRadius(MapMetadata metadata, string modelKey, float radius)
 	{
 		if (metadata == null || string.IsNullOrWhiteSpace(modelKey)) return;
-		metadata.ModelObstacleRadii[modelKey] = radius;
+		GetOrCreateModel(metadata, modelKey).ObstacleRadii = radius;
 	}
 
 	public void SetModelBrightness(MapMetadata metadata, string modelKey, float brightness)
 	{
 		if (metadata == null || string.IsNullOrWhiteSpace(modelKey)) return;
-		metadata.ModelBrightness[modelKey] = brightness;
+		GetOrCreateModel(metadata, modelKey).Brightness = brightness;
 	}
 
 	public void SetModelColorTint(MapMetadata metadata, string modelKey, string tint)
 	{
 		if (metadata == null || string.IsNullOrWhiteSpace(modelKey)) return;
-		metadata.ModelColorTint[modelKey] = tint;
+		GetOrCreateModel(metadata, modelKey).ColorTint = tint;
 	}
 
 	public void SetModelDespillPlayerColor(MapMetadata metadata, string modelKey, bool despill)
 	{
 		if (metadata == null || string.IsNullOrWhiteSpace(modelKey)) return;
-		metadata.ModelDespillPlayerColor[modelKey] = despill;
+		GetOrCreateModel(metadata, modelKey).DespillPlayerColor = despill;
 	}
 
 	public void SetModelNormalizeLuminance(MapMetadata metadata, string modelKey, bool normalizeLuminance)
 	{
 		if (metadata == null || string.IsNullOrWhiteSpace(modelKey)) return;
-		metadata.ModelNormalizeLuminance[modelKey] = normalizeLuminance;
+		GetOrCreateModel(metadata, modelKey).NormalizeLuminance = normalizeLuminance;
 	}
 
 	public void SetModelIgnorePlayerColor(MapMetadata metadata, string modelKey, bool ignorePlayerColor)
 	{
 		if (metadata == null || string.IsNullOrWhiteSpace(modelKey)) return;
-		metadata.ModelIgnorePlayerColor[modelKey] = ignorePlayerColor;
+		GetOrCreateModel(metadata, modelKey).IgnorePlayerColor = ignorePlayerColor;
 	}
 
 	public void SetModelSpawnShader(MapMetadata metadata, string modelKey, string spawnShader)
 	{
 		if (metadata == null || string.IsNullOrWhiteSpace(modelKey)) return;
-		if (string.IsNullOrWhiteSpace(spawnShader))
-		{
-			metadata.ModelSpawnShaders.Remove(modelKey);
-		}
-		else
-		{
-			metadata.ModelSpawnShaders[modelKey] = spawnShader;
-		}
+		GetOrCreateModel(metadata, modelKey).SpawnShaders = string.IsNullOrWhiteSpace(spawnShader) ? null : spawnShader;
 	}
 
 	public void SetModelDeathShader(MapMetadata metadata, string modelKey, string deathShader)
 	{
 		if (metadata == null || string.IsNullOrWhiteSpace(modelKey)) return;
-		if (string.IsNullOrWhiteSpace(deathShader))
-		{
-			metadata.ModelDeathShaders.Remove(modelKey);
-		}
-		else
-		{
-			metadata.ModelDeathShaders[modelKey] = deathShader;
-		}
+		GetOrCreateModel(metadata, modelKey).DeathShaders = string.IsNullOrWhiteSpace(deathShader) ? null : deathShader;
 	}
 
 	public void RemoveModelOverrides(MapMetadata metadata, string modelKey)
 	{
 		if (metadata == null || string.IsNullOrWhiteSpace(modelKey)) return;
-		metadata.ModelOffsets.Remove(modelKey);
-		metadata.ModelScales.Remove(modelKey);
-		metadata.ModelCollisionCircleRatios.Remove(modelKey);
-		metadata.ModelObstacleRadii.Remove(modelKey);
-		metadata.ModelBrightness.Remove(modelKey);
-		metadata.ModelColorTint.Remove(modelKey);
-		metadata.ModelDespillPlayerColor.Remove(modelKey);
-		metadata.ModelNormalizeLuminance.Remove(modelKey);
-		metadata.ModelIgnorePlayerColor.Remove(modelKey);
-		metadata.ModelSpawnShaders.Remove(modelKey);
-		metadata.ModelDeathShaders.Remove(modelKey);
+		metadata.Models?.Remove(modelKey);
 	}
 
 	public string GetMapName(MapMetadata metadata)
@@ -1250,27 +1209,5 @@ public class MetadataService
 	{
 		if (metadata?.Dependencies == null || string.IsNullOrWhiteSpace(dependencyId)) return false;
 		return metadata.Dependencies.RemoveAll(d => string.Equals(d.Id, dependencyId, StringComparison.OrdinalIgnoreCase)) > 0;
-	}
-
-	public void SetRatings(MapMetadata metadata, float averageRating, int count, int upvotes, int downvotes)
-	{
-		if (metadata == null) return;
-		metadata.Ratings ??= new MapRatingMetadata();
-		metadata.Ratings.AverageRating = averageRating;
-		metadata.Ratings.RatingCount = count;
-		metadata.Ratings.Upvotes = upvotes;
-		metadata.Ratings.Downvotes = downvotes;
-	}
-
-	public void SetGreenlight(MapMetadata metadata, bool isGreenlit, string status, int currentVotes, int votesRequired, string? approvedUtc = null, string? bypassToken = null)
-	{
-		if (metadata == null) return;
-		metadata.Greenlight ??= new MapGreenlightMetadata();
-		metadata.Greenlight.IsGreenlit = isGreenlit;
-		metadata.Greenlight.Status = status;
-		metadata.Greenlight.CurrentVotes = currentVotes;
-		metadata.Greenlight.VotesRequired = votesRequired;
-		if (approvedUtc != null) metadata.Greenlight.ApprovedUtc = approvedUtc;
-		if (bypassToken != null) metadata.Greenlight.BypassToken = bypassToken;
 	}
 }

@@ -484,12 +484,6 @@
     "Assets": {
       "type": "object"
     },
-    "ModelOffsets": { "type": "object" },
-    "ModelCollisionCircleRatios": { "type": "object" },
-    "ModelObstacleRadii": { "type": "object" },
-    "ModelBrightness": { "type": "object" },
-    "ModelColorTint": { "type": "object" },
-    "ModelDespillPlayerColor": { "type": "object" },
-    "ModelIgnorePlayerColor": { "type": "object" }
+    "Models": { "type": "object" }
   }
 }
