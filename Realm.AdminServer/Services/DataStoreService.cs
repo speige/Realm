@@ -1,8 +1,7 @@
 using DBreeze;
 using System.IO;
 using System.Text.Json;
-
-namespace Realm.Lobby.Services;
+namespace Realm.AdminServer.Services;
 
 public class DataStoreService : IDisposable
 {

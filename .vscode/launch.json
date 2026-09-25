@@ -2,10 +2,10 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Run Lobby (Web)",
+      "name": "Run AdminServer (Web)",
       "type": "coreclr",
       "request": "launch",
-      "projectPath": "${workspaceFolder}/Realm.Lobby/Realm.Lobby.csproj",
+      "projectPath": "${workspaceFolder}/Realm.AdminServer/Realm.AdminServer.csproj",
       "args": [
         "--urls",
         "http://0.0.0.0:5000"

@@ -1,4 +1,4 @@
-namespace Realm.Lobby.Services;
+namespace Realm.AdminServer.Services;
 
 public class PeerRegistry
 {

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
-
-namespace Realm.Lobby.Services;
+namespace Realm.AdminServer.Services;
 
 public static class MapStatsHelper
 {

@@ -1534,7 +1534,7 @@ public static class Program
 		Console.WriteLine();
 		Console.WriteLine("To graduate this key pair to an Admin Key:");
 		Console.WriteLine("1. Keep your Private Key secret.");
-		Console.WriteLine("2. Add the Public Key to Realm.Lobby/appsettings.json under 'AdminPublicKeys':");
+		Console.WriteLine("2. Add the Public Key to Realm.AdminServer/appsettings.json under 'AdminPublicKeys':");
 		Console.WriteLine($"   \"AdminPublicKeys\": [\n     \"{publicKeyBase64}\"\n   ]");
 		Console.WriteLine("=================================================");
 		return 0;

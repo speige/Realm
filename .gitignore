@@ -13,9 +13,8 @@ vscode_embedded/
 wasi_sdk_embedded/
 vscode_extensions_dist
 GeneratedFiles/
-TestResults/
 *.trx
-Realm.Lobby/.data
+Realm.AdminServer/.data
 *.key
 *.privatekey
 *.admin_key

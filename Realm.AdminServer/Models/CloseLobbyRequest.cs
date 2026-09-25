@@ -1,4 +1,4 @@
-namespace Realm.Lobby.Models;
+namespace Realm.AdminServer.Models;
 
 public record CloseLobbyRequest(
 	string LobbyId, 

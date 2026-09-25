@@ -1,8 +1,7 @@
 using MaxMind.GeoIP2;
 using MaxMind.GeoIP2.Exceptions;
 using System.Net;
-
-namespace Realm.Lobby.Services;
+namespace Realm.AdminServer.Services;
 
 public class GeoIpService
 {

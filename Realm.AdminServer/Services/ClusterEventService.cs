@@ -9,8 +9,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Realm.Shared.Distribution;
 using Realm.Shared.Metadata;
-
-namespace Realm.Lobby.Services;
+namespace Realm.AdminServer.Services;
 
 public class ClusterEventService
 {

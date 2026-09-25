@@ -18,7 +18,7 @@ When a player hosts a game, the client contacts a registry server configured in 
 1. Records the host's public IP, port, and NAT type.
 2. Relays connection requests and coordinates UDP hole punching via WebSockets to enable direct peer-to-peer gameplay.
 
-The server logic is implemented in [Program.cs](file:///C:/temp/Realm/Realm.Lobby/Program.cs).
+The server logic is implemented in [Program.cs](file:///C:/temp/Realm/Realm.AdminServer/Program.cs).
 
 In addition to acting as a lobby connection registry, the Seed Node handles NoSQL-based data persistence and APIs across the community network to support various features outside the game (ranked ladders, etc).
 
@@ -35,24 +35,24 @@ In addition to acting as a lobby connection registry, the Seed Node handles NoSQ
 
 ### Option A: From Source Code (For Developers & Advanced Users)
 1. Clone the repository and navigate to the project directory.
-2. Run the lobby server project with the `--urls` flag to listen on all network interfaces:
+2. Run the admin server project with the `--urls` flag to listen on all network interfaces:
    ```powershell
-   dotnet run --project Realm.Lobby/Realm.Lobby.csproj --urls "http://0.0.0.0:5000"
+   dotnet run --project Realm.AdminServer/Realm.AdminServer.csproj --urls "http://0.0.0.0:5000"
    ```
-   *File Reference: [Realm.Lobby.csproj](file:///C:/temp/Realm/Realm.Lobby/Realm.Lobby.csproj)*
+   *File Reference: [Realm.AdminServer.csproj](file:///C:/temp/Realm/Realm.AdminServer/Realm.AdminServer.csproj)*
 
 ### Option B: Using Pre-compiled Executables (User-Friendly Setup)
-1. Download the latest `Realm.Lobby` release build for your operating system.
+1. Download the latest `Realm.AdminServer` release build for your operating system.
 2. Open a terminal (cmd or terminal app) in the folder where the files were extracted.
 3. Run the executable:
    * **Windows:**
      ```powershell
-     .\Realm.Lobby.exe --urls "http://0.0.0.0:5000"
+     .\Realm.AdminServer.exe --urls "http://0.0.0.0:5000"
      ```
    * **Linux/macOS:**
      ```bash
-     chmod +x ./Realm.Lobby
-     ./Realm.Lobby --urls "http://0.0.0.0:5000"
+     chmod +x ./Realm.AdminServer
+     ./Realm.AdminServer --urls "http://0.0.0.0:5000"
      ```
 
 ---
@@ -107,22 +107,22 @@ To prevent the application from closing when you close the terminal window:
 * **Windows (using NSSM):**
   Use the [Non-Sucking Service Manager (NSSM)](https://nssm.cc/) to install it as a Windows service:
   ```powershell
-  nssm install RealmLobbyService "C:\path\to\Realm.Lobby.exe" "--urls http://0.0.0.0:5000"
-  nssm start RealmLobbyService
+  nssm install RealmAdminServerService "C:\path\to\Realm.AdminServer.exe" "--urls http://0.0.0.0:5000"
+  nssm start RealmAdminServerService
   ```
 * **Linux (using systemd):**
-  Create a systemd unit file at `/etc/systemd/system/realm-lobby.service`:
+  Create a systemd unit file at `/etc/systemd/system/realm-adminserver.service`:
   ```ini
   [Unit]
-  Description=Realm Lobby Discovery Server
+  Description=Realm Admin & Discovery Server
   After=network.target
 
   [Service]
-  ExecStart=/usr/bin/dotnet /path/to/Realm.Lobby.dll --urls "http://0.0.0.0:5000"
+  ExecStart=/usr/bin/dotnet /path/to/Realm.AdminServer.dll --urls "http://0.0.0.0:5000"
   WorkingDirectory=/path/to/
   Restart=always
   RestartSec=10
-  SyslogIdentifier=realm-lobby
+  SyslogIdentifier=realm-adminserver
   User=nobody
 
   [Install]
@@ -130,8 +130,8 @@ To prevent the application from closing when you close the terminal window:
   ```
   Enable and start it:
   ```bash
-  sudo systemctl enable realm-lobby.service
-  sudo systemctl start realm-lobby.service
+  sudo systemctl enable realm-adminserver.service
+  sudo systemctl start realm-adminserver.service
   ```
 
 ### 2. Configure Auto-Restart on Crash

@@ -1,4 +1,4 @@
-namespace Realm.Lobby.Models;
+namespace Realm.AdminServer.Models;
 
 public record RegisterRequest(
     string Map, 
@@ -14,5 +14,6 @@ public record RegisterRequest(
     string? MapVersion = null,
     string? Signature = null,
     string? PublicKey = null,
-    string? MapHash = null
+    string? MapHash = null,
+    long? MapSizeBytes = null
 );

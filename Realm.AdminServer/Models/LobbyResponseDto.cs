@@ -1,4 +1,4 @@
-namespace Realm.Lobby.Models;
+namespace Realm.AdminServer.Models;
 
 public record LobbyResponseDto(
 	string LobbyId, 
@@ -16,5 +16,6 @@ public record LobbyResponseDto(
 	int HostPingBaseline,
 	string? GameVersion = null,
 	string? LocalIP = null,
-	string? MapVersion = null
+	string? MapVersion = null,
+	long MapSizeBytes = 0
 );

@@ -4,7 +4,7 @@
   <Project Path="Realm.Distribution.Tests/Realm.Distribution.Tests.csproj" />
   <Project Path="Realm.Ecs/Realm.Ecs.csproj" />
   <Project Path="Realm.Godot/Realm.Godot.csproj" />
-  <Project Path="Realm.Lobby/Realm.Lobby.csproj" />
+  <Project Path="Realm.AdminServer/Realm.AdminServer.csproj" />
   <Project Path="Realm.MapAPI/Realm.MapAPI.csproj" />
   <Project Path="Realm.MapEditorExtension/Realm.MapEditorExtension.csproj" />
   <Project Path="Realm.Tools.Admin/Realm.Tools.Admin.csproj" />

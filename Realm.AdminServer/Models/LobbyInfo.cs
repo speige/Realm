@@ -1,4 +1,4 @@
-namespace Realm.Lobby.Models;
+namespace Realm.AdminServer.Models;
 
 public class LobbyInfo
 {
@@ -19,4 +19,5 @@ public class LobbyInfo
     public string? HostToken { get; set; }
     public int HostPingBaseline { get; set; }
     public string? LocalIP { get; set; }
+    public long MapSizeBytes { get; set; }
 }

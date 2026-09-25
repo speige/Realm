@@ -754,8 +754,8 @@ public partial class LobbyRoom : Control
 			string mapBlake3 = RealmMetadataHelper.ComputeBlake3(fileBytes, ".json");
 			string hash = $"{mapBlake3}.json";
 			
-			string seedServerUrl = LobbyManager.Instance.RegistryServerUrl;
-			var assetAuthorRes = await _sharedHttpClient.GetAsync(seedServerUrl + "/api/publish_map/asset_author/" + hash);
+			string adminServerUrl = LobbyManager.Instance.RegistryServerUrl;
+			var assetAuthorRes = await _sharedHttpClient.GetAsync(adminServerUrl + "/api/publish_map/asset_author/" + hash);
 			if (assetAuthorRes.IsSuccessStatusCode)
 			{
 				string assetAuthorJson = await assetAuthorRes.Content.ReadAsStringAsync();

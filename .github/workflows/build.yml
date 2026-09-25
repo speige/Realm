@@ -130,9 +130,45 @@ jobs:
           echo "ARCHIVE_NAME=$archiveName" >> $env:GITHUB_ENV
           echo "archive_name=$archiveName" >> $env:GITHUB_OUTPUT
 
-      - name: Upload Published Artifact
+      - name: Publish Realm.AdminServer
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        run: |
+          New-Item -ItemType Directory -Force -Path publish-adminserver
+          dotnet publish Realm.AdminServer\Realm.AdminServer.csproj --configuration Release --output "$PWD\publish-adminserver"
+          if (Test-Path "Terms") {
+            Copy-Item -Path "Terms" -Destination "$PWD\publish-adminserver\Terms" -Recurse -Force
+          }
+          if (Test-Path "LICENSE") {
+            Copy-Item -Path "LICENSE" -Destination "$PWD\publish-adminserver\LICENSE" -Force
+          }
+
+      - name: Create 7z Ultra Archive (AdminServer)
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        id: create_adminserver_archive
+        run: |
+          $osPlatform = "Windows"
+          $systemArchitecture = "x64"
+          $version = if ($env:VERSION_NUMBER -and $env:VERSION_NUMBER.Trim() -ne "") {
+            $env:VERSION_NUMBER.Trim()
+          } else {
+            "0.0.1_Pre-Alpha"
+          }
+          $version = $version.Split('+')[0].Trim()
+          $adminArchiveName = "Realm-AdminServer-${osPlatform}-${systemArchitecture}_${version}.7z"
+          7z a -t7z -m0=lzma2 -mx=9 $adminArchiveName .\publish-adminserver\*
+          echo "ADMIN_ARCHIVE_NAME=$adminArchiveName" >> $env:GITHUB_ENV
+          echo "admin_archive_name=$adminArchiveName" >> $env:GITHUB_OUTPUT
+
+      - name: Upload Published Client Artifact
         if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
         uses: actions/upload-artifact@v6
         with:
           name: ${{ env.ARCHIVE_NAME || 'Realm-Windows-x64' }}
-          path: ${{ env.ARCHIVE_NAME || '*.7z' }}
+          path: ${{ env.ARCHIVE_NAME || 'Realm-Windows-x64*.7z' }}
+
+      - name: Upload Published AdminServer Artifact
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish == true || github.event.inputs.publish == 'true') }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ env.ADMIN_ARCHIVE_NAME || 'Realm-AdminServer-Windows-x64' }}
+          path: ${{ env.ADMIN_ARCHIVE_NAME || 'Realm-AdminServer-Windows-x64*.7z' }}

@@ -1,6 +1,6 @@
 {
   "profiles": {
-    "Realm.Lobby": {
+    "Realm.AdminServer": {
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": false,

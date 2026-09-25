@@ -1,5 +1,5 @@
-using Realm.Lobby.Models;
-using Realm.Lobby.Services;
+using Realm.AdminServer.Models;
+using Realm.AdminServer.Services;
 using Realm.Shared.Distribution;
 using Realm.Shared.Metadata;
 

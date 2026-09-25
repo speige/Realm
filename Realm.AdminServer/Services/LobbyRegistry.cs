@@ -1,7 +1,7 @@
-using Realm.Lobby.Models;
+using Realm.AdminServer.Models;
 using System.Collections.Concurrent;
 
-namespace Realm.Lobby.Services;
+namespace Realm.AdminServer.Services;
 
 public class LobbyRegistry
 {
