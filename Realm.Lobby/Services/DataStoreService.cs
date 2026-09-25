@@ -81,6 +81,17 @@ public class DataStoreService : IDisposable
         t.Commit();
     }
 
+    public void DeleteMany(string collection, IEnumerable<string> ids)
+    {
+        using var t = _engine.GetTransaction();
+        t.SynchronizeTables(collection);
+        foreach (var id in ids)
+        {
+            t.RemoveKey(collection, id);
+        }
+        t.Commit();
+    }
+
     public void Dispose()
     {
         _engine.Dispose();

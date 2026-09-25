@@ -16,6 +16,8 @@ public class ClusterEventService
 {
     private readonly ConcurrentDictionary<string, byte> _processedEvents = new(StringComparer.OrdinalIgnoreCase);
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
+    private readonly System.Threading.SemaphoreSlim _pruneLock = new(1, 1);
+    private int _prunePending = 0;
 
     public bool HasEventBeenProcessed(string eventId, DataStoreService db)
     {
@@ -546,6 +548,26 @@ public class ClusterEventService
         }
     }
 
+    public void QueueCasPrune(ContentAddressableStorage cas, DataStoreService db)
+    {
+        Interlocked.Exchange(ref _prunePending, 1);
+        _ = Task.Run(async () =>
+        {
+            await _pruneLock.WaitAsync();
+            try
+            {
+                if (Interlocked.Exchange(ref _prunePending, 0) == 1)
+                {
+                    PruneCas(cas, db);
+                }
+            }
+            finally
+            {
+                _pruneLock.Release();
+            }
+        });
+    }
+
     public CasPruneResponseDto PruneCas(ContentAddressableStorage cas, DataStoreService db)
     {
         int totalScanned = 0;
@@ -560,22 +582,12 @@ public class ClusterEventService
         {
             try
             {
-                var root = doc.RootElement;
-                if (root.TryGetProperty("Files", out var filesProp) && filesProp.ValueKind == JsonValueKind.Object)
-                {
-                    foreach (var fileProp in filesProp.EnumerateObject())
-                    {
-                        string h = ContentAddressableStorage.NormalizeBlake3Hash(fileProp.Value.GetString() ?? "");
-                        if (!string.IsNullOrEmpty(h)) referencedHashes.Add(h);
-                    }
-                }
-
-                var mf = MapManifest.LoadFromJson(root.GetRawText());
+                var mf = MapManifest.LoadFromJson(doc.RootElement.GetRawText());
                 if (mf != null)
                 {
-                    foreach (var fileProp in mf.Files)
+                    foreach (var hashVal in mf.Files.Values)
                     {
-                        string h = ContentAddressableStorage.NormalizeBlake3Hash(fileProp.Value);
+                        string h = ContentAddressableStorage.NormalizeBlake3Hash(hashVal);
                         if (!string.IsNullOrEmpty(h)) referencedHashes.Add(h);
                     }
                 }
@@ -591,22 +603,12 @@ public class ClusterEventService
                 try
                 {
                     string json = File.ReadAllText(file);
-                    using var doc = JsonDocument.Parse(json);
-                    if (doc.RootElement.TryGetProperty("Files", out var filesProp) && filesProp.ValueKind == JsonValueKind.Object)
-                    {
-                        foreach (var fileProp in filesProp.EnumerateObject())
-                        {
-                            string h = ContentAddressableStorage.NormalizeBlake3Hash(fileProp.Value.GetString() ?? "");
-                            if (!string.IsNullOrEmpty(h)) referencedHashes.Add(h);
-                        }
-                    }
-
                     var mf = MapManifest.LoadFromJson(json);
                     if (mf != null)
                     {
-                        foreach (var fileProp in mf.Files)
+                        foreach (var hashVal in mf.Files.Values)
                         {
-                            string h = ContentAddressableStorage.NormalizeBlake3Hash(fileProp.Value);
+                            string h = ContentAddressableStorage.NormalizeBlake3Hash(hashVal);
                             if (!string.IsNullOrEmpty(h)) referencedHashes.Add(h);
                         }
                     }
@@ -633,6 +635,8 @@ public class ClusterEventService
             searchLocations.Add((cas.RootDirectory, SearchOption.TopDirectoryOnly));
         }
 
+        var signaturesToDelete = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var (directoryPath, option) in searchLocations)
         {
             if (!Directory.Exists(directoryPath)) continue;
@@ -649,11 +653,21 @@ public class ClusterEventService
                 if (string.IsNullOrEmpty(normalizedHash) || normalizedHash.Length < 32) continue;
 
                 totalScanned++;
-                long fileSize = 0;
                 try
                 {
                     var fileInfo = new FileInfo(filePath);
-                    fileSize = fileInfo.Length;
+                    long fileSize = fileInfo.Length;
+
+                    if (!referencedHashes.Contains(normalizedHash))
+                    {
+                        File.Delete(filePath);
+                        cas.RemoveSidecarCache(normalizedHash);
+                        signaturesToDelete.Add(normalizedHash);
+                        orphansPruned++;
+                        bytesFreed += fileSize;
+                        continue;
+                    }
+
                     byte[] bytes = File.ReadAllBytes(filePath);
                     string ext = Path.GetExtension(fileName).ToLowerInvariant();
                     string computedHash = ContentAddressableStorage.NormalizeBlake3Hash(RealmMetadataHelper.ComputeBlake3(bytes, ext));
@@ -662,18 +676,8 @@ public class ClusterEventService
                     {
                         File.Delete(filePath);
                         cas.RemoveSidecarCache(normalizedHash);
-                        db.Delete("asset_signatures", normalizedHash);
+                        signaturesToDelete.Add(normalizedHash);
                         corruptPruned++;
-                        bytesFreed += fileSize;
-                        continue;
-                    }
-
-                    if (!referencedHashes.Contains(normalizedHash))
-                    {
-                        File.Delete(filePath);
-                        cas.RemoveSidecarCache(normalizedHash);
-                        db.Delete("asset_signatures", normalizedHash);
-                        orphansPruned++;
                         bytesFreed += fileSize;
                     }
                 }
@@ -687,8 +691,13 @@ public class ClusterEventService
             string normalizedHash = ContentAddressableStorage.NormalizeBlake3Hash(pair.Key);
             if (!referencedHashes.Contains(normalizedHash) || !cas.HasAsset(normalizedHash))
             {
-                db.Delete("asset_signatures", pair.Key);
+                signaturesToDelete.Add(pair.Key);
             }
+        }
+
+        if (signaturesToDelete.Count > 0)
+        {
+            db.DeleteMany("asset_signatures", signaturesToDelete);
         }
 
         if (Directory.Exists(cas.SidecarCacheDirectory))
@@ -1083,6 +1092,7 @@ public class ClusterEventService
             }
 
             var allPublished = db.GetAllWithKeys<JsonDocument>("published_maps");
+            var publishedKeysToDelete = new List<string>();
             foreach (var pair in allPublished)
             {
                 bool match = string.Equals(pair.Key, compositeKey, StringComparison.OrdinalIgnoreCase)
@@ -1107,9 +1117,14 @@ public class ClusterEventService
 
                 if (match)
                 {
-                    db.Delete("published_maps", pair.Key);
-                    dbRecordsRemoved++;
+                    publishedKeysToDelete.Add(pair.Key);
                 }
+            }
+
+            if (publishedKeysToDelete.Count > 0)
+            {
+                db.DeleteMany("published_maps", publishedKeysToDelete);
+                dbRecordsRemoved += publishedKeysToDelete.Count;
             }
 
             var remainingVersions = new List<(string version, JsonDocument doc, string? filePath)>();
@@ -1197,9 +1212,7 @@ public class ClusterEventService
                     }
                 }
 
-                db.Delete("published_maps", targetMap);
-                db.Delete("published_maps", targetMap.Replace(' ', '_'));
-                db.Delete("published_maps", targetMap.Replace('_', ' '));
+                db.DeleteMany("published_maps", new[] { targetMap, targetMap.Replace(' ', '_'), targetMap.Replace('_', ' ') });
             }
 
             db.Delete("map_stats", compositeKey);
@@ -1245,6 +1258,7 @@ public class ClusterEventService
             }
 
             var allPublished = db.GetAllWithKeys<JsonDocument>("published_maps");
+            var publishedKeysToDelete = new List<string>();
             foreach (var pair in allPublished)
             {
                 bool match = string.Equals(pair.Key, targetMap, StringComparison.OrdinalIgnoreCase)
@@ -1269,14 +1283,17 @@ public class ClusterEventService
 
                 if (match)
                 {
-                    db.Delete("published_maps", pair.Key);
-                    dbRecordsRemoved++;
+                    publishedKeysToDelete.Add(pair.Key);
                 }
             }
 
-            db.Delete("map_ownership", targetMap);
-            db.Delete("map_ownership", targetMap.ToLowerInvariant().Replace(" ", "-"));
-            db.Delete("map_ownership", targetMap.Replace(" ", "_"));
+            if (publishedKeysToDelete.Count > 0)
+            {
+                db.DeleteMany("published_maps", publishedKeysToDelete);
+                dbRecordsRemoved += publishedKeysToDelete.Count;
+            }
+
+            db.DeleteMany("map_ownership", new[] { targetMap, targetMap.ToLowerInvariant().Replace(" ", "-"), targetMap.Replace(" ", "_") });
             db.Delete("map_stats", targetMap);
         }
 

@@ -1526,8 +1526,12 @@ app.MapPost("/api/admin/prune_cas", (HttpRequest request, ClusterEventService cl
         return Results.Json(new { Message = "Unauthorized CAS pruning request." }, statusCode: StatusCodes.Status401Unauthorized);
     }
 
-    var pruneResult = clusterEvents.PruneCas(cas, db);
-    return Results.Ok(pruneResult);
+    clusterEvents.QueueCasPrune(cas, db);
+    return Results.Ok(new CasPruneResponseDto
+    {
+        Success = true,
+        Message = "CAS prune operation has been queued on a background task."
+    });
 });
 
 app.MapPost("/api/admin/remove_manifest", async (HttpRequest request, ClusterEventService clusterEvents, DataStoreService db, ContentAddressableStorage cas, PeerRegistry registeredPeers, IHttpClientFactory httpClientFactory) =>

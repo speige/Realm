@@ -682,12 +682,14 @@ public static class Program
 
 			if (result.Success)
 			{
-				Console.WriteLine("[SUCCESS] CAS prune completed.");
-				Console.WriteLine($"Total Scanned:   {result.TotalScanned}");
-				Console.WriteLine($"Orphans Pruned:  {result.OrphansPruned}");
-				Console.WriteLine($"Corrupt Pruned:  {result.CorruptPruned}");
-				Console.WriteLine($"Bytes Freed:     {result.BytesFreed} bytes");
-				Console.WriteLine($"Message:         {result.Message}");
+				Console.WriteLine($"[SUCCESS] {result.Message}");
+				if (result.TotalScanned > 0 || result.OrphansPruned > 0 || result.BytesFreed > 0)
+				{
+					Console.WriteLine($"Total Scanned:   {result.TotalScanned}");
+					Console.WriteLine($"Orphans Pruned:  {result.OrphansPruned}");
+					Console.WriteLine($"Corrupt Pruned:  {result.CorruptPruned}");
+					Console.WriteLine($"Bytes Freed:     {result.BytesFreed} bytes");
+				}
 				return 0;
 			}
 			else
@@ -884,11 +886,14 @@ public static class Program
 					var pruneResult = client.PruneServerCasAsync(keyPair.Value.privateKeyBase64).GetAwaiter().GetResult();
 					if (pruneResult.Success)
 					{
-						Console.WriteLine("[SUCCESS] CAS prune completed.");
-						Console.WriteLine($"Total Scanned:   {pruneResult.TotalScanned}");
-						Console.WriteLine($"Orphans Pruned:  {pruneResult.OrphansPruned}");
-						Console.WriteLine($"Corrupt Pruned:  {pruneResult.CorruptPruned}");
-						Console.WriteLine($"Bytes Freed:     {pruneResult.BytesFreed} bytes");
+						Console.WriteLine($"[SUCCESS] {pruneResult.Message}");
+						if (pruneResult.TotalScanned > 0 || pruneResult.OrphansPruned > 0 || pruneResult.BytesFreed > 0)
+						{
+							Console.WriteLine($"Total Scanned:   {pruneResult.TotalScanned}");
+							Console.WriteLine($"Orphans Pruned:  {pruneResult.OrphansPruned}");
+							Console.WriteLine($"Corrupt Pruned:  {pruneResult.CorruptPruned}");
+							Console.WriteLine($"Bytes Freed:     {pruneResult.BytesFreed} bytes");
+						}
 					}
 					else
 					{
