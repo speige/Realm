@@ -2856,6 +2856,7 @@ public class EditorService
 	private long _lastProcessedMetadataWriteTime;
 	private long _lastProcessedTerrainWriteTime;
 	public static DateTime LastInternalSaveTimeUtc { get; set; } = DateTime.MinValue;
+	public bool IsPaused { get; set; }
 
 	public void StartWorkspaceWatcher(string directory, Action? onMetadataChanged = null, Action? onTerrainChanged = null)
 	{
@@ -2905,6 +2906,11 @@ public class EditorService
 
 	private void OnWorkspaceFileChanged(string fullPath, Action? onMetadataChanged, Action? onTerrainChanged)
 	{
+		if (IsPaused || (MapEditorHUD.Instance != null && MapEditorHUD.Instance.IsSyncing))
+		{
+			return;
+		}
+
 		string fileName = Path.GetFileName(fullPath).ToLowerInvariant();
 		if (fileName != "metadata.json" && fileName != "manifest.json" && fileName != "terrain.json")
 		{
@@ -2925,6 +2931,11 @@ public class EditorService
 	{
 		try
 		{
+			if (IsPaused || (MapEditorHUD.Instance != null && MapEditorHUD.Instance.IsSyncing))
+			{
+				return;
+			}
+
 			if (!File.Exists(fullPath)) return;
 
 			if ((DateTime.UtcNow - LastInternalSaveTimeUtc).TotalMilliseconds < 1500)

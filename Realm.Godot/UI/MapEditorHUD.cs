@@ -377,6 +377,7 @@ public partial class MapEditorHUD : Control
 	private long _lastTerrainSyncTime = 0;
 	private long _lastMetadataSyncTime = 0;
 	private bool _isSyncing = false;
+	public bool IsSyncing => _isSyncing;
 
 	public override void _ExitTree()
 	{
@@ -3857,7 +3858,12 @@ public partial class MapEditorHUD : Control
 	}
 	private async void PublishMapAction()
 	{
-		if (GameHost.Instance == null) return;
+		if (GameHost.Instance == null || _isSyncing) return;
+		_isSyncing = true;
+		if (_editorService != null)
+		{
+			_editorService.IsPaused = true;
+		}
 
 		string workspace = !string.IsNullOrEmpty(_tempWorkspacePath) ? _tempWorkspacePath : MapWorkspaceService.GetActiveWorkspacePath();
 
@@ -3891,6 +3897,7 @@ public partial class MapEditorHUD : Control
 		string metaJsonPath = System.IO.Path.Combine(workspace, "metadata.json");
 		string mapJsonPath = System.IO.Path.Combine(workspace, "map.json");
 		string activeConfigPath = System.IO.File.Exists(metaJsonPath) ? metaJsonPath : mapJsonPath;
+		string tempTerrainPath = System.IO.Path.Combine(workspace, "terrain.json");
 		string manifestJsonPath = System.IO.Path.Combine(workspace, "manifest.json");
 
 		var popup = new Panel();
@@ -4028,7 +4035,6 @@ public partial class MapEditorHUD : Control
 			statusLabel.Text = TranslationServer.Translate("Saving map state & workspace...");
 			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 
-			string tempTerrainPath = System.IO.Path.Combine(workspace, "terrain.json");
 			MapWorkspaceService.EnsureLicenseFile(workspace);
 			GameHost.Instance.SaveMapToFile(tempTerrainPath, performReload: false);
 			GameHost.Instance.EditorHasUnsavedChanges = false;
@@ -4154,6 +4160,8 @@ public partial class MapEditorHUD : Control
 			string currentUsername = LobbyManager.Instance?.AuthenticatedUsername ?? "MapAuthor";
 			string pubKeyBase64 = Convert.ToBase64String(authorshipKey.PublicKey.Export(KeyBlobFormat.RawPublicKey));
 
+			MapWorkspaceService.NormalizeMetadataTextureEntries(workspace);
+
 			if (System.IO.File.Exists(activeConfigPath))
 			{
 				try
@@ -4162,16 +4170,20 @@ public partial class MapEditorHUD : Control
 					if (metaDoc != null)
 					{
 						metaDoc["EngineVersion"] = RealmVersion.GameBinaryVersion;
-						System.IO.File.WriteAllText(activeConfigPath, metaDoc.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+						SaveLoadService.CleanMetadataJsonSchema(metaDoc);
+						MapJsonFormatter.SaveFormattedJson(activeConfigPath, metaDoc);
 					}
 				}
 				catch { }
+				_lastMetadataSyncTime = GetLastWriteTimeSafe(activeConfigPath);
 			}
+			EditorService.LastInternalSaveTimeUtc = DateTime.UtcNow;
 
 			var manifest = MapManifest.CreateFromDirectory(workspace, mapTitle, currentUsername, mapVersion);
 			manifestJsonPath = System.IO.Path.Combine(workspace, "manifest.json");
 			string manifestJsonContent = manifest.ToJson();
 			System.IO.File.WriteAllText(manifestJsonPath, manifestJsonContent);
+			EditorService.LastInternalSaveTimeUtc = DateTime.UtcNow;
 
 			var hashToRelativePath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 			foreach (var pair in manifest.Files)
@@ -4338,6 +4350,13 @@ public partial class MapEditorHUD : Control
 		finally
 		{
 			Realm.Godot.WasmRuntime.OnWasmLog -= logHandler;
+			if (_editorService != null)
+			{
+				_editorService.IsPaused = false;
+			}
+			_lastMetadataSyncTime = GetLastWriteTimeSafe(activeConfigPath);
+			_lastTerrainSyncTime = GetMaxTerrainWriteTime(tempTerrainPath);
+			_isSyncing = false;
 		}
 	}
 
@@ -9939,7 +9958,7 @@ public partial class MapEditorHUD : Control
 
 		try
 		{
-			string workspacePath = MapWorkspaceService.GetActiveWorkspacePath();
+			string workspacePath = !string.IsNullOrEmpty(_tempWorkspacePath) ? _tempWorkspacePath : MapWorkspaceService.GetActiveWorkspacePath();
 			string manifestPath = System.IO.Path.Combine(workspacePath, "manifest.json");
 			if (System.IO.File.Exists(manifestPath))
 			{
@@ -9954,6 +9973,32 @@ public partial class MapEditorHUD : Control
 						return manifestMapName;
 					}
 				}
+			}
+
+			string metaJsonPath = System.IO.Path.Combine(workspacePath, "metadata.json");
+			if (System.IO.File.Exists(metaJsonPath))
+			{
+				try
+				{
+					var metaObj = System.Text.Json.Nodes.JsonNode.Parse(System.IO.File.ReadAllText(metaJsonPath)) as System.Text.Json.Nodes.JsonObject;
+					if (metaObj != null)
+					{
+						if (metaObj.TryGetPropertyValue("MapProperties", out var mpNode) && mpNode is System.Text.Json.Nodes.JsonObject mpObj &&
+							mpObj.TryGetPropertyValue("MapName", out var mpName) && TrySanitizeCandidate(mpName?.ToString(), out var parsedMpName))
+						{
+							_cachedMapName = parsedMpName;
+							_lastMapNameCacheTicks = now;
+							return parsedMpName;
+						}
+						if (metaObj.TryGetPropertyValue("MapName", out var rootNameNode) && TrySanitizeCandidate(rootNameNode?.ToString(), out var parsedRootName))
+						{
+							_cachedMapName = parsedRootName;
+							_lastMapNameCacheTicks = now;
+							return parsedRootName;
+						}
+					}
+				}
+				catch { }
 			}
 
 			if (MetadataService.Instance.TryLoadMetadata(workspacePath, out var metadata))
@@ -10566,6 +10611,7 @@ public partial class MapEditorHUD : Control
 
 	public void ReadMetadataAndRefreshTextures()
 	{
+		if (_isSyncing) return;
 		try
 		{
 			string wsPath = string.IsNullOrEmpty(_tempWorkspacePath) 

@@ -803,13 +803,8 @@ public class ClusterEventService
         }
 
         string compositeKey = $"{mapTitle}_{mapVersion}";
-        string authorStatsKey = $"{mapTitle}_{mapVersion}_{publicKey}";
-        var mapLevelStats = db.Get<MapStats>("map_stats", mapTitle);
-        var stats = db.Get<MapStats>("map_stats", authorStatsKey)
-            ?? db.Get<MapStats>("map_stats", $"{mapTitle}_{publicKey}")
-            ?? db.Get<MapStats>("map_stats", compositeKey)
-            ?? mapLevelStats;
-        if ((stats == null || !stats.IsGreenlit) && (mapLevelStats == null || !mapLevelStats.IsGreenlit))
+        var stats = MapStatsHelper.GetStats(db, mapTitle, mapVersion, publicKey);
+        if (stats == null || !stats.IsGreenlit)
         {
             Console.WriteLine($"[ClusterEventService] Rejected map_published event: Map '{mapTitle}' is not greenlit");
             return false;
@@ -949,14 +944,16 @@ public class ClusterEventService
             return false;
         }
 
-        var stats = db.Get<MapStats>("map_stats", mapTitle) ?? new MapStats();
+        var stats = MapStatsHelper.GetStats(db, mapTitle, mapVersion, null) ?? new MapStats();
         stats.AdminOverrideGreenlit = true;
         db.Upsert("map_stats", mapTitle, stats);
+        db.Upsert("map_stats", mapTitle.ToLowerInvariant(), stats);
 
         if (!string.IsNullOrWhiteSpace(mapVersion))
         {
             string compositeKey = $"{mapTitle}_{mapVersion.Trim()}";
             db.Upsert("map_stats", compositeKey, stats);
+            db.Upsert("map_stats", compositeKey.ToLowerInvariant(), stats);
         }
 
         return true;
@@ -1342,11 +1339,7 @@ public class ClusterEventService
             engagement.IsVerifiedAccount = true;
         }
 
-        var stats = db.Get<MapStats>("map_stats", authorCompositeKey)
-            ?? (!string.IsNullOrEmpty(authorPublicKey) ? db.Get<MapStats>("map_stats", $"{mapTitle}_{authorPublicKey}") : null)
-            ?? db.Get<MapStats>("map_stats", compositeKey)
-            ?? db.Get<MapStats>("map_stats", mapTitle)
-            ?? new MapStats();
+        var stats = MapStatsHelper.GetStats(db, mapTitle, mapVersion, authorPublicKey) ?? new MapStats();
 
         stats.TotalPlaytimeMinutes += Math.Max(0.0, payload.PlaytimeMinutes);
         if (payload.IsCompleteGame)
@@ -1380,14 +1373,18 @@ public class ClusterEventService
 
         db.Upsert("player_engagement", engagementKey, engagement);
         db.Upsert("map_stats", authorCompositeKey, stats);
+        db.Upsert("map_stats", authorCompositeKey.ToLowerInvariant(), stats);
         if (!string.IsNullOrEmpty(authorPublicKey))
         {
             db.Upsert("map_stats", $"{mapTitle}_{authorPublicKey}", stats);
+            db.Upsert("map_stats", $"{mapTitle}_{authorPublicKey}".ToLowerInvariant(), stats);
         }
         if (stats.IsGreenlit)
         {
             db.Upsert("map_stats", compositeKey, stats);
             db.Upsert("map_stats", mapTitle, stats);
+            db.Upsert("map_stats", compositeKey.ToLowerInvariant(), stats);
+            db.Upsert("map_stats", mapTitle.ToLowerInvariant(), stats);
         }
 
         return true;

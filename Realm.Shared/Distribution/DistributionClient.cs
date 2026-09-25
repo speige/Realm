@@ -635,6 +635,20 @@ public class DistributionClient
                     return;
                 }
 
+                string ext = Path.GetExtension(fullFilePath);
+                string computedBlake3 = RealmMetadataHelper.ComputeBlake3(fileBytes, ext);
+                string computedNorm = ContentAddressableStorage.NormalizeBlake3Hash(computedBlake3);
+                string expectedNorm = ContentAddressableStorage.NormalizeBlake3Hash(missingHash);
+                if (!string.Equals(computedNorm, expectedNorm, StringComparison.OrdinalIgnoreCase))
+                {
+                    lock (errorLock)
+                    {
+                        firstErrorAsset ??= relPath;
+                        firstErrorMessage ??= $"Asset file '{relPath}' hash mismatch: expected {expectedNorm}, but file on disk has hash {computedNorm}.";
+                    }
+                    return;
+                }
+
                 if (await CheckAssetExistsAsync(missingHash, cancellationToken))
                 {
                     int done = Interlocked.Increment(ref completedCount);

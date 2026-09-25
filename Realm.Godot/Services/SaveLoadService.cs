@@ -2311,29 +2311,18 @@ public class SaveLoadService
 
 				if (File.Exists(fullDiskPath))
 				{
-					string existingHash = entryNode is JsonObject itemObj
-						? (itemObj["hash"]?.ToString() ?? "")
-						: (entryNode is JsonValue val ? val.ToString() : "");
-
-					string canonicalBlake3 = existingHash;
-					if (string.IsNullOrEmpty(canonicalBlake3))
-					{
-						canonicalBlake3 = RealmMetadataHelper.ComputeBlake3(fullDiskPath);
-						if (!string.IsNullOrEmpty(canonicalBlake3))
-						{
-							if (entryNode is JsonObject itemObjRef)
-							{
-								itemObjRef["hash"] = canonicalBlake3;
-							}
-							else if (entryNode is JsonValue)
-							{
-								parentObj[propertyKey] = canonicalBlake3;
-							}
-						}
-					}
-
+					string canonicalBlake3 = RealmMetadataHelper.ComputeBlake3(fullDiskPath);
 					if (!string.IsNullOrEmpty(canonicalBlake3))
 					{
+						if (entryNode is JsonObject itemObjRef)
+						{
+							itemObjRef["hash"] = canonicalBlake3;
+						}
+						else if (entryNode is JsonValue)
+						{
+							parentObj[propertyKey] = canonicalBlake3;
+						}
+
 						RealmMetadataHelper.SyncBlake3Metadata(fullDiskPath, canonicalBlake3);
 					}
 				}

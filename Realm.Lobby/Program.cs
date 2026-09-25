@@ -248,13 +248,8 @@ app.MapPost("/lobbies/register", async (RegisterRequest req, LobbyRegistry regis
     string finalMapName = req.Map;
     string mapVersion = req.MapVersion ?? "1.0";
     string compositeKey = $"{req.Map}_{mapVersion}";
-    string authorStatsKey = !string.IsNullOrEmpty(req.PublicKey) ? $"{req.Map}_{mapVersion}_{req.PublicKey}" : compositeKey;
-    var mapLevelStats = db.Get<MapStats>("map_stats", req.Map);
-    var stats = db.Get<MapStats>("map_stats", authorStatsKey)
-        ?? (!string.IsNullOrEmpty(req.PublicKey) ? db.Get<MapStats>("map_stats", $"{req.Map}_{req.PublicKey}") : null)
-        ?? db.Get<MapStats>("map_stats", compositeKey)
-        ?? mapLevelStats;
-    bool isGreenlit = !isCustom || (stats != null && stats.IsGreenlit) || (mapLevelStats != null && mapLevelStats.IsGreenlit);
+    var stats = MapStatsHelper.GetStats(db, req.Map, mapVersion, req.PublicKey);
+    bool isGreenlit = !isCustom || (stats != null && stats.IsGreenlit);
 
     if (!isGreenlit) {
         string author = "Unknown";
@@ -897,9 +892,8 @@ app.MapPost("/api/manifests", async (HttpRequest request, ContentAddressableStor
     }
 
     string compositeKey = $"{manifest.MapName}_{manifest.Version}";
-    var mapLevelStats = db.Get<MapStats>("map_stats", manifest.MapName);
-    var stats = db.Get<MapStats>("map_stats", compositeKey) ?? mapLevelStats;
-    bool isGreenlit = (stats != null && stats.IsGreenlit) || (mapLevelStats != null && mapLevelStats.IsGreenlit);
+    var stats = MapStatsHelper.GetStats(db, manifest.MapName, manifest.Version, null);
+    bool isGreenlit = stats != null && stats.IsGreenlit;
     string? bypassToken = request.Headers["X-Admin-Bypass"];
 
     if (!isGreenlit)
@@ -1059,24 +1053,8 @@ app.MapPost("/api/publish_map/initiate", (PublishMapInitiateRequest req, DataSto
         }
 
         string compositeKey = $"{mapTitle}_{mapVersion}";
-        var existingMap = db.Get<JsonDocument>("published_maps", compositeKey);
-        if (existingMap != null)
-        {
-            return Results.BadRequest(new PublishMapInitiateResponse
-            {
-                Success = false,
-                Status = "AlreadyPublished",
-                Message = $"Map '{mapTitle}' version '{mapVersion}' has already been published. Please increment the map version in Map Settings to publish an update."
-            });
-        }
-
-        string authorStatsKey = !string.IsNullOrEmpty(req.PublicKey) ? $"{mapTitle}_{mapVersion}_{req.PublicKey}" : compositeKey;
-        var mapLevelStats = db.Get<MapStats>("map_stats", mapTitle);
-        var stats = db.Get<MapStats>("map_stats", authorStatsKey)
-            ?? (!string.IsNullOrEmpty(req.PublicKey) ? db.Get<MapStats>("map_stats", $"{mapTitle}_{req.PublicKey}") : null)
-            ?? db.Get<MapStats>("map_stats", compositeKey)
-            ?? mapLevelStats;
-        bool isGreenlit = (stats != null && stats.IsGreenlit) || (mapLevelStats != null && mapLevelStats.IsGreenlit);
+        var stats = MapStatsHelper.GetStats(db, mapTitle, mapVersion, req.PublicKey);
+        bool isGreenlit = stats != null && stats.IsGreenlit;
         if (!isGreenlit)
         {
             return Results.Json(new PublishMapInitiateResponse
@@ -1384,14 +1362,13 @@ app.MapPost("/api/publish_map", (PublishMapRequest req, DataStoreService db, Con
         }
 
         string compositeKey = $"{mapTitle}_{mapVersion}";
-        var mapLevelStats = db.Get<MapStats>("map_stats", mapTitle);
-        var stats = db.Get<MapStats>("map_stats", compositeKey) ?? mapLevelStats;
-        bool isGreenlit = (stats != null && stats.IsGreenlit) || (mapLevelStats != null && mapLevelStats.IsGreenlit);
+        var stats = MapStatsHelper.GetStats(db, mapTitle, mapVersion, req.PublicKey);
+        bool isGreenlit = stats != null && stats.IsGreenlit;
         if (!isGreenlit) {
             return Results.Json(new {
                 Message = $"Map '{mapTitle}' is not greenlit for publication to the public registry. Accumulate more community playtime and ratings or request an admin override.",
                 IsGreenlit = false,
-                Stats = stats ?? mapLevelStats ?? new MapStats()
+                Stats = stats ?? new MapStats()
             }, statusCode: StatusCodes.Status403Forbidden);
         }
 
@@ -1979,13 +1956,7 @@ app.MapPost("/api/publish_map/upload_asset", async (HttpRequest request, DataSto
     bool isSessionValid = !string.IsNullOrWhiteSpace(sessionId) && db.Get<JsonDocument>("publish_sessions", sessionId) != null;
     if (!isSessionValid && !string.IsNullOrEmpty(mapTitle))
     {
-        string compositeKey = $"{mapTitle}_{(string.IsNullOrEmpty(mapVersion) ? "1.0" : mapVersion)}";
-        string authorStatsKey = !string.IsNullOrEmpty(publicKey) ? $"{mapTitle}_{mapVersion}_{publicKey}" : compositeKey;
-        var mapLevelStats = db.Get<MapStats>("map_stats", mapTitle);
-        var stats = db.Get<MapStats>("map_stats", authorStatsKey)
-            ?? (!string.IsNullOrEmpty(publicKey) ? db.Get<MapStats>("map_stats", $"{mapTitle}_{publicKey}") : null)
-            ?? db.Get<MapStats>("map_stats", compositeKey)
-            ?? mapLevelStats;
+        var stats = MapStatsHelper.GetStats(db, mapTitle, mapVersion, publicKey);
         if (stats == null || !stats.IsGreenlit)
         {
             return Results.Json(new { Message = $"Cannot upload asset: map '{mapTitle}' is not greenlit." }, statusCode: StatusCodes.Status403Forbidden);
@@ -2038,7 +2009,15 @@ app.MapPost("/api/publish_map/upload_asset", async (HttpRequest request, DataSto
     await file.CopyToAsync(ms);
     byte[] fileBytes = ms.ToArray();
     string ext = Path.GetExtension(file.FileName);
-    var storeResult = cas.StoreAsset(fileBytes, ext, null, publicKey, signature);
+
+    string computedBlake3 = RealmMetadataHelper.ComputeBlake3(fileBytes, ext);
+    string computedNorm = ContentAddressableStorage.NormalizeBlake3Hash(computedBlake3);
+    if (!string.Equals(computedNorm, normalizedHash, StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.BadRequest(new { Message = $"Asset content hash mismatch: expected {normalizedHash}, got {computedNorm}." });
+    }
+
+    var storeResult = cas.StoreAsset(fileBytes, ext, null, publicKey, signature, precomputedBlake3: normalizedHash);
     if (!storeResult.Success)
     {
         return Results.BadRequest($"Failed to store asset in CAS: {storeResult.Message}");
@@ -2236,7 +2215,7 @@ app.MapGet("/api/discovery/maps", (DataStoreService db, ContentAddressableStorag
             if (seenKeys.Contains(compositeKey)) continue;
             seenKeys.Add(compositeKey);
 
-            var stats = db.Get<MapStats>("map_stats", compositeKey) ?? db.Get<MapStats>("map_stats", mapTitle);
+            var stats = MapStatsHelper.GetStats(db, mapTitle, mapVersion, null);
             bool isGreenlit = stats != null && stats.IsGreenlit;
 
             string creator = root.TryGetProperty("Author", out var auth) ? auth.GetString() ?? "" : "";
@@ -2469,7 +2448,7 @@ app.MapGet("/api/discovery/maps", (DataStoreService db, ContentAddressableStorag
                 if (seenKeys.Contains(compositeKey)) continue;
                 seenKeys.Add(compositeKey);
 
-                var stats = db.Get<MapStats>("map_stats", compositeKey) ?? db.Get<MapStats>("map_stats", manifest.MapName);
+                var stats = MapStatsHelper.GetStats(db, manifest.MapName, manifest.Version, null);
                 bool isGreenlit = stats != null && stats.IsGreenlit;
 
                 long totalBytes = 0;
@@ -2728,14 +2707,16 @@ app.MapPost("/api/admin/greenlight", (AdminGreenlightRequest req, DataStoreServi
         return Results.BadRequest(new { Message = "Invalid admin signature." });
     }
 
-    var stats = db.Get<MapStats>("map_stats", mapTitle) ?? new MapStats();
+    var stats = MapStatsHelper.GetStats(db, mapTitle, req.MapVersion, null) ?? new MapStats();
     stats.AdminOverrideGreenlit = true;
     db.Upsert("map_stats", mapTitle, stats);
+    db.Upsert("map_stats", mapTitle.ToLowerInvariant(), stats);
 
     if (!string.IsNullOrWhiteSpace(req.MapVersion))
     {
         string compositeKey = $"{mapTitle}_{req.MapVersion.Trim()}";
         db.Upsert("map_stats", compositeKey, stats);
+        db.Upsert("map_stats", compositeKey.ToLowerInvariant(), stats);
     }
 
     var greenlightEvent = new ClusterEventDto
@@ -2765,33 +2746,27 @@ app.MapPost("/api/admin/greenlight", (AdminGreenlightRequest req, DataStoreServi
 
 app.MapGet("/api/maps/greenlight_status/{mapId}", (string mapId, DataStoreService db) =>
 {
-    var stats = db.Get<MapStats>("map_stats", mapId);
-    MapStats? rootStats = null;
+    string title = mapId;
+    string? ver = null;
+    string? pubKey = null;
+
     if (mapId.Contains('_'))
     {
-        int lastUnderscore = mapId.LastIndexOf('_');
-        string baseTitle = mapId[..lastUnderscore];
-        rootStats = db.Get<MapStats>("map_stats", baseTitle);
-        if (rootStats == null && baseTitle.Contains('_'))
+        var parts = mapId.Split('_');
+        if (parts.Length >= 3)
         {
-            int prevUnderscore = baseTitle.LastIndexOf('_');
-            string rootTitle = baseTitle[..prevUnderscore];
-            rootStats = db.Get<MapStats>("map_stats", rootTitle);
+            title = parts[0];
+            ver = parts[1];
+            pubKey = parts[2];
+        }
+        else if (parts.Length == 2)
+        {
+            title = parts[0];
+            ver = parts[1];
         }
     }
 
-    if (stats == null)
-    {
-        stats = rootStats ?? new MapStats();
-    }
-    else if (rootStats != null && rootStats.IsGreenlit && !stats.IsGreenlit)
-    {
-        stats.AdminOverrideGreenlit = stats.AdminOverrideGreenlit || rootStats.AdminOverrideGreenlit;
-        if (rootStats.VerifiedGoodReviewsCount > stats.VerifiedGoodReviewsCount)
-        {
-            stats.VerifiedGoodReviewsCount = rootStats.VerifiedGoodReviewsCount;
-        }
-    }
+    var stats = MapStatsHelper.GetStats(db, title, ver, pubKey) ?? new MapStats();
 
     return Results.Ok(new
     {
@@ -3042,11 +3017,7 @@ app.MapPost("/api/maps/report_metrics", (MapMetricsReport req, DataStoreService 
         engagement.IsVerifiedAccount = true;
     }
 
-    var stats = db.Get<MapStats>("map_stats", authorCompositeKey)
-        ?? (!string.IsNullOrEmpty(authorPublicKey) ? db.Get<MapStats>("map_stats", $"{mapTitle}_{authorPublicKey}") : null)
-        ?? db.Get<MapStats>("map_stats", compositeKey)
-        ?? db.Get<MapStats>("map_stats", mapTitle)
-        ?? new MapStats();
+    var stats = MapStatsHelper.GetStats(db, mapTitle, mapVersion, authorPublicKey) ?? new MapStats();
 
     stats.TotalPlaytimeMinutes += Math.Max(0.0, req.PlaytimeMinutes);
     if (req.IsCompleteGame)
@@ -3080,14 +3051,18 @@ app.MapPost("/api/maps/report_metrics", (MapMetricsReport req, DataStoreService 
 
     db.Upsert("player_engagement", engagementKey, engagement);
     db.Upsert("map_stats", authorCompositeKey, stats);
+    db.Upsert("map_stats", authorCompositeKey.ToLowerInvariant(), stats);
     if (!string.IsNullOrEmpty(authorPublicKey))
     {
         db.Upsert("map_stats", $"{mapTitle}_{authorPublicKey}", stats);
+        db.Upsert("map_stats", $"{mapTitle}_{authorPublicKey}".ToLowerInvariant(), stats);
     }
     if (stats.IsGreenlit)
     {
         db.Upsert("map_stats", compositeKey, stats);
         db.Upsert("map_stats", mapTitle, stats);
+        db.Upsert("map_stats", compositeKey.ToLowerInvariant(), stats);
+        db.Upsert("map_stats", mapTitle.ToLowerInvariant(), stats);
     }
 
     var metricEvent = new ClusterEventDto

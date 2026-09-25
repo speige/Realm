@@ -328,6 +328,10 @@ public static class MapAssetHelper
 			Directory.CreateDirectory(targetDirectory);
 		}
 
+		SynchronizeAttributesToMetadata(targetDirectory, assets);
+
+		EnsureAllAssetsHaveBlake3Hashes(assets, targetDirectory);
+
 		string manifestPath = Path.Combine(targetDirectory, "manifest.json");
 		JsonObject manifestRoot;
 
@@ -353,8 +357,6 @@ public static class MapAssetHelper
 		manifestRoot.Remove("FileSizes");
 
 		MapJsonFormatter.SaveFormattedJson(manifestPath, manifestRoot);
-
-		SynchronizeAttributesToMetadata(targetDirectory, assets);
 	}
 
 	public static void UpdateManifestAsset(
@@ -1387,7 +1389,8 @@ public static class MapAssetHelper
 				{
 					string fileName = itemPair.Key;
 					string hash = ExtractHashString(itemPair.Value);
-					if (string.IsNullOrEmpty(hash))
+					bool isOther = category == "other";
+					if (isOther || string.IsNullOrEmpty(hash))
 					{
 						string subFolder = category switch
 						{
