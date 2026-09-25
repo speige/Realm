@@ -575,7 +575,18 @@ public class MapStorageService
         MapAssetManager.Storage.StoreAsset(manifestBytes, ".json", precomputedBlake3: manifestBlake3);
 
         string targetDirectory = Path.Combine(MapAssetManager.GlobalArchiveDirectory, mapTitle, mapVersion, manifestBlake3);
+        if (Directory.Exists(targetDirectory))
+        {
+            Directory.Delete(targetDirectory, true);
+        }
         Directory.CreateDirectory(targetDirectory);
+
+        MapArchiveHelper.ExtractArchive(archivePath, targetDirectory);
+
+        if (!string.IsNullOrWhiteSpace(rootPrefix))
+        {
+            FlattenRootPrefix(targetDirectory, rootPrefix);
+        }
 
         string targetManifestPath = Path.Combine(targetDirectory, "manifest.json");
         File.WriteAllText(targetManifestPath, manifest.ToJson());
@@ -584,70 +595,38 @@ public class MapStorageService
         int processed = 0;
         long lastProgressReportTicks = 0;
 
-        var fileNameToHash = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (manifest.Files != null)
         {
             foreach (var kvp in manifest.Files)
             {
-                string fn = Path.GetFileName(kvp.Key);
-                if (!string.IsNullOrEmpty(fn) && !fileNameToHash.ContainsKey(fn))
-                {
-                    fileNameToHash[fn] = kvp.Value;
-                }
-            }
-        }
-
-        MapArchiveHelper.ProcessArchiveCandidates(archivePath, manifest, rootPrefix, (relPath, entryStream) =>
-        {
-            if (relPath.Equals("manifest.json", StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
-            string destFilePath = Path.Combine(targetDirectory, relPath);
-            string? destFileDir = Path.GetDirectoryName(destFilePath);
-            if (!string.IsNullOrEmpty(destFileDir) && !Directory.Exists(destFileDir))
-            {
-                Directory.CreateDirectory(destFileDir);
-            }
-
-            string? matchingHash = null;
-            if (manifest.Files != null && manifest.Files.TryGetValue(relPath, out var hash))
-            {
-                matchingHash = hash;
-            }
-            else
-            {
-                string fileName = Path.GetFileName(relPath);
-                if (!string.IsNullOrEmpty(fileName) && fileNameToHash.TryGetValue(fileName, out var fallbackHash))
-                {
-                    matchingHash = fallbackHash;
-                }
-            }
-
-            if (matchingHash != null)
-            {
-                string normHash = ContentAddressableStorage.NormalizeBlake3Hash(matchingHash);
+                string rel = kvp.Key.StartsWith("res://", StringComparison.OrdinalIgnoreCase) ? kvp.Key.Substring(6) : kvp.Key;
+                rel = rel.TrimStart('/', '\\');
+                string destFilePath = Path.Combine(targetDirectory, rel);
+                string normHash = ContentAddressableStorage.NormalizeBlake3Hash(kvp.Value);
                 string? casFilePath = MapAssetManager.Storage.FindAssetFilePath(normHash);
-
-                if (casFilePath == null || !File.Exists(casFilePath))
-                {
-                    using var ms = new MemoryStream();
-                    entryStream.CopyTo(ms, 81920);
-                    byte[] assetBytes = ms.ToArray();
-                    string ext = Path.GetExtension(relPath).ToLowerInvariant();
-                    MapAssetManager.Storage.StoreAsset(assetBytes, ext, precomputedBlake3: normHash);
-                    casFilePath = MapAssetManager.Storage.FindAssetFilePath(normHash);
-                }
 
                 if (casFilePath != null && File.Exists(casFilePath))
                 {
-                    HardLinkHelper.CreateHardLinkOrCopy(destFilePath, casFilePath);
+                    if (File.Exists(destFilePath))
+                    {
+                        HardLinkHelper.CreateHardLinkOrCopy(destFilePath, casFilePath, overwrite: true);
+                    }
+                    else
+                    {
+                        string? destFileDir = Path.GetDirectoryName(destFilePath);
+                        if (!string.IsNullOrEmpty(destFileDir) && !Directory.Exists(destFileDir))
+                        {
+                            Directory.CreateDirectory(destFileDir);
+                        }
+                        HardLinkHelper.CreateHardLinkOrCopy(destFilePath, casFilePath);
+                    }
                 }
                 else
                 {
-                    using var outStream = new FileStream(destFilePath, System.IO.FileMode.Create, System.IO.FileAccess.Write, System.IO.FileShare.None, 81920);
-                    entryStream.CopyTo(outStream, 81920);
+                    if (File.Exists(destFilePath))
+                    {
+                        MapAssetManager.Storage.StoreAssetFromFile(destFilePath, normHash);
+                    }
                 }
 
                 processed++;
@@ -658,35 +637,6 @@ public class MapStorageService
                     {
                         lastProgressReportTicks = now;
                         progressCallback?.Invoke((float)processed / totalFiles);
-                    }
-                }
-            }
-            else
-            {
-                using var outStream = new FileStream(destFilePath, System.IO.FileMode.Create, System.IO.FileAccess.Write, System.IO.FileShare.None, 81920);
-                entryStream.CopyTo(outStream, 81920);
-            }
-        });
-
-        if (manifest.Files != null)
-        {
-            foreach (var kvp in manifest.Files)
-            {
-                string rel = kvp.Key.StartsWith("res://", StringComparison.OrdinalIgnoreCase) ? kvp.Key.Substring(6) : kvp.Key;
-                rel = rel.TrimStart('/', '\\');
-                string destFilePath = Path.Combine(targetDirectory, rel);
-                if (!File.Exists(destFilePath))
-                {
-                    string normHash = ContentAddressableStorage.NormalizeBlake3Hash(kvp.Value);
-                    string? casFilePath = MapAssetManager.Storage.FindAssetFilePath(normHash);
-                    if (casFilePath != null && File.Exists(casFilePath))
-                    {
-                        string? destFileDir = Path.GetDirectoryName(destFilePath);
-                        if (!string.IsNullOrEmpty(destFileDir) && !Directory.Exists(destFileDir))
-                        {
-                            Directory.CreateDirectory(destFileDir);
-                        }
-                        HardLinkHelper.CreateHardLinkOrCopy(destFilePath, casFilePath);
                     }
                 }
             }
@@ -708,6 +658,39 @@ public class MapStorageService
 
         AssetIndexService.Instance.RegisterManifest(manifest, targetManifestPath, isP2P: false);
         return Task.FromResult((true, "Map imported successfully.", (string?)mapTitle, (string?)mapVersion));
+    }
+
+    private static void FlattenRootPrefix(string targetDirectory, string rootPrefix)
+    {
+        string subDir = Path.Combine(targetDirectory, rootPrefix.Trim('/', '\\'));
+        if (!Directory.Exists(subDir))
+        {
+            return;
+        }
+
+        foreach (string file in Directory.GetFiles(subDir, "*", SearchOption.AllDirectories))
+        {
+            string rel = Path.GetRelativePath(subDir, file);
+            string dest = Path.Combine(targetDirectory, rel);
+            string? dir = Path.GetDirectoryName(dest);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+            if (File.Exists(dest))
+            {
+                File.Delete(dest);
+            }
+            File.Move(file, dest);
+        }
+
+        try
+        {
+            Directory.Delete(subDir, true);
+        }
+        catch
+        {
+        }
     }
 
     private Task<(bool Success, string Message, string? MapTitle, string? MapVersion)> ImportMapFromFolderAsync(
@@ -782,9 +765,9 @@ public class MapStorageService
                 string? casFilePath = MapAssetManager.Storage.FindAssetFilePath(normHash);
                 if ((casFilePath == null || !File.Exists(casFilePath)) && File.Exists(candidateFilePath))
                 {
-                    byte[] assetBytes = File.ReadAllBytes(candidateFilePath);
+                    using var fileStream = new FileStream(candidateFilePath, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read, 81920, System.IO.FileOptions.SequentialScan);
                     string ext = Path.GetExtension(candidateFilePath).ToLowerInvariant();
-                    MapAssetManager.Storage.StoreAsset(assetBytes, ext, precomputedBlake3: normHash);
+                    MapAssetManager.Storage.StoreAsset(fileStream, ext, precomputedBlake3: normHash);
                     casFilePath = MapAssetManager.Storage.FindAssetFilePath(normHash);
                 }
 

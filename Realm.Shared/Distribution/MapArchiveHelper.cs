@@ -202,7 +202,7 @@ public static class MapArchiveHelper
         string archiveFilePath,
         MapManifest manifest,
         string rootPrefix,
-        Action<string, Stream> candidateHandler)
+        Action<string, Func<Stream>> candidateHandler)
     {
         if (archiveFilePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
         {
@@ -223,8 +223,7 @@ public static class MapArchiveHelper
 
                 if (manifest.IsCandidateFile(norm))
                 {
-                    using var stream = entry.Open();
-                    candidateHandler(norm, stream);
+                    candidateHandler(norm, () => entry.Open());
                 }
             }
         }
@@ -248,8 +247,7 @@ public static class MapArchiveHelper
 
                 if (manifest.IsCandidateFile(norm))
                 {
-                    using var stream = entry.OpenEntryStream();
-                    candidateHandler(norm, stream);
+                    candidateHandler(norm, () => entry.OpenEntryStream());
                 }
             }
         }
@@ -267,7 +265,12 @@ public static class MapArchiveHelper
             Directory.CreateDirectory(targetDirectory);
         }
 
-        using var fileStream = new FileStream(archiveFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
+        if (TryExtractNative(archiveFilePath, targetDirectory))
+        {
+            return;
+        }
+
+        using var fileStream = new FileStream(archiveFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, FileOptions.SequentialScan);
         using var archive = SevenZipArchive.OpenArchive(fileStream, new ReaderOptions());
         foreach (var entry in archive.Entries)
         {
@@ -290,8 +293,8 @@ public static class MapArchiveHelper
             }
 
             using var entryStream = entry.OpenEntryStream();
-            using var outStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536);
-            entryStream.CopyTo(outStream, 65536);
+            using var outStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024);
+            entryStream.CopyTo(outStream, 1024 * 1024);
         }
     }
 
@@ -307,25 +310,7 @@ public static class MapArchiveHelper
             Directory.CreateDirectory(targetDirectory);
         }
 
-        using var zip = System.IO.Compression.ZipFile.OpenRead(zipFilePath);
-        foreach (var entry in zip.Entries)
-        {
-            if (entry.FullName.EndsWith("/") || entry.FullName.EndsWith("\\"))
-            {
-                continue;
-            }
-
-            string destinationPath = Path.Combine(targetDirectory, entry.FullName.Replace('/', Path.DirectorySeparatorChar));
-            string? destinationDir = Path.GetDirectoryName(destinationPath);
-            if (!string.IsNullOrEmpty(destinationDir) && !Directory.Exists(destinationDir))
-            {
-                Directory.CreateDirectory(destinationDir);
-            }
-
-            using var entryStream = entry.Open();
-            using var outStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536);
-            entryStream.CopyTo(outStream, 65536);
-        }
+        System.IO.Compression.ZipFile.ExtractToDirectory(zipFilePath, targetDirectory, overwriteFiles: true);
     }
 
     public static void ExtractArchive(string archiveFilePath, string targetDirectory)
@@ -333,6 +318,11 @@ public static class MapArchiveHelper
         if (string.IsNullOrWhiteSpace(archiveFilePath) || !File.Exists(archiveFilePath))
         {
             throw new FileNotFoundException($"Archive file '{archiveFilePath}' not found.");
+        }
+
+        if (TryExtractNative(archiveFilePath, targetDirectory))
+        {
+            return;
         }
 
         if (archiveFilePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
@@ -356,6 +346,169 @@ public static class MapArchiveHelper
         catch
         {
             ExtractZipArchive(archiveFilePath, targetDirectory);
+        }
+    }
+
+    public static bool TryExtractNative(string archiveFilePath, string targetDirectory)
+    {
+        try
+        {
+            string fullArchivePath = Path.GetFullPath(archiveFilePath);
+            string fullTargetPath = Path.GetFullPath(targetDirectory);
+
+            if (!Directory.Exists(fullTargetPath))
+            {
+                Directory.CreateDirectory(fullTargetPath);
+            }
+
+            string? sevenZipPath = FindSevenZipExecutable();
+            if (sevenZipPath != null)
+            {
+                if (RunProcess(sevenZipPath, $"x -y \"-o{fullTargetPath}\" \"{fullArchivePath}\""))
+                {
+                    if (Directory.GetFileSystemEntries(fullTargetPath).Length > 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            string? tarPath = FindTarExecutable();
+            if (tarPath != null)
+            {
+                if (RunProcess(tarPath, $"-xf \"{fullArchivePath}\" -C \"{fullTargetPath}\""))
+                {
+                    if (Directory.GetFileSystemEntries(fullTargetPath).Length > 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string? FindSevenZipExecutable()
+    {
+        string[] candidates = OperatingSystem.IsWindows()
+            ? new[]
+            {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "7-Zip", "7z.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "7-Zip", "7z.exe"),
+                @"C:\Program Files\7-Zip\7z.exe",
+                @"C:\Program Files (x86)\7-Zip\7z.exe",
+                "7z.exe",
+                "7z"
+            }
+            : new[]
+            {
+                "/usr/bin/7z",
+                "/usr/local/bin/7z",
+                "/usr/bin/7za",
+                "/usr/local/bin/7za",
+                "7z",
+                "7za"
+            };
+
+        foreach (string candidate in candidates)
+        {
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return FindInPath(OperatingSystem.IsWindows() ? "7z.exe" : "7z") ?? FindInPath(OperatingSystem.IsWindows() ? "7za.exe" : "7za");
+    }
+
+    private static string? FindTarExecutable()
+    {
+        string[] candidates = OperatingSystem.IsWindows()
+            ? new[]
+            {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "tar.exe"),
+                @"C:\Windows\System32\tar.exe",
+                "tar.exe",
+                "tar"
+            }
+            : new[]
+            {
+                "/usr/bin/tar",
+                "/bin/tar",
+                "/usr/local/bin/tar",
+                "tar"
+            };
+
+        foreach (string candidate in candidates)
+        {
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return FindInPath(OperatingSystem.IsWindows() ? "tar.exe" : "tar");
+    }
+
+    private static string? FindInPath(string filename)
+    {
+        string? pathEnv = Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrEmpty(pathEnv))
+        {
+            return null;
+        }
+
+        char separator = OperatingSystem.IsWindows() ? ';' : ':';
+        string[] paths = pathEnv.Split(separator, StringSplitOptions.RemoveEmptyEntries);
+        foreach (string path in paths)
+        {
+            try
+            {
+                string fullPath = Path.Combine(path.Trim(), filename);
+                if (File.Exists(fullPath))
+                {
+                    return fullPath;
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        return null;
+    }
+
+    private static bool RunProcess(string exePath, string arguments)
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = exePath,
+                Arguments = arguments,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+
+            using var process = System.Diagnostics.Process.Start(psi);
+            if (process == null)
+            {
+                return false;
+            }
+
+            process.WaitForExit();
+            return process.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
         }
     }
 }
