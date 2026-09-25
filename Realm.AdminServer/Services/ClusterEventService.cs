@@ -624,11 +624,6 @@ public class ClusterEventService
             searchLocations.Add((cas.AssetsDirectory, SearchOption.AllDirectories));
         }
 
-        if (Directory.Exists(".data/assets") && !string.Equals(Path.GetFullPath(".data/assets"), Path.GetFullPath(cas.AssetsDirectory), StringComparison.OrdinalIgnoreCase))
-        {
-            searchLocations.Add((".data/assets", SearchOption.AllDirectories));
-        }
-
         if (Directory.Exists(cas.RootDirectory))
         {
             searchLocations.Add((cas.RootDirectory, SearchOption.TopDirectoryOnly));

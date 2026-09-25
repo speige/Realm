@@ -21,3 +21,4 @@ Realm.AdminServer/.data
 admin_private.key
 servers.json
 Realm.Godot/servers.json
+Realm.AdminServer/appsettings.json

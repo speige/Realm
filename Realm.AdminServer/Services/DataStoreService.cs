@@ -10,12 +10,13 @@ public class DataStoreService : IDisposable
 
     public string DataDirectory => _dataDirectory;
 
-    public DataStoreService() : this(".data")
-    {
-    }
-
     public DataStoreService(string dataDirectory)
     {
+        if (string.IsNullOrWhiteSpace(dataDirectory))
+        {
+            throw new ArgumentException("Data directory cannot be null or empty.", nameof(dataDirectory));
+        }
+
         _dataDirectory = Path.GetFullPath(dataDirectory);
         Directory.CreateDirectory(_dataDirectory);
         _engine = new DBreezeEngine(_dataDirectory);

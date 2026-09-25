@@ -10,12 +10,23 @@ using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var storageDirectory = builder.Configuration.GetValue<string>("StorageDirectory")
+    ?? builder.Configuration.GetValue<string>("storage-path");
+
+if (string.IsNullOrWhiteSpace(storageDirectory))
+{
+    throw new InvalidOperationException("StorageDirectory is required and must be configured in appsettings.json.");
+}
+
+var cas = new ContentAddressableStorage(storageDirectory);
+var dataStore = new DataStoreService(Path.Combine(storageDirectory, "data"));
+
 builder.Services.AddSingleton<LobbyRegistry>();
 builder.Services.AddSingleton<GeoIpService>();
 builder.Services.AddSingleton<SeederRegistry>();
-builder.Services.AddSingleton<DataStoreService>();
+builder.Services.AddSingleton(dataStore);
+builder.Services.AddSingleton(cas);
 
-var storagePath = builder.Configuration.GetValue<string>("storage-path") ?? builder.Configuration.GetValue<string>("StorageDirectory") ?? ".data/cas";
 var capacityPercent = builder.Configuration.GetValue<int?>("CapacityPercentage") ?? 100;
 var seederId = builder.Configuration.GetValue<string>("SeederId") ?? "seed_node_server";
 
@@ -49,8 +60,6 @@ if (adminKeysList != null)
     }
 }
 
-var cas = new ContentAddressableStorage(storagePath);
-builder.Services.AddSingleton(cas);
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton(serversConfig);
 
@@ -2029,16 +2038,6 @@ app.MapPost("/api/publish_map/upload_asset", async (HttpRequest request, DataSto
         return Results.BadRequest($"Failed to store asset in CAS: {storeResult.Message}");
     }
 
-    string archiveDir = ".data/assets";
-    if (!Directory.Exists(archiveDir))
-        Directory.CreateDirectory(archiveDir);
-        
-    string filePath = Path.Combine(archiveDir, normalizedHash);
-    if (!File.Exists(filePath))
-    {
-        await File.WriteAllBytesAsync(filePath, fileBytes);
-    }
-    
     return Results.Ok(new { Status = "Asset registered" });
 });
 
