@@ -562,6 +562,12 @@ public partial class LobbyManager : Node
                 GD.PrintErr($"[LobbyManager] Failed to read map signature metadata: {ex.Message}");
             }
 
+            long mapSizeBytes = MapAssetManager.GetMapTotalSizeBytes(mapPathName, mapVersion);
+            if (mapSizeBytes <= 0)
+            {
+                mapSizeBytes = MapAssetManager.GetMapTotalSizeBytes(mapDisplayName, mapVersion);
+            }
+
             var registerPayload = new
             {
                 Map = mapDisplayName,
@@ -577,7 +583,8 @@ public partial class LobbyManager : Node
                 MapVersion = mapVersion,
                 Signature = signature,
                 PublicKey = publicKey,
-                MapHash = mapHash
+                MapHash = mapHash,
+                MapSizeBytes = mapSizeBytes
             };
 
             HttpResponseMessage? response = null;
@@ -662,6 +669,7 @@ public partial class LobbyManager : Node
     {
         IsHost = false;
         IsGameStarted = false;
+        ActiveLobbyId = lobbyId;
         PlayerList.Clear();
 
 
@@ -1594,7 +1602,7 @@ public partial class LobbyManager : Node
 
     private void EmitDownloadProgress(float progress)
     {
-        if (progress == 0.0f && !string.IsNullOrEmpty(ActiveLobbyId))
+        if (progress == 0.0f)
         {
             ReportLocalMapReadyState(false);
         }
@@ -1603,10 +1611,7 @@ public partial class LobbyManager : Node
 
     private void EmitDownloadCompleted()
     {
-        if (!string.IsNullOrEmpty(ActiveLobbyId))
-        {
-            ReportLocalMapReadyState(true);
-        }
+        ReportLocalMapReadyState(true);
         MapDownloadCompleted?.Invoke();
     }
 
@@ -1789,7 +1794,9 @@ public partial class LobbyManager : Node
     {
         if (IsHost)
         {
-            var p = PlayerList.Find(x => x.PeerId == peerId);
+            int senderId = Multiplayer.GetRemoteSenderId();
+            int targetPeerId = senderId > 0 ? senderId : peerId;
+            var p = PlayerList.Find(x => x.PeerId == targetPeerId || (peerId > 0 && x.PeerId == peerId));
             if (p != null)
             {
                 p.IsMapReady = isMapReady;
@@ -1803,7 +1810,17 @@ public partial class LobbyManager : Node
         if (!IsHost && LocalPlayer != null)
         {
             LocalPlayer.IsMapReady = isMapReady;
-            RpcId(1, nameof(ReportMapReadyOnHost), LocalPlayer.PeerId, isMapReady);
+            if (_isConnectedToHost && Multiplayer.MultiplayerPeer != null)
+            {
+                try
+                {
+                    RpcId(1, nameof(ReportMapReadyOnHost), LocalPlayer.PeerId, isMapReady);
+                }
+                catch (Exception ex)
+                {
+                    GD.PrintErr($"[LobbyManager] Failed to report map ready state: {ex.Message}");
+                }
+            }
         }
     }
 

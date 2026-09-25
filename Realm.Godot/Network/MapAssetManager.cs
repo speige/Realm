@@ -5,6 +5,7 @@ using Realm.Shared.Metadata;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -966,5 +967,122 @@ public static class MapAssetManager
         }
 
         return manifest;
+    }
+
+    public static long GetMapTotalSizeBytes(string mapName, string? version = null)
+    {
+        if (string.IsNullOrWhiteSpace(mapName))
+        {
+            return 0;
+        }
+
+        try
+        {
+            var manifest = FindHostManifest(mapName, version);
+            if (manifest != null)
+            {
+                if (manifest.FileSizes != null && manifest.FileSizes.Count > 0)
+                {
+                    long totalFromManifest = 0;
+                    foreach (var size in manifest.FileSizes.Values)
+                    {
+                        totalFromManifest += size;
+                    }
+                    if (totalFromManifest > 0)
+                    {
+                        return totalFromManifest;
+                    }
+                }
+
+                long totalCas = 0;
+                if (manifest.Files != null && manifest.Files.Count > 0)
+                {
+                    foreach (var hash in manifest.Files.Values)
+                    {
+                        string? assetPath = Storage.FindAssetFilePath(hash);
+                        if (assetPath != null && File.Exists(assetPath))
+                        {
+                            totalCas += new FileInfo(assetPath).Length;
+                        }
+                    }
+                }
+                if (totalCas > 0)
+                {
+                    return totalCas;
+                }
+            }
+
+            string? manifestPath = FindManifestPath(mapName, version);
+            if (manifestPath != null && File.Exists(manifestPath))
+            {
+                string? dir = Path.GetDirectoryName(manifestPath);
+                if (dir != null && Directory.Exists(dir))
+                {
+                    long dirSize = CalculateDirectorySize(dir);
+                    if (dirSize > 0)
+                    {
+                        return dirSize;
+                    }
+                }
+            }
+
+            string userMapDir = ProjectSettings.GlobalizePath($"user://maps/{mapName}");
+            if (Directory.Exists(userMapDir))
+            {
+                long dirSize = CalculateDirectorySize(userMapDir);
+                if (dirSize > 0)
+                {
+                    return dirSize;
+                }
+            }
+
+            string resMapDir = ProjectSettings.GlobalizePath($"res://Maps/{mapName}");
+            if (Directory.Exists(resMapDir))
+            {
+                long dirSize = CalculateDirectorySize(resMapDir);
+                if (dirSize > 0)
+                {
+                    return dirSize;
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return 0;
+    }
+
+    private static long CalculateDirectorySize(string directoryPath)
+    {
+        if (!Directory.Exists(directoryPath))
+        {
+            return 0;
+        }
+
+        long total = 0;
+        try
+        {
+            var files = Directory.GetFiles(directoryPath, "*.*", SearchOption.AllDirectories);
+            foreach (var file in files)
+            {
+                total += new FileInfo(file).Length;
+            }
+        }
+        catch
+        {
+        }
+
+        return total;
+    }
+
+    public static string FormatSizeInMB(long bytes)
+    {
+        if (bytes <= 0)
+        {
+            return "0.0 MB";
+        }
+        double mb = bytes / (1024.0 * 1024.0);
+        return $"{mb:F1} MB";
     }
 }

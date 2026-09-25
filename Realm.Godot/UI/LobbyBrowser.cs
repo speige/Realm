@@ -17,6 +17,8 @@ public partial class LobbyBrowser : Control
 		public string Players;
 		public int Ping;
 		public string GameVersion;
+		public long MapSizeBytes;
+		public string MapSizeFormatted;
 	}
 
 	private List<LobbyData> _allLobbies = new List<LobbyData>();
@@ -42,6 +44,7 @@ public partial class LobbyBrowser : Control
 	private Label _browserTitle;
 	private Label _filterTitle;
 	private Label _mapCol;
+	private Label _sizeCol;
 	private Label _modeCol;
 	private Label _playersCol;
 	private Label _pingCol;
@@ -75,6 +78,7 @@ public partial class LobbyBrowser : Control
 		_browserTitle = GetNode<Label>("BrowserTitle");
 		_filterTitle = GetNode<Label>("FilterPanel/VBoxContainer/FilterTitle");
 		_mapCol = GetNode<Label>("LobbyPanel/VBoxContainer/TableHeader/MapCol");
+		_sizeCol = GetNodeOrNull<Label>("LobbyPanel/VBoxContainer/TableHeader/SizeCol");
 		_modeCol = GetNode<Label>("LobbyPanel/VBoxContainer/TableHeader/ModeCol");
 		_playersCol = GetNode<Label>("LobbyPanel/VBoxContainer/TableHeader/PlayersCol");
 		_pingCol = GetNode<Label>("LobbyPanel/VBoxContainer/TableHeader/PingCol");
@@ -230,10 +234,14 @@ public partial class LobbyBrowser : Control
 		tableHeader.GetParent().RemoveChild(tableHeader);
 		headerWrapper.AddChild(tableHeader);
 
-		foreach (var lbl in new[] { _mapCol, _modeCol, _playersCol, _pingCol })
+		foreach (var lbl in new[] { _mapCol, _sizeCol, _modeCol, _playersCol, _pingCol })
 		{
-			lbl.AddThemeColorOverride("font_color", UIStyle.ColorGold);
-			lbl.AddThemeFontSizeOverride("font_size", 16);
+			if (lbl != null)
+			{
+				lbl.Text = Tr(lbl.Text);
+				lbl.AddThemeColorOverride("font_color", UIStyle.ColorGold);
+				lbl.AddThemeFontSizeOverride("font_size", 16);
+			}
 		}
 
 
@@ -482,14 +490,40 @@ public partial class LobbyBrowser : Control
 							calculatedPing = (int)Math.Round(geoPing + clientOverhead + hostOverhead);
 						}
 
+						long mapSizeBytes = 0;
+						if (item.TryGetProperty("mapSizeBytes", out var sizeProp) && sizeProp.ValueKind == JsonValueKind.Number)
+						{
+							mapSizeBytes = sizeProp.GetInt64();
+						}
+						else if (item.TryGetProperty("MapSizeBytes", out sizeProp) && sizeProp.ValueKind == JsonValueKind.Number)
+						{
+							mapSizeBytes = sizeProp.GetInt64();
+						}
+						else if (item.TryGetProperty("mapSize", out sizeProp) && sizeProp.ValueKind == JsonValueKind.Number)
+						{
+							mapSizeBytes = sizeProp.GetInt64();
+						}
+
+						string mapName = item.TryGetProperty("map", out var mapProp) ? mapProp.GetString() ?? "" : "";
+						string mapVersion = item.TryGetProperty("mapVersion", out var mvProp) ? mvProp.GetString() ?? "" : "";
+
+						if (mapSizeBytes <= 0)
+						{
+							mapSizeBytes = MapAssetManager.GetMapTotalSizeBytes(mapName, mapVersion);
+						}
+
+						string mapSizeFormatted = MapAssetManager.FormatSizeInMB(mapSizeBytes);
+
 						lobbyList.Add(new LobbyData
 						{
 							LobbyId = item.TryGetProperty("lobbyId", out var idProp) ? idProp.GetString() ?? "" : "",
-							Map = item.TryGetProperty("map", out var mapProp) ? mapProp.GetString() ?? "" : "",
+							Map = mapName,
 							Mode = "Melee", // Default mode
 							Players = $"{(item.TryGetProperty("slotsUsed", out var slotsProp) ? slotsProp.GetInt32() : 0)}/{(item.TryGetProperty("maxPlayers", out var maxProp) ? maxProp.GetInt32() : 8)}",
 							Ping = calculatedPing,
-							GameVersion = item.TryGetProperty("gameVersion", out var gvProp) ? gvProp.GetString() ?? "" : ""
+							GameVersion = item.TryGetProperty("gameVersion", out var gvProp) ? gvProp.GetString() ?? "" : "",
+							MapSizeBytes = mapSizeBytes,
+							MapSizeFormatted = mapSizeFormatted
 						});
 					}
 
@@ -626,6 +660,14 @@ public partial class LobbyBrowser : Control
 		lblMap.AddThemeFontSizeOverride("font_size", 16);
 		lblMap.VerticalAlignment = VerticalAlignment.Center;
 		hBox.AddChild(lblMap);
+
+		var lblSize = new Label();
+		lblSize.Text = data.MapSizeFormatted;
+		lblSize.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		lblSize.AddThemeColorOverride("font_color", new Color(0.75f, 0.75f, 0.8f));
+		lblSize.AddThemeFontSizeOverride("font_size", 15);
+		lblSize.VerticalAlignment = VerticalAlignment.Center;
+		hBox.AddChild(lblSize);
 
 		var lblMode = new Label();
 		lblMode.Text = data.Mode;

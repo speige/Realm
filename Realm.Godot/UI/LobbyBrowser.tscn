@@ -158,6 +158,12 @@ size_flags_horizontal = 3
 text = "  MAP"
 vertical_alignment = 2
 
+[node name="SizeCol" type="Label" parent="LobbyPanel/VBoxContainer/TableHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "SIZE"
+vertical_alignment = 2
+
 [node name="ModeCol" type="Label" parent="LobbyPanel/VBoxContainer/TableHeader"]
 layout_mode = 2
 size_flags_horizontal = 3

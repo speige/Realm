@@ -164,7 +164,8 @@ app.MapGet("/lobbies", (LobbyRegistry registry, GeoIpService geoIp, HttpContext 
             lobby.HostPingBaseline,
             lobby.GameVersion,
             lobby.LocalIP,
-            lobby.MapVersion
+            lobby.MapVersion,
+            lobby.MapSizeBytes
         );
     });
 
@@ -291,7 +292,8 @@ app.MapPost("/lobbies/register", async (RegisterRequest req, LobbyRegistry regis
         OriginServerUri = registeredPeers.SelfUrl,
         HostToken = hostToken,
         HostPingBaseline = req.HostPingBaseline,
-        LocalIP = req.LocalIP
+        LocalIP = req.LocalIP,
+        MapSizeBytes = req.MapSizeBytes ?? 0
     };
 
     registry.AddOrUpdate(info);

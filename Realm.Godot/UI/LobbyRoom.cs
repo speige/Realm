@@ -1427,7 +1427,7 @@ private void UpdateSelectedMapUI()
 			}
 			else
 			{
-				newText = $"  Ping: [color={pingColor}]{latencyText}[/color] | Jitter: [color={jitterColor}]{jitterText}[/color] | Loss: [color={lossColor}]{lossText}[/color]";
+				newText = $"  {Tr("Ping")}: [color={pingColor}]{latencyText}[/color] | {Tr("Jitter")}: [color={jitterColor}]{jitterText}[/color] | {Tr("Loss")}: [color={lossColor}]{lossText}[/color]";
 			}
 			if (diagLabel.Text != newText)
 			{
@@ -1587,6 +1587,7 @@ private void UpdateSelectedMapUI()
 			_downloadLabel.Text = Tr("Map package ready.");
 			_downloadLabel.AddThemeColorOverride("font_color", UIStyle.ColorCyanGlow);
 		}
+		LobbyManager.Instance?.ReportLocalMapReadyState(true);
 		SetupStartButton();
 	}
 
