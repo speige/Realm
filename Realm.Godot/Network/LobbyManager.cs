@@ -159,6 +159,8 @@ public partial class LobbyManager : Node
         public int AlreadyPresentAssets { get; set; }
         public int SessionMissingAssets { get; set; }
         public DateTime LastActivityTimeUtc { get; set; } = DateTime.UtcNow;
+        public float LastEmittedProgress { get; set; } = -1.0f;
+        public long LastProgressEmitTicks { get; set; } = 0;
     }
 
     private readonly ConcurrentDictionary<string, HostTransferSession> _hostTransfers = new();
@@ -1566,7 +1568,7 @@ public partial class LobbyManager : Node
                 offset += packetSize;
                 packetIndex++;
 
-                if (packetIndex % 4 == 0)
+                if (packetIndex % 2 == 0)
                 {
                     await Task.Delay(1, session.Cts.Token);
                 }
@@ -1650,9 +1652,16 @@ public partial class LobbyManager : Node
                 overallProgress = sessionFraction;
             }
 
-            CallDeferred(nameof(EmitDownloadProgress), overallProgress);
+            bool isChunkEnd = packetIndex + 1 >= totalPacketsInChunk;
+            long nowTicks = System.Environment.TickCount64;
+            if (isChunkEnd || overallProgress >= 1.0f || Math.Abs(overallProgress - _currentClientTransfer.LastEmittedProgress) >= 0.005f || (nowTicks - _currentClientTransfer.LastProgressEmitTicks) >= 100)
+            {
+                _currentClientTransfer.LastEmittedProgress = overallProgress;
+                _currentClientTransfer.LastProgressEmitTicks = nowTicks;
+                CallDeferred(nameof(EmitDownloadProgress), overallProgress);
+            }
 
-            if (packetIndex + 1 >= totalPacketsInChunk)
+            if (isChunkEnd)
             {
                 byte[] chunkBytes = _currentClientTransfer.CurrentChunkStream.ToArray();
                 _currentClientTransfer.CurrentChunkStream.SetLength(0);

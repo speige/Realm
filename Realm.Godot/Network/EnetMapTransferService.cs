@@ -55,6 +55,8 @@ public partial class EnetMapTransferService : Node
         public int AlreadyPresentAssets { get; set; }
         public int SessionMissingAssets { get; set; }
         public DateTime LastActivityTimeUtc { get; set; } = DateTime.UtcNow;
+        public float LastEmittedProgress { get; set; } = -1.0f;
+        public long LastProgressEmitTicks { get; set; } = 0;
         public Action<float>? ProgressCallback { get; set; }
     }
 
@@ -436,7 +438,7 @@ public partial class EnetMapTransferService : Node
                 offset += packetSize;
                 packetIndex++;
 
-                if (packetIndex % 4 == 0)
+                if (packetIndex % 2 == 0)
                 {
                     await Task.Delay(1, session.Cts.Token);
                 }
@@ -516,10 +518,17 @@ public partial class EnetMapTransferService : Node
                 overallProgress = sessionFraction;
             }
 
-            _currentClientTransfer.ProgressCallback?.Invoke(overallProgress);
-            DownloadProgressChanged?.Invoke(overallProgress);
+            bool isChunkEnd = packetIndex + 1 >= totalPacketsInChunk;
+            long nowTicks = System.Environment.TickCount64;
+            if (isChunkEnd || overallProgress >= 1.0f || Math.Abs(overallProgress - _currentClientTransfer.LastEmittedProgress) >= 0.005f || (nowTicks - _currentClientTransfer.LastProgressEmitTicks) >= 100)
+            {
+                _currentClientTransfer.LastEmittedProgress = overallProgress;
+                _currentClientTransfer.LastProgressEmitTicks = nowTicks;
+                _currentClientTransfer.ProgressCallback?.Invoke(overallProgress);
+                DownloadProgressChanged?.Invoke(overallProgress);
+            }
 
-            if (packetIndex + 1 >= totalPacketsInChunk)
+            if (isChunkEnd)
             {
                 byte[] chunkBytes = _currentClientTransfer.CurrentChunkStream.ToArray();
                 _currentClientTransfer.CurrentChunkStream.SetLength(0);

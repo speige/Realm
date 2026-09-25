@@ -9,7 +9,7 @@ namespace Realm.Shared.Distribution;
 public class ZstdAssetBundleHelper
 {
     public const int ChunkSize = 64 * 1024;
-    public const int PacketChunkSize = 64 * 1024;
+    public const int PacketChunkSize = 256 * 1024;
     public const int MaxBundleChunkSize = 100 * 1024 * 1024;
 
     public static List<List<(string AssetKey, byte[] Data, string? Metadata)>> PartitionAssetsIntoChunks(
@@ -76,7 +76,8 @@ public class ZstdAssetBundleHelper
     {
         using var fileStream = new FileStream(sourceFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, ChunkSize);
         using var zstdStream = new DecompressionStream(fileStream);
-        using var reader = new BinaryReader(zstdStream, Encoding.UTF8, leaveOpen: true);
+        using var bufferedStream = new BufferedStream(zstdStream, ChunkSize);
+        using var reader = new BinaryReader(bufferedStream, Encoding.UTF8, leaveOpen: true);
 
         int count = reader.ReadInt32();
         var result = new List<(string AssetKey, byte[] Data, string? Metadata)>(count);
@@ -86,7 +87,7 @@ public class ZstdAssetBundleHelper
             string assetKey = reader.ReadString();
             string metadata = reader.ReadString();
             int dataLength = reader.ReadInt32();
-            byte[] data = ReadExactBytes(reader, dataLength);
+            byte[] data = ReadExactBytes(bufferedStream, dataLength);
 
             result.Add((assetKey, data, string.IsNullOrEmpty(metadata) ? null : metadata));
         }
@@ -121,7 +122,8 @@ public class ZstdAssetBundleHelper
     {
         using var memoryStream = new MemoryStream(compressedBytes);
         using var zstdStream = new DecompressionStream(memoryStream);
-        using var reader = new BinaryReader(zstdStream, Encoding.UTF8, leaveOpen: true);
+        using var bufferedStream = new BufferedStream(zstdStream, ChunkSize);
+        using var reader = new BinaryReader(bufferedStream, Encoding.UTF8, leaveOpen: true);
 
         int count = reader.ReadInt32();
         var result = new List<(string AssetKey, byte[] Data, string? Metadata)>(count);
@@ -131,7 +133,7 @@ public class ZstdAssetBundleHelper
             string assetKey = reader.ReadString();
             string metadata = reader.ReadString();
             int dataLength = reader.ReadInt32();
-            byte[] data = ReadExactBytes(reader, dataLength);
+            byte[] data = ReadExactBytes(bufferedStream, dataLength);
 
             result.Add((assetKey, data, string.IsNullOrEmpty(metadata) ? null : metadata));
         }
@@ -139,20 +141,11 @@ public class ZstdAssetBundleHelper
         return result;
     }
 
-    private static byte[] ReadExactBytes(BinaryReader reader, int count)
+    private static byte[] ReadExactBytes(Stream stream, int count)
     {
         if (count == 0) return Array.Empty<byte>();
         byte[] buffer = new byte[count];
-        int totalRead = 0;
-        while (totalRead < count)
-        {
-            int read = reader.Read(buffer, totalRead, count - totalRead);
-            if (read <= 0)
-            {
-                throw new EndOfStreamException($"Expected to read {count} bytes, but reached end of stream after {totalRead} bytes.");
-            }
-            totalRead += read;
-        }
+        stream.ReadExactly(buffer, 0, count);
         return buffer;
     }
 }

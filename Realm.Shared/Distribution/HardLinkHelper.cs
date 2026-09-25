@@ -15,6 +15,8 @@ public static class HardLinkHelper
     [DllImport("libc", EntryPoint = "link", SetLastError = true)]
     private static extern int link(string oldpath, string newpath);
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _ensuredDirectories = new(StringComparer.OrdinalIgnoreCase);
+
     public static bool CreateHardLinkOrCopy(string destinationPath, string sourcePath, bool overwrite = true)
     {
         if (string.IsNullOrWhiteSpace(destinationPath) || string.IsNullOrWhiteSpace(sourcePath))
@@ -28,9 +30,13 @@ public static class HardLinkHelper
         }
 
         string? destDir = Path.GetDirectoryName(destinationPath);
-        if (!string.IsNullOrEmpty(destDir) && !Directory.Exists(destDir))
+        if (!string.IsNullOrEmpty(destDir) && !_ensuredDirectories.ContainsKey(destDir))
         {
-            Directory.CreateDirectory(destDir);
+            if (!Directory.Exists(destDir))
+            {
+                Directory.CreateDirectory(destDir);
+            }
+            _ensuredDirectories[destDir] = true;
         }
 
         if (File.Exists(destinationPath))

@@ -17,6 +17,10 @@ public class ContentAddressableStorage
     private readonly string _sidecarCacheDirectory;
     private readonly ConcurrentDictionary<string, object> _fileLocks = new();
     private readonly ConcurrentDictionary<string, string> _assetPathCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, bool> _ensuredDirectories = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, string> _sidecarMemoryCache = new(StringComparer.OrdinalIgnoreCase);
+    private long _lastDiskCheckTicks = 0;
+    private bool _lastDiskCheckResult = true;
 
     public string RootDirectory => _rootDirectory;
     public string AssetsDirectory => _assetsDirectory;
@@ -52,10 +56,39 @@ public class ContentAddressableStorage
             return cachedPath;
         }
 
-        string shardDirectory = Path.Combine(_assetsDirectory, normalizedHash.Substring(0, 2));
+        string shard = normalizedHash.Substring(0, 2);
+        string shardDirectory = Path.Combine(_assetsDirectory, shard);
         if (!Directory.Exists(shardDirectory))
         {
             return null;
+        }
+
+        string binPath = Path.Combine(shardDirectory, $"{normalizedHash}.bin");
+        if (File.Exists(binPath))
+        {
+            _assetPathCache[normalizedHash] = binPath;
+            return binPath;
+        }
+
+        string rmeshPath = Path.Combine(shardDirectory, $"{normalizedHash}.rmesh");
+        if (File.Exists(rmeshPath))
+        {
+            _assetPathCache[normalizedHash] = rmeshPath;
+            return rmeshPath;
+        }
+
+        string ranimPath = Path.Combine(shardDirectory, $"{normalizedHash}.ranim");
+        if (File.Exists(ranimPath))
+        {
+            _assetPathCache[normalizedHash] = ranimPath;
+            return ranimPath;
+        }
+
+        string pngPath = Path.Combine(shardDirectory, $"{normalizedHash}.png");
+        if (File.Exists(pngPath))
+        {
+            _assetPathCache[normalizedHash] = pngPath;
+            return pngPath;
         }
 
         string[] matchingFiles = Directory.GetFiles(shardDirectory, $"{normalizedHash}*");
@@ -105,13 +138,19 @@ public class ContentAddressableStorage
     public string? GetAssetMetadata(string blake3Hash)
     {
         string normalizedHash = NormalizeBlake3Hash(blake3Hash);
-        string sidecarPath = GetSidecarCachePath(normalizedHash);
+        if (_sidecarMemoryCache.TryGetValue(normalizedHash, out var cachedMeta))
+        {
+            return cachedMeta;
+        }
 
+        string sidecarPath = GetSidecarCachePath(normalizedHash);
         if (File.Exists(sidecarPath))
         {
             try
             {
-                return File.ReadAllText(sidecarPath);
+                string text = File.ReadAllText(sidecarPath);
+                _sidecarMemoryCache[normalizedHash] = text;
+                return text;
             }
             catch
             {
@@ -135,20 +174,32 @@ public class ContentAddressableStorage
 
     public bool CheckFreeDiskSpaceAcceptingUploads()
     {
+        long now = Environment.TickCount64;
+        if (now - _lastDiskCheckTicks < 5000)
+        {
+            return _lastDiskCheckResult;
+        }
+
         try
         {
             string rootPath = Path.GetPathRoot(_rootDirectory) ?? _rootDirectory;
             var driveInfo = new DriveInfo(rootPath);
             if (driveInfo.TotalSize <= 0)
             {
-                return true;
+                _lastDiskCheckResult = true;
             }
-
-            double freePercentage = (double)driveInfo.AvailableFreeSpace / driveInfo.TotalSize;
-            return freePercentage >= 0.10;
+            else
+            {
+                double freePercentage = (double)driveInfo.AvailableFreeSpace / driveInfo.TotalSize;
+                _lastDiskCheckResult = freePercentage >= 0.10;
+            }
+            _lastDiskCheckTicks = now;
+            return _lastDiskCheckResult;
         }
         catch
         {
+            _lastDiskCheckResult = true;
+            _lastDiskCheckTicks = now;
             return true;
         }
     }
@@ -200,15 +251,19 @@ public class ContentAddressableStorage
                 return (false, "Upload rejected: available disk space is less than 10%.", false, false, normalizedHash);
             }
 
-            string shardDirectory = Path.Combine(_assetsDirectory, normalizedHash.Substring(0, 2));
-            if (!Directory.Exists(shardDirectory))
+            string shard = normalizedHash.Substring(0, 2);
+            string shardDirectory = Path.Combine(_assetsDirectory, shard);
+            if (!_ensuredDirectories.ContainsKey(shardDirectory))
             {
-                Directory.CreateDirectory(shardDirectory);
+                if (!Directory.Exists(shardDirectory))
+                {
+                    Directory.CreateDirectory(shardDirectory);
+                }
+                _ensuredDirectories[shardDirectory] = true;
             }
 
             string finalExtension = !string.IsNullOrEmpty(extension) ? extension : ".bin";
             string finalFilePath = Path.Combine(shardDirectory, $"{normalizedHash}{finalExtension}");
-            string temporaryFilePath = Path.Combine(shardDirectory, $"{Guid.NewGuid():N}_tmp{finalExtension}");
 
             byte[] bytesToWrite = assetBytes;
             string? metadataToEmbed = metadataHeadersJson;
@@ -218,8 +273,7 @@ public class ContentAddressableStorage
                 metadataToEmbed = InjectAuthorKeysIntoMetadata(metadataToEmbed, authorPublicKey, authorSignature);
             }
 
-            File.WriteAllBytes(temporaryFilePath, bytesToWrite);
-            File.Move(temporaryFilePath, finalFilePath, true);
+            File.WriteAllBytes(finalFilePath, bytesToWrite);
             _assetPathCache[normalizedHash] = finalFilePath;
 
             string? finalMetadata = metadataToEmbed;
@@ -333,10 +387,15 @@ public class ContentAddressableStorage
 
     private string GetSidecarCachePath(string normalizedHash)
     {
-        string shardDirectory = Path.Combine(_sidecarCacheDirectory, normalizedHash.Substring(0, 2));
-        if (!Directory.Exists(shardDirectory))
+        string shard = normalizedHash.Substring(0, 2);
+        string shardDirectory = Path.Combine(_sidecarCacheDirectory, shard);
+        if (!_ensuredDirectories.ContainsKey(shardDirectory))
         {
-            Directory.CreateDirectory(shardDirectory);
+            if (!Directory.Exists(shardDirectory))
+            {
+                Directory.CreateDirectory(shardDirectory);
+            }
+            _ensuredDirectories[shardDirectory] = true;
         }
         return Path.Combine(shardDirectory, $"{normalizedHash}.json");
     }
@@ -345,6 +404,7 @@ public class ContentAddressableStorage
     {
         try
         {
+            _sidecarMemoryCache[normalizedHash] = metadataJson;
             string path = GetSidecarCachePath(normalizedHash);
             File.WriteAllText(path, metadataJson, Encoding.UTF8);
         }
