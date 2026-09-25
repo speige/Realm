@@ -72,7 +72,6 @@ public partial class LobbyManager : Node
         public bool IsMapReady { get; set; } = true;
     }
 
-    public List<string> AdminPublicKeys { get; private set; } = new();
     public List<string> OfficialServers { get; private set; } = new();
     public List<string> RegistryServers => OfficialServers;
     private int _currentServerIndex = 0;
@@ -329,7 +328,6 @@ public partial class LobbyManager : Node
     private void LoadServersConfig()
     {
         var config = ServersConfigHelper.Load();
-        AdminPublicKeys = config.AdminPublicKeys;
         OfficialServers = config.Servers;
         _currentServerIndex = 0;
         GD.Print($"[LobbyManager] Loaded servers: {string.Join(", ", RegistryServers)}");
