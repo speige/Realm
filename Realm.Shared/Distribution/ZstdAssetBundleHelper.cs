@@ -45,7 +45,7 @@ public class ZstdAssetBundleHelper
     public static void CreateBundleToFile(
         string destinationFilePath,
         IEnumerable<(string AssetKey, byte[] Data, string? Metadata)> assets,
-        int compressionLevel = Compressor.DefaultCompressionLevel)
+        int compressionLevel = 1)
     {
         string? dir = Path.GetDirectoryName(destinationFilePath);
         if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
@@ -96,7 +96,7 @@ public class ZstdAssetBundleHelper
 
     public static byte[] CreateBundleBytes(
         IEnumerable<(string AssetKey, byte[] Data, string? Metadata)> assets,
-        int compressionLevel = Compressor.DefaultCompressionLevel)
+        int compressionLevel = 1)
     {
         using var memoryStream = new MemoryStream();
         using (var zstdStream = new CompressionStream(memoryStream, compressionLevel, leaveOpen: true))

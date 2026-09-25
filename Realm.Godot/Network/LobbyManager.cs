@@ -122,15 +122,23 @@ public partial class LobbyManager : Node
     private static Dictionary<string, int>? _vocab;
     private static readonly object _sessionLock = new();
     private readonly SemaphoreSlim _mapDownloadLock = new(1, 1);
+    private struct HostAssetTransferItem
+    {
+        public string AssetKey;
+        public string SourceFilePath;
+        public string? Metadata;
+        public long Size;
+    }
+
     private class HostTransferSession
     {
         public string TransferId { get; set; } = string.Empty;
         public int PeerId { get; set; }
         public string MapName { get; set; } = string.Empty;
         public string MapVersion { get; set; } = string.Empty;
-        public List<List<(string AssetKey, byte[] Data, string? Metadata)>> Chunks { get; set; } = new();
+        public List<List<HostAssetTransferItem>> ChunkItems { get; set; } = new();
         public int CurrentChunkIndex { get; set; } = 0;
-        public int TotalChunks => Chunks.Count;
+        public int TotalChunks => ChunkItems.Count;
         public long TotalRawBytes { get; set; }
         public CancellationTokenSource Cts { get; set; } = new();
     }
@@ -147,6 +155,10 @@ public partial class LobbyManager : Node
         public MemoryStream CurrentChunkStream { get; set; } = new();
         public int ReceivedPacketsInCurrentChunk { get; set; }
         public long TotalReceivedBytes { get; set; }
+        public int TotalAssetsInManifest { get; set; }
+        public int AlreadyPresentAssets { get; set; }
+        public int SessionMissingAssets { get; set; }
+        public DateTime LastActivityTimeUtc { get; set; } = DateTime.UtcNow;
     }
 
     private readonly ConcurrentDictionary<string, HostTransferSession> _hostTransfers = new();
@@ -1087,56 +1099,89 @@ public partial class LobbyManager : Node
 
                     if (manifest != null)
                     {
-                        var allHashes = manifest.Files != null ? manifest.Files.Values : (IEnumerable<string>)Array.Empty<string>();
-                        var missingHashes = await Task.Run(() => MapAssetManager.GetMissingHashes(allHashes));
+                        var allHashes = manifest.Files != null ? manifest.Files.Values.ToList() : new List<string>();
+                        int totalManifestFiles = allHashes.Count;
+                        int maxRetries = 10;
+                        int retryCount = 0;
 
-                        if (missingHashes.Count == 0)
+                        while (retryCount < maxRetries && _isConnectedToHost)
                         {
-                            GD.Print($"[LobbyManager] All assets for '{targetMap}' already exist locally in CAS.");
-                            string targetMapDir = MapAssetManager.GetMapDirectory(targetMap, manifest.Version ?? "1.0.0");
-                            await Task.Run(() =>
+                            var missingHashes = await Task.Run(() => MapAssetManager.GetMissingHashes(allHashes));
+
+                            if (missingHashes.Count == 0)
                             {
-                                MapAssetManager.ExtractManifestFiles(manifest, targetMapDir);
-                                string localManifestPath = Path.Combine(targetMapDir, "manifest.json");
-                                AssetIndexService.Instance.RegisterManifest(manifest, localManifestPath);
-                            });
+                                GD.Print($"[LobbyManager] All assets for '{targetMap}' now exist locally in CAS.");
+                                string targetMapDir = MapAssetManager.GetMapDirectory(targetMap, manifest.Version ?? "1.0.0");
+                                await Task.Run(() =>
+                                {
+                                    MapAssetManager.ExtractManifestFiles(manifest, targetMapDir);
+                                    string localManifestPath = Path.Combine(targetMapDir, "manifest.json");
+                                    AssetIndexService.Instance.RegisterManifest(manifest, localManifestPath);
+                                });
 
-                            CallDeferred(nameof(EmitDownloadCompleted));
-                            return true;
-                        }
+                                CallDeferred(nameof(EmitDownloadProgress), 1.0f);
+                                CallDeferred(nameof(EmitDownloadCompleted));
+                                return true;
+                            }
 
-                        GD.Print($"[LobbyManager] Missing {missingHashes.Count} assets for '{targetMap}'. Requesting compressed zstd bundle from host in memory...");
-                        CallDeferred(nameof(EmitDownloadProgress), 0.0f);
-                        string transferId = Guid.NewGuid().ToString("N");
+                            float initialProgress = totalManifestFiles > 0
+                                ? Math.Clamp((float)(totalManifestFiles - missingHashes.Count) / totalManifestFiles, 0.0f, 1.0f)
+                                : 0.0f;
+                            CallDeferred(nameof(EmitDownloadProgress), initialProgress);
 
-                        var transferSession = new ClientTransferSession
-                        {
-                            TransferId = transferId,
-                            MapName = targetMap,
-                            MapVersion = manifest.Version ?? "1.0.0",
-                            Manifest = manifest,
-                            CurrentChunkStream = new MemoryStream()
-                        };
+                            GD.Print($"[LobbyManager] Missing {missingHashes.Count}/{totalManifestFiles} assets for '{targetMap}' (attempt {retryCount + 1}/{maxRetries}). Requesting compressed zstd bundle from host...");
+                            string transferId = Guid.NewGuid().ToString("N");
 
-                        _currentClientTransfer = transferSession;
-                        _transferCompleteTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                            var transferSession = new ClientTransferSession
+                            {
+                                TransferId = transferId,
+                                MapName = targetMap,
+                                MapVersion = manifest.Version ?? "1.0.0",
+                                Manifest = manifest,
+                                CurrentChunkStream = new MemoryStream(),
+                                TotalAssetsInManifest = totalManifestFiles,
+                                AlreadyPresentAssets = totalManifestFiles - missingHashes.Count,
+                                SessionMissingAssets = missingHashes.Count,
+                                LastActivityTimeUtc = DateTime.UtcNow
+                            };
 
-                        Callable.From(() => RpcId(1, nameof(RequestMapAssetTransferRpc), transferId, targetMap, manifest.Version ?? "1.0.0", missingHashes.ToArray())).CallDeferred();
+                            _currentClientTransfer = transferSession;
+                            _transferCompleteTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-                        var transferTask = await Task.WhenAny(_transferCompleteTcs.Task, Task.Delay(300000));
-                        bool transferSuccess = transferTask == _transferCompleteTcs.Task && _transferCompleteTcs.Task.Result;
+                            Callable.From(() => RpcId(1, nameof(RequestMapAssetTransferRpc), transferId, targetMap, manifest.Version ?? "1.0.0", missingHashes.ToArray())).CallDeferred();
 
-                        if (transferSuccess)
-                        {
-                            _currentClientTransfer = null;
-                            GD.Print($"[LobbyManager] Map '{targetMap}' successfully extracted and registered.");
-                            CallDeferred(nameof(EmitDownloadProgress), 1.0f);
-                            CallDeferred(nameof(EmitDownloadCompleted));
-                            return true;
-                        }
-                        else
-                        {
-                            GD.PrintErr($"[LobbyManager] ENet transfer timed out or failed for '{targetMap}'.");
+                            bool transferSuccess = false;
+                            while (!_transferCompleteTcs.Task.IsCompleted)
+                            {
+                                if (!_isConnectedToHost || Multiplayer.MultiplayerPeer == null)
+                                {
+                                    GD.PrintErr("[LobbyManager] Disconnected from host during map download.");
+                                    break;
+                                }
+
+                                var completedTask = await Task.WhenAny(_transferCompleteTcs.Task, Task.Delay(2000));
+                                if (completedTask == _transferCompleteTcs.Task)
+                                {
+                                    transferSuccess = _transferCompleteTcs.Task.Result;
+                                    break;
+                                }
+
+                                if (DateTime.UtcNow - transferSession.LastActivityTimeUtc > TimeSpan.FromSeconds(45))
+                                {
+                                    GD.PrintErr("[LobbyManager] ENet transfer inactivity timeout for chunk. Retrying remaining missing assets...");
+                                    break;
+                                }
+                            }
+
+                            if (transferSuccess)
+                            {
+                                _currentClientTransfer = null;
+                                GD.Print($"[LobbyManager] Map '{targetMap}' successfully extracted and registered.");
+                                CallDeferred(nameof(EmitDownloadProgress), 1.0f);
+                                CallDeferred(nameof(EmitDownloadCompleted));
+                                return true;
+                            }
+
                             if (_currentClientTransfer != null)
                             {
                                 try
@@ -1146,8 +1191,14 @@ public partial class LobbyManager : Node
                                 catch { }
                                 _currentClientTransfer = null;
                             }
-                            CallDeferred(nameof(EmitDownloadFailed));
-                            return false;
+
+                            if (!_isConnectedToHost)
+                            {
+                                break;
+                            }
+
+                            retryCount++;
+                            await Task.Delay(1000);
                         }
                     }
                 }
@@ -1155,6 +1206,7 @@ public partial class LobbyManager : Node
 
             if (MapAssetManager.IsMapDownloaded(targetMap))
             {
+                CallDeferred(nameof(EmitDownloadProgress), 1.0f);
                 CallDeferred(nameof(EmitDownloadCompleted));
                 return true;
             }
@@ -1328,6 +1380,15 @@ public partial class LobbyManager : Node
             _activeEphemeralTransferPeerId = senderId;
         }
 
+        foreach (var kvp in _hostTransfers)
+        {
+            if (kvp.Value.PeerId == senderId)
+            {
+                kvp.Value.Cts.Cancel();
+                _hostTransfers.TryRemove(kvp.Key, out _);
+            }
+        }
+
         _ = HandleHostAssetTransferAsync(senderId, transferId, mapName, mapVersion, missingHashes);
     }
 
@@ -1356,35 +1417,47 @@ public partial class LobbyManager : Node
                     mapDir = Path.GetDirectoryName(manifestPath);
                 }
 
-                var assetsToPack = new List<(string AssetKey, byte[] Data, string? Metadata)>();
+                var localFileMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                if (manifest != null && manifest.Files != null && !string.IsNullOrEmpty(mapDir))
+                {
+                    foreach (var kvp in manifest.Files)
+                    {
+                        string normKvp = ContentAddressableStorage.NormalizeBlake3Hash(kvp.Value);
+                        string relPath = kvp.Key.Replace("res://", "").TrimStart('/', '\\');
+                        string localFilePath = Path.Combine(mapDir, relPath);
+                        if (File.Exists(localFilePath))
+                        {
+                            localFileMap[normKvp] = localFilePath;
+                        }
+                    }
+                }
+
+                var itemsToPack = new List<HostAssetTransferItem>(missingHashes.Length);
                 foreach (var hash in missingHashes)
                 {
                     string norm = ContentAddressableStorage.NormalizeBlake3Hash(hash);
-                    byte[]? bytes = MapAssetManager.Storage.GetAssetBytes(norm) ?? MapAssetManager.P2PStorage.GetAssetBytes(norm);
+                    string? filePath = MapAssetManager.Storage.FindAssetFilePath(norm) ?? MapAssetManager.P2PStorage.FindAssetFilePath(norm);
+                    string? meta = null;
 
-                    if (bytes == null && manifest != null && manifest.Files != null && !string.IsNullOrEmpty(mapDir))
+                    if (filePath != null && File.Exists(filePath))
                     {
-                        foreach (var kvp in manifest.Files)
-                        {
-                            if (ContentAddressableStorage.NormalizeBlake3Hash(kvp.Value) == norm)
-                            {
-                                string relPath = kvp.Key.Replace("res://", "").TrimStart('/', '\\');
-                                string localFilePath = Path.Combine(mapDir, relPath);
-                                if (File.Exists(localFilePath))
-                                {
-                                    bytes = File.ReadAllBytes(localFilePath);
-                                    string ext = Path.GetExtension(localFilePath);
-                                    MapAssetManager.Storage.StoreAsset(bytes, ext);
-                                    break;
-                                }
-                            }
-                        }
+                        meta = MapAssetManager.Storage.GetAssetMetadata(norm);
+                    }
+                    else if (localFileMap.TryGetValue(norm, out var localPath) && File.Exists(localPath))
+                    {
+                        filePath = localPath;
                     }
 
-                    if (bytes != null)
+                    if (filePath != null && File.Exists(filePath))
                     {
-                        string? meta = MapAssetManager.Storage.GetAssetMetadata(norm);
-                        assetsToPack.Add((hash, bytes, meta));
+                        long size = new FileInfo(filePath).Length;
+                        itemsToPack.Add(new HostAssetTransferItem
+                        {
+                            AssetKey = hash,
+                            SourceFilePath = filePath,
+                            Metadata = meta,
+                            Size = size
+                        });
                     }
                     else
                     {
@@ -1392,8 +1465,30 @@ public partial class LobbyManager : Node
                     }
                 }
 
-                session.Chunks = ZstdAssetBundleHelper.PartitionAssetsIntoChunks(assetsToPack, ZstdAssetBundleHelper.MaxBundleChunkSize);
-                session.TotalRawBytes = assetsToPack.Sum(a => (long)a.Data.Length);
+                var chunkList = new List<List<HostAssetTransferItem>>();
+                var currentChunk = new List<HostAssetTransferItem>();
+                long currentChunkBytes = 0;
+
+                foreach (var item in itemsToPack)
+                {
+                    long estimated = item.Size + (item.AssetKey?.Length ?? 0) * 2 + (item.Metadata?.Length ?? 0) * 2 + 16;
+                    if (currentChunk.Count > 0 && currentChunkBytes + estimated > ZstdAssetBundleHelper.MaxBundleChunkSize)
+                    {
+                        chunkList.Add(currentChunk);
+                        currentChunk = new List<HostAssetTransferItem>();
+                        currentChunkBytes = 0;
+                    }
+                    currentChunk.Add(item);
+                    currentChunkBytes += estimated;
+                }
+
+                if (currentChunk.Count > 0)
+                {
+                    chunkList.Add(currentChunk);
+                }
+
+                session.ChunkItems = chunkList;
+                session.TotalRawBytes = itemsToPack.Sum(a => a.Size);
             }, cts.Token);
 
             int totalChunks = session.TotalChunks;
@@ -1414,7 +1509,7 @@ public partial class LobbyManager : Node
 
     private async Task SendHostChunkAsync(HostTransferSession session, int chunkIndex)
     {
-        if (chunkIndex < 0 || chunkIndex >= session.Chunks.Count || session.Cts.IsCancellationRequested)
+        if (chunkIndex < 0 || chunkIndex >= session.ChunkItems.Count || session.Cts.IsCancellationRequested)
         {
             return;
         }
@@ -1423,8 +1518,18 @@ public partial class LobbyManager : Node
         {
             byte[] compressedChunkBytes = await Task.Run(() =>
             {
-                var chunkAssets = session.Chunks[chunkIndex];
-                return ZstdAssetBundleHelper.CreateBundleBytes(chunkAssets);
+                var chunkItems = session.ChunkItems[chunkIndex];
+                var chunkAssets = new List<(string AssetKey, byte[] Data, string? Metadata)>(chunkItems.Count);
+                foreach (var item in chunkItems)
+                {
+                    if (session.Cts.IsCancellationRequested) break;
+                    if (File.Exists(item.SourceFilePath))
+                    {
+                        byte[] data = File.ReadAllBytes(item.SourceFilePath);
+                        chunkAssets.Add((item.AssetKey, data, item.Metadata));
+                    }
+                }
+                return ZstdAssetBundleHelper.CreateBundleBytes(chunkAssets, 1);
             }, session.Cts.Token);
 
             int totalPacketsInChunk = (int)Math.Ceiling((double)compressedChunkBytes.Length / ZstdAssetBundleHelper.PacketChunkSize);
@@ -1489,13 +1594,13 @@ public partial class LobbyManager : Node
     {
         if (_currentClientTransfer != null && _currentClientTransfer.TransferId == transferId)
         {
+            _currentClientTransfer.LastActivityTimeUtc = DateTime.UtcNow;
             _currentClientTransfer.ExpectedTotalBytes = totalBytes;
             _currentClientTransfer.ExpectedTotalChunks = totalChunks;
             _currentClientTransfer.CurrentChunkIndex = 0;
             _currentClientTransfer.ReceivedPacketsInCurrentChunk = 0;
             _currentClientTransfer.CurrentChunkStream.SetLength(0);
             _currentClientTransfer.CurrentChunkStream.Position = 0;
-            CallDeferred(nameof(EmitDownloadProgress), 0.0f);
 
             if (totalChunks == 0)
             {
@@ -1520,6 +1625,7 @@ public partial class LobbyManager : Node
 
         try
         {
+            _currentClientTransfer.LastActivityTimeUtc = DateTime.UtcNow;
             _currentClientTransfer.ExpectedTotalChunks = totalChunks;
             _currentClientTransfer.ExpectedTotalBytes = totalBytes;
             _currentClientTransfer.CurrentChunkIndex = chunkIndex;
@@ -1529,9 +1635,20 @@ public partial class LobbyManager : Node
             _currentClientTransfer.TotalReceivedBytes += packetData.Length;
 
             float chunkFraction = totalPacketsInChunk > 0 ? (float)(packetIndex + 1) / totalPacketsInChunk : 1.0f;
-            float overallProgress = totalChunks > 0
+            float sessionFraction = totalChunks > 0
                 ? Math.Clamp(((float)chunkIndex + chunkFraction) / totalChunks, 0.0f, 1.0f)
                 : 1.0f;
+
+            float overallProgress;
+            if (_currentClientTransfer.TotalAssetsInManifest > 0)
+            {
+                float downloadedAssetsInSession = sessionFraction * _currentClientTransfer.SessionMissingAssets;
+                overallProgress = Math.Clamp((_currentClientTransfer.AlreadyPresentAssets + downloadedAssetsInSession) / _currentClientTransfer.TotalAssetsInManifest, 0.0f, 1.0f);
+            }
+            else
+            {
+                overallProgress = sessionFraction;
+            }
 
             CallDeferred(nameof(EmitDownloadProgress), overallProgress);
 
@@ -1559,11 +1676,18 @@ public partial class LobbyManager : Node
             var extractedAssets = await Task.Run(() => ZstdAssetBundleHelper.ExtractBundleBytes(chunkBytes));
             GD.Print($"[LobbyManager] Decompressed chunk {chunkIndex + 1}/{totalChunks} ({extractedAssets.Count} assets) in memory.");
 
-            foreach (var (assetKey, data, metadata) in extractedAssets)
+            transferSession.LastActivityTimeUtc = DateTime.UtcNow;
+
+            await Task.Run(() =>
             {
-                string ext = Path.GetExtension(assetKey);
-                MapAssetManager.Storage.StoreAsset(data, ext, metadata);
-            }
+                foreach (var (assetKey, data, metadata) in extractedAssets)
+                {
+                    string ext = Path.GetExtension(assetKey);
+                    MapAssetManager.Storage.StoreAsset(data, ext, metadata, precomputedBlake3: assetKey);
+                }
+            });
+
+            transferSession.LastActivityTimeUtc = DateTime.UtcNow;
 
             if (chunkIndex + 1 < totalChunks)
             {
@@ -1572,9 +1696,12 @@ public partial class LobbyManager : Node
             else
             {
                 string targetMapDir = MapAssetManager.GetMapDirectory(transferSession.MapName, transferSession.MapVersion);
-                MapAssetManager.ExtractManifestFiles(transferSession.Manifest, targetMapDir);
-                string localManifestPath = Path.Combine(targetMapDir, "manifest.json");
-                AssetIndexService.Instance.RegisterManifest(transferSession.Manifest, localManifestPath);
+                await Task.Run(() =>
+                {
+                    MapAssetManager.ExtractManifestFiles(transferSession.Manifest, targetMapDir);
+                    string localManifestPath = Path.Combine(targetMapDir, "manifest.json");
+                    AssetIndexService.Instance.RegisterManifest(transferSession.Manifest, localManifestPath);
+                });
 
                 Callable.From(() => RpcId(1, nameof(AcknowledgeMapTransferCompleteRpc), transferSession.TransferId)).CallDeferred();
                 _transferCompleteTcs?.TrySetResult(true);
