@@ -1,65 +1,53 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
-using SharpCompress.Archives.SevenZip;
-using SharpCompress.Writers.SevenZip;
-using SharpCompress.Common;
-using SharpCompress.Readers;
-
-using SharpCompress.Compressors.LZMA;
+using System.Text;
+using System.Text.Json;
+using Realm.Shared.Metadata;
+using ZstdSharp;
 
 namespace Realm.Shared.Distribution;
 
+public class RmapHeaderInfo
+{
+    public string MapName { get; set; } = string.Empty;
+    public string Version { get; set; } = "1.0.0";
+    public string GameBuildNumber { get; set; } = string.Empty;
+    public string Author { get; set; } = "Unknown";
+    public string Description { get; set; } = string.Empty;
+    public List<string> Tags { get; set; } = new();
+}
+
 public static class MapArchiveHelper
 {
-    public static void Create7zArchive(string sourceDirectory, string destination7zPath, Action<float, string>? progressCallback = null, int compressionLevel = 1)
+    public static readonly byte[] RmapMagic = [0x52, 0x4D, 0x41, 0x50]; // "RMAP"
+    public const uint CurrentVersion = 1;
+
+    public static void CreateRmapArchive(
+        string sourceDirectory,
+        string destinationRmapPath,
+        Action<float, string>? progressCallback = null,
+        int compressionLevel = 1)
     {
         if (string.IsNullOrWhiteSpace(sourceDirectory) || !Directory.Exists(sourceDirectory))
         {
             throw new DirectoryNotFoundException($"Source directory '{sourceDirectory}' does not exist.");
         }
 
-        string? destinationDir = Path.GetDirectoryName(destination7zPath);
+        string? destinationDir = Path.GetDirectoryName(destinationRmapPath);
         if (!string.IsNullOrEmpty(destinationDir) && !Directory.Exists(destinationDir))
         {
             Directory.CreateDirectory(destinationDir);
         }
 
-        if (File.Exists(destination7zPath))
+        if (File.Exists(destinationRmapPath))
         {
-            File.Delete(destination7zPath);
+            File.Delete(destinationRmapPath);
         }
 
-        int dictSize;
-        int fastBytes;
-        if (compressionLevel <= 1)
-        {
-            dictSize = 64 * 1024;
-            fastBytes = 16;
-        }
-        else if (compressionLevel <= 3)
-        {
-            dictSize = 1024 * 1024;
-            fastBytes = 32;
-        }
-        else if (compressionLevel <= 5)
-        {
-            dictSize = 16 * 1024 * 1024;
-            fastBytes = 32;
-        }
-        else
-        {
-            dictSize = 32 * 1024 * 1024;
-            fastBytes = 64;
-        }
+        var headerInfo = ExtractRmapHeaderInfoFromDirectory(sourceDirectory);
+        string headerJson = JsonSerializer.Serialize(headerInfo);
 
-        using var outputStream = new FileStream(destination7zPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536);
-        var options = new SevenZipWriterOptions(CompressionType.LZMA2)
-        {
-            CompressionLevel = compressionLevel,
-            LzmaProperties = new LzmaEncoderProperties(true, dictSize, fastBytes),
-            BufferSize = 65536
-        };
-        using var writer = new SevenZipWriter(outputStream, options);
         var allFiles = Directory.GetFiles(sourceDirectory, "*.*", SearchOption.AllDirectories);
         var filesToArchive = new List<string>(allFiles.Length);
         foreach (var file in allFiles)
@@ -73,6 +61,7 @@ public static class MapArchiveHelper
                 relativePath.StartsWith(".sidecarcache/", StringComparison.OrdinalIgnoreCase) ||
                 relativePath.StartsWith(".vscode/", StringComparison.OrdinalIgnoreCase) ||
                 relativePath.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.EndsWith(".rmap", StringComparison.OrdinalIgnoreCase) ||
                 relativePath.EndsWith(".7z", StringComparison.OrdinalIgnoreCase) ||
                 relativePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
                 relativePath.EndsWith(".rar", StringComparison.OrdinalIgnoreCase) ||
@@ -95,15 +84,105 @@ public static class MapArchiveHelper
             filesToArchive.Add(file);
         }
 
+        filesToArchive.Sort((a, b) =>
+        {
+            string relA = Path.GetRelativePath(sourceDirectory, a).Replace('\\', '/');
+            string relB = Path.GetRelativePath(sourceDirectory, b).Replace('\\', '/');
+            int priorityA = GetFilePriority(relA);
+            int priorityB = GetFilePriority(relB);
+            if (priorityA != priorityB) return priorityA.CompareTo(priorityB);
+            return string.Compare(relA, relB, StringComparison.OrdinalIgnoreCase);
+        });
+
+        using var fileStream = new FileStream(destinationRmapPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920);
+        using (var writer = new BinaryWriter(fileStream, Encoding.UTF8, leaveOpen: true))
+        {
+            RealmContainerHeader.WriteHeader(writer, RmapMagic, headerJson, version: CurrentVersion);
+        }
+
+        using var zstdStream = new CompressionStream(fileStream, compressionLevel);
+        using var zstdWriter = new BinaryWriter(zstdStream, Encoding.UTF8, leaveOpen: true);
+
+        zstdWriter.Write(filesToArchive.Count);
+        byte[] buffer = new byte[81920];
         int total = filesToArchive.Count;
+
         for (int i = 0; i < total; i++)
         {
             string file = filesToArchive[i];
             string relativePath = Path.GetRelativePath(sourceDirectory, file).Replace('\\', '/');
             progressCallback?.Invoke((float)(i + 1) / Math.Max(1, total), relativePath);
-            using var fileStream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
-            writer.Write(relativePath, fileStream, File.GetLastWriteTimeUtc(file));
+
+            var fileInfo = new FileInfo(file);
+            zstdWriter.Write(relativePath);
+            zstdWriter.Write(fileInfo.Length);
+
+            using var inputFs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.SequentialScan);
+            long remaining = fileInfo.Length;
+            while (remaining > 0)
+            {
+                int toRead = (int)Math.Min(buffer.Length, remaining);
+                int read = inputFs.Read(buffer, 0, toRead);
+                if (read <= 0) break;
+                zstdStream.Write(buffer, 0, read);
+                remaining -= read;
+            }
         }
+
+        zstdWriter.Flush();
+        zstdStream.Flush();
+    }
+
+    public static RmapHeaderInfo? ReadHeaderFromRmap(string rmapFilePath)
+    {
+        if (string.IsNullOrWhiteSpace(rmapFilePath) || !File.Exists(rmapFilePath)) return null;
+        string? metadataJson = RealmContainerHeader.ExtractMetadataFromFile(rmapFilePath, RmapMagic);
+        if (string.IsNullOrEmpty(metadataJson)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<RmapHeaderInfo>(metadataJson);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public static (uint Version, string? MetadataJson, int PayloadOffset) ReadRmapHeader(Stream stream)
+    {
+        Span<byte> header = stackalloc byte[RealmContainerHeader.MinimumHeaderLength];
+        int bytesRead = 0;
+        while (bytesRead < RealmContainerHeader.MinimumHeaderLength)
+        {
+            int r = stream.Read(header.Slice(bytesRead, RealmContainerHeader.MinimumHeaderLength - bytesRead));
+            if (r <= 0) throw new InvalidOperationException("Invalid .rmap header (truncated).");
+            bytesRead += r;
+        }
+
+        if (!RealmContainerHeader.HasMagic(header, RmapMagic))
+        {
+            throw new InvalidOperationException("Invalid .rmap magic signature.");
+        }
+
+        uint version = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(header.Slice(4, 4));
+        uint metadataLength = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(header.Slice(8, 4));
+
+        string? metadataJson = null;
+        if (metadataLength > 0)
+        {
+            byte[] metaBytes = new byte[metadataLength];
+            int metaRead = 0;
+            while (metaRead < metadataLength)
+            {
+                int r = stream.Read(metaBytes, metaRead, (int)metadataLength - metaRead);
+                if (r <= 0) throw new InvalidOperationException("Invalid .rmap header (truncated metadata).");
+                metaRead += r;
+            }
+            metadataJson = Encoding.UTF8.GetString(metaBytes);
+        }
+
+        int payloadOffset = RealmContainerHeader.MinimumHeaderLength + (int)metadataLength;
+        return (version, metadataJson, payloadOffset);
     }
 
     public static (string? ManifestJson, string RootPrefix) ReadManifestFromArchive(string archiveFilePath)
@@ -113,147 +192,83 @@ public static class MapArchiveHelper
             return (null, string.Empty);
         }
 
-        if (archiveFilePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-        {
-            return ReadManifestFromZip(archiveFilePath);
-        }
-
-        return ReadManifestFrom7z(archiveFilePath);
-    }
-
-    private static (string? ManifestJson, string RootPrefix) ReadManifestFromZip(string zipFilePath)
-    {
-        using var zip = System.IO.Compression.ZipFile.OpenRead(zipFilePath);
-        var manifestEntries = zip.Entries.Where(e =>
-        {
-            string norm = e.FullName.Replace('\\', '/');
-            if (norm.Contains("/.backups/", StringComparison.OrdinalIgnoreCase) ||
-                norm.StartsWith(".backups/", StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-            return norm.EndsWith("manifest.json", StringComparison.OrdinalIgnoreCase) &&
-                   (norm.Equals("manifest.json", StringComparison.OrdinalIgnoreCase) || norm.EndsWith("/manifest.json", StringComparison.OrdinalIgnoreCase));
-        }).ToList();
-
-        if (manifestEntries.Count == 0)
-        {
-            return (null, string.Empty);
-        }
-
-        if (manifestEntries.Count > 1)
-        {
-            throw new InvalidOperationException($"Multiple manifest.json files found in archive ({manifestEntries.Count} found). Import aborted.");
-        }
-
-        var manifestEntry = manifestEntries[0];
-        string full = manifestEntry.FullName.Replace('\\', '/');
-        string rootPrefix = full.Length > "manifest.json".Length
-            ? full.Substring(0, full.Length - "manifest.json".Length)
-            : string.Empty;
-
-        using var stream = manifestEntry.Open();
-        using var reader = new StreamReader(stream, System.Text.Encoding.UTF8);
-        return (reader.ReadToEnd(), rootPrefix);
-    }
-
-    private static (string? ManifestJson, string RootPrefix) ReadManifestFrom7z(string archiveFilePath)
-    {
         using var fileStream = new FileStream(archiveFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
-        using var archive = SevenZipArchive.OpenArchive(fileStream, new ReaderOptions());
-        var manifestEntries = archive.Entries.Where(e =>
-        {
-            if (e.IsDirectory || string.IsNullOrWhiteSpace(e.Key))
-            {
-                return false;
-            }
-            string norm = e.Key.Replace('\\', '/');
-            if (norm.Contains("/.backups/", StringComparison.OrdinalIgnoreCase) ||
-                norm.StartsWith(".backups/", StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-            return norm.EndsWith("manifest.json", StringComparison.OrdinalIgnoreCase) &&
-                   (norm.Equals("manifest.json", StringComparison.OrdinalIgnoreCase) || norm.EndsWith("/manifest.json", StringComparison.OrdinalIgnoreCase));
-        }).ToList();
+        var (version, metaJson, payloadOffset) = ReadRmapHeader(fileStream);
+        fileStream.Seek(payloadOffset, SeekOrigin.Begin);
 
-        if (manifestEntries.Count == 0)
+        using var zstdStream = new DecompressionStream(fileStream);
+        using var bufferedStream = new BufferedStream(zstdStream, 65536);
+        using var reader = new BinaryReader(bufferedStream, Encoding.UTF8, leaveOpen: true);
+
+        int count = reader.ReadInt32();
+        for (int i = 0; i < count; i++)
         {
-            return (null, string.Empty);
+            string entryKey = reader.ReadString();
+            long fileLength = reader.ReadInt64();
+
+            string norm = entryKey.Replace('\\', '/');
+            if (norm.EndsWith("manifest.json", StringComparison.OrdinalIgnoreCase) &&
+                (norm.Equals("manifest.json", StringComparison.OrdinalIgnoreCase) || norm.EndsWith("/manifest.json", StringComparison.OrdinalIgnoreCase)))
+            {
+                string rootPrefix = norm.Length > "manifest.json".Length
+                    ? norm.Substring(0, norm.Length - "manifest.json".Length)
+                    : string.Empty;
+
+                using var boundedStream = new BoundedStream(bufferedStream, fileLength);
+                using var textReader = new StreamReader(boundedStream, Encoding.UTF8);
+                string manifestJson = textReader.ReadToEnd();
+                return (manifestJson, rootPrefix);
+            }
+
+            using var skipStream = new BoundedStream(bufferedStream, fileLength);
+            skipStream.SkipRemaining();
         }
 
-        if (manifestEntries.Count > 1)
-        {
-            throw new InvalidOperationException($"Multiple manifest.json files found in archive ({manifestEntries.Count} found). Import aborted.");
-        }
-
-        var manifestEntry = manifestEntries[0];
-        string full = manifestEntry.Key!.Replace('\\', '/');
-        string rootPrefix = full.Length > "manifest.json".Length
-            ? full.Substring(0, full.Length - "manifest.json".Length)
-            : string.Empty;
-
-        using var stream = manifestEntry.OpenEntryStream();
-        using var reader = new StreamReader(stream, System.Text.Encoding.UTF8);
-        return (reader.ReadToEnd(), rootPrefix);
+        return (null, string.Empty);
     }
 
     public static void ProcessArchiveCandidates(
         string archiveFilePath,
         MapManifest manifest,
         string rootPrefix,
-        Action<string, Func<Stream>> candidateHandler)
+        Action<string, Stream> candidateHandler)
     {
-        if (archiveFilePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(archiveFilePath) || !File.Exists(archiveFilePath))
         {
-            using var zip = System.IO.Compression.ZipFile.OpenRead(archiveFilePath);
-            foreach (var entry in zip.Entries)
-            {
-                if (entry.FullName.EndsWith("/") || entry.FullName.EndsWith("\\"))
-                {
-                    continue;
-                }
-
-                string norm = entry.FullName.Replace('\\', '/');
-                if (!string.IsNullOrEmpty(rootPrefix) && norm.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
-                {
-                    norm = norm.Substring(rootPrefix.Length);
-                }
-                norm = norm.TrimStart('/');
-
-                if (manifest.IsCandidateFile(norm))
-                {
-                    candidateHandler(norm, () => entry.Open());
-                }
-            }
+            return;
         }
-        else
+
+        using var fileStream = new FileStream(archiveFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
+        var (version, metaJson, payloadOffset) = ReadRmapHeader(fileStream);
+        fileStream.Seek(payloadOffset, SeekOrigin.Begin);
+
+        using var zstdStream = new DecompressionStream(fileStream);
+        using var bufferedStream = new BufferedStream(zstdStream, 65536);
+        using var reader = new BinaryReader(bufferedStream, Encoding.UTF8, leaveOpen: true);
+
+        int count = reader.ReadInt32();
+        for (int i = 0; i < count; i++)
         {
-            using var fileStream = new FileStream(archiveFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
-            using var archive = SevenZipArchive.OpenArchive(fileStream, new ReaderOptions());
-            foreach (var entry in archive.Entries)
+            string entryKey = reader.ReadString();
+            long fileLength = reader.ReadInt64();
+
+            string norm = entryKey.Replace('\\', '/');
+            if (!string.IsNullOrEmpty(rootPrefix) && norm.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
             {
-                if (entry.IsDirectory || string.IsNullOrWhiteSpace(entry.Key))
-                {
-                    continue;
-                }
-
-                string norm = entry.Key.Replace('\\', '/');
-                if (!string.IsNullOrEmpty(rootPrefix) && norm.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
-                {
-                    norm = norm.Substring(rootPrefix.Length);
-                }
-                norm = norm.TrimStart('/');
-
-                if (manifest.IsCandidateFile(norm))
-                {
-                    candidateHandler(norm, () => entry.OpenEntryStream());
-                }
+                norm = norm.Substring(rootPrefix.Length);
             }
+            norm = norm.TrimStart('/');
+
+            using var boundedStream = new BoundedStream(bufferedStream, fileLength);
+            if (manifest.IsCandidateFile(norm))
+            {
+                candidateHandler(norm, boundedStream);
+            }
+            boundedStream.SkipRemaining();
         }
     }
 
-    public static void Extract7zArchive(string archiveFilePath, string targetDirectory)
+    public static void ExtractArchive(string archiveFilePath, string targetDirectory)
     {
         if (string.IsNullOrWhiteSpace(archiveFilePath) || !File.Exists(archiveFilePath))
         {
@@ -265,23 +280,24 @@ public static class MapArchiveHelper
             Directory.CreateDirectory(targetDirectory);
         }
 
-        if (TryExtractNative(archiveFilePath, targetDirectory))
-        {
-            return;
-        }
+        using var fileStream = new FileStream(archiveFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
+        var (version, metaJson, payloadOffset) = ReadRmapHeader(fileStream);
+        fileStream.Seek(payloadOffset, SeekOrigin.Begin);
 
-        using var fileStream = new FileStream(archiveFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, FileOptions.SequentialScan);
-        using var archive = SevenZipArchive.OpenArchive(fileStream, new ReaderOptions());
-        foreach (var entry in archive.Entries)
-        {
-            if (entry.IsDirectory)
-            {
-                continue;
-            }
+        using var zstdStream = new DecompressionStream(fileStream);
+        using var bufferedStream = new BufferedStream(zstdStream, 65536);
+        using var reader = new BinaryReader(bufferedStream, Encoding.UTF8, leaveOpen: true);
 
-            string entryKey = entry.Key ?? string.Empty;
+        int count = reader.ReadInt32();
+        for (int i = 0; i < count; i++)
+        {
+            string entryKey = reader.ReadString();
+            long fileLength = reader.ReadInt64();
+
             if (string.IsNullOrWhiteSpace(entryKey))
             {
+                using var skipStream = new BoundedStream(bufferedStream, fileLength);
+                skipStream.SkipRemaining();
                 continue;
             }
 
@@ -292,187 +308,44 @@ public static class MapArchiveHelper
                 Directory.CreateDirectory(destinationDir);
             }
 
-            using var entryStream = entry.OpenEntryStream();
-            using var outStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024);
-            entryStream.CopyTo(outStream, 1024 * 1024);
+            using (var outStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920))
+            using (var boundedStream = new BoundedStream(bufferedStream, fileLength))
+            {
+                boundedStream.CopyTo(outStream, 81920);
+            }
         }
     }
 
-    public static void ExtractZipArchive(string zipFilePath, string targetDirectory)
+    private static RmapHeaderInfo ExtractRmapHeaderInfoFromDirectory(string sourceDirectory)
     {
-        if (string.IsNullOrWhiteSpace(zipFilePath) || !File.Exists(zipFilePath))
-        {
-            throw new FileNotFoundException($"Archive file '{zipFilePath}' not found.");
-        }
+        string mapName = Path.GetFileName(sourceDirectory);
+        string version = "1.0.0";
+        string gameBuildNumber = RealmVersion.GameBuildNumber;
+        string author = "Unknown";
+        string description = string.Empty;
+        var tags = new List<string>();
 
-        if (!Directory.Exists(targetDirectory))
-        {
-            Directory.CreateDirectory(targetDirectory);
-        }
-
-        System.IO.Compression.ZipFile.ExtractToDirectory(zipFilePath, targetDirectory, overwriteFiles: true);
-    }
-
-    public static void ExtractArchive(string archiveFilePath, string targetDirectory)
-    {
-        if (string.IsNullOrWhiteSpace(archiveFilePath) || !File.Exists(archiveFilePath))
-        {
-            throw new FileNotFoundException($"Archive file '{archiveFilePath}' not found.");
-        }
-
-        if (TryExtractNative(archiveFilePath, targetDirectory))
-        {
-            return;
-        }
-
-        if (archiveFilePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        string manifestPath = Path.Combine(sourceDirectory, "manifest.json");
+        if (File.Exists(manifestPath))
         {
             try
             {
-                ExtractZipArchive(archiveFilePath, targetDirectory);
-                return;
-            }
-            catch
-            {
-                Extract7zArchive(archiveFilePath, targetDirectory);
-                return;
-            }
-        }
-
-        try
-        {
-            Extract7zArchive(archiveFilePath, targetDirectory);
-        }
-        catch
-        {
-            ExtractZipArchive(archiveFilePath, targetDirectory);
-        }
-    }
-
-    public static bool TryExtractNative(string archiveFilePath, string targetDirectory)
-    {
-        try
-        {
-            string fullArchivePath = Path.GetFullPath(archiveFilePath);
-            string fullTargetPath = Path.GetFullPath(targetDirectory);
-
-            if (!Directory.Exists(fullTargetPath))
-            {
-                Directory.CreateDirectory(fullTargetPath);
-            }
-
-            string? sevenZipPath = FindSevenZipExecutable();
-            if (sevenZipPath != null)
-            {
-                if (RunProcess(sevenZipPath, $"x -y \"-o{fullTargetPath}\" \"{fullArchivePath}\""))
+                string jsonText = File.ReadAllText(manifestPath);
+                var manifest = MapManifest.LoadFromJson(jsonText);
+                if (manifest != null)
                 {
-                    if (Directory.GetFileSystemEntries(fullTargetPath).Length > 0)
-                    {
-                        return true;
-                    }
+                    if (!string.IsNullOrWhiteSpace(manifest.MapName)) mapName = manifest.MapName.Trim();
+                    if (!string.IsNullOrWhiteSpace(manifest.Version)) version = manifest.Version.Trim();
+                    if (!string.IsNullOrWhiteSpace(manifest.Author)) author = manifest.Author.Trim();
+                    if (!string.IsNullOrWhiteSpace(manifest.Description)) description = manifest.Description;
+                    if (manifest.Tags != null) tags.AddRange(manifest.Tags);
                 }
-            }
 
-            string? tarPath = FindTarExecutable();
-            if (tarPath != null)
-            {
-                if (RunProcess(tarPath, $"-xf \"{fullArchivePath}\" -C \"{fullTargetPath}\""))
+                using var doc = JsonDocument.Parse(jsonText);
+                if (doc.RootElement.TryGetProperty("GameBuildNumber", out var gbnProp) && gbnProp.ValueKind == JsonValueKind.String)
                 {
-                    if (Directory.GetFileSystemEntries(fullTargetPath).Length > 0)
-                    {
-                        return true;
-                    }
-                }
-            }
-
-            return false;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static string? FindSevenZipExecutable()
-    {
-        string[] candidates = OperatingSystem.IsWindows()
-            ? new[]
-            {
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "7-Zip", "7z.exe"),
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "7-Zip", "7z.exe"),
-                @"C:\Program Files\7-Zip\7z.exe",
-                @"C:\Program Files (x86)\7-Zip\7z.exe",
-                "7z.exe",
-                "7z"
-            }
-            : new[]
-            {
-                "/usr/bin/7z",
-                "/usr/local/bin/7z",
-                "/usr/bin/7za",
-                "/usr/local/bin/7za",
-                "7z",
-                "7za"
-            };
-
-        foreach (string candidate in candidates)
-        {
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-        }
-
-        return FindInPath(OperatingSystem.IsWindows() ? "7z.exe" : "7z") ?? FindInPath(OperatingSystem.IsWindows() ? "7za.exe" : "7za");
-    }
-
-    private static string? FindTarExecutable()
-    {
-        string[] candidates = OperatingSystem.IsWindows()
-            ? new[]
-            {
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "tar.exe"),
-                @"C:\Windows\System32\tar.exe",
-                "tar.exe",
-                "tar"
-            }
-            : new[]
-            {
-                "/usr/bin/tar",
-                "/bin/tar",
-                "/usr/local/bin/tar",
-                "tar"
-            };
-
-        foreach (string candidate in candidates)
-        {
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-        }
-
-        return FindInPath(OperatingSystem.IsWindows() ? "tar.exe" : "tar");
-    }
-
-    private static string? FindInPath(string filename)
-    {
-        string? pathEnv = Environment.GetEnvironmentVariable("PATH");
-        if (string.IsNullOrEmpty(pathEnv))
-        {
-            return null;
-        }
-
-        char separator = OperatingSystem.IsWindows() ? ';' : ':';
-        string[] paths = pathEnv.Split(separator, StringSplitOptions.RemoveEmptyEntries);
-        foreach (string path in paths)
-        {
-            try
-            {
-                string fullPath = Path.Combine(path.Trim(), filename);
-                if (File.Exists(fullPath))
-                {
-                    return fullPath;
+                    string? gbn = gbnProp.GetString();
+                    if (!string.IsNullOrWhiteSpace(gbn)) gameBuildNumber = gbn.Trim();
                 }
             }
             catch
@@ -480,35 +353,106 @@ public static class MapArchiveHelper
             }
         }
 
-        return null;
+        string metadataPath = Path.Combine(sourceDirectory, "metadata.json");
+        if (File.Exists(metadataPath))
+        {
+            try
+            {
+                string metaText = File.ReadAllText(metadataPath);
+                using var metaDoc = JsonDocument.Parse(metaText);
+                if (metaDoc.RootElement.TryGetProperty("GameBuildNumber", out var gbnProp) && gbnProp.ValueKind == JsonValueKind.String)
+                {
+                    string? gbn = gbnProp.GetString();
+                    if (!string.IsNullOrWhiteSpace(gbn)) gameBuildNumber = gbn.Trim();
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        return new RmapHeaderInfo
+        {
+            MapName = mapName,
+            Version = version,
+            GameBuildNumber = string.IsNullOrWhiteSpace(gameBuildNumber) ? RealmVersion.GameBuildNumber : gameBuildNumber,
+            Author = author,
+            Description = description,
+            Tags = tags
+        };
     }
 
-    private static bool RunProcess(string exePath, string arguments)
+    private static int GetFilePriority(string relPath)
     {
-        try
-        {
-            var psi = new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = exePath,
-                Arguments = arguments,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
+        if (relPath.Equals("manifest.json", StringComparison.OrdinalIgnoreCase)) return 0;
+        if (relPath.Equals("metadata.json", StringComparison.OrdinalIgnoreCase)) return 1;
+        if (relPath.Equals("map.json", StringComparison.OrdinalIgnoreCase)) return 2;
+        return 10;
+    }
 
-            using var process = System.Diagnostics.Process.Start(psi);
-            if (process == null)
+    private class BoundedStream : Stream
+    {
+        private readonly Stream _baseStream;
+        private long _bytesRemaining;
+
+        public BoundedStream(Stream baseStream, long length)
+        {
+            _baseStream = baseStream ?? throw new ArgumentNullException(nameof(baseStream));
+            _bytesRemaining = length;
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => _bytesRemaining;
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            if (_bytesRemaining <= 0) return 0;
+            int toRead = (int)Math.Min(count, _bytesRemaining);
+            int read = _baseStream.Read(buffer, offset, toRead);
+            _bytesRemaining -= read;
+            return read;
+        }
+
+        public override int Read(Span<byte> buffer)
+        {
+            if (_bytesRemaining <= 0) return 0;
+            int toRead = (int)Math.Min(buffer.Length, _bytesRemaining);
+            int read = _baseStream.Read(buffer.Slice(0, toRead));
+            _bytesRemaining -= read;
+            return read;
+        }
+
+        public void SkipRemaining()
+        {
+            byte[] skipBuffer = new byte[81920];
+            while (_bytesRemaining > 0)
             {
-                return false;
+                int toRead = (int)Math.Min(skipBuffer.Length, _bytesRemaining);
+                int read = _baseStream.Read(skipBuffer, 0, toRead);
+                if (read <= 0) break;
+                _bytesRemaining -= read;
             }
+        }
 
-            process.WaitForExit();
-            return process.ExitCode == 0;
-        }
-        catch
+        protected override void Dispose(bool disposing)
         {
-            return false;
+            if (disposing)
+            {
+                SkipRemaining();
+            }
+            base.Dispose(disposing);
         }
+
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }

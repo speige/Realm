@@ -101,7 +101,7 @@ public partial class StorageMenu : Control
 		_importMapButton = new Button();
 		_importMapButton.AddThemeConstantOverride("icon_max_width", 24);
 		_importMapButton.CustomMinimumSize = new Vector2(210, 42);
-		UIStyle.ApplyButtonText(_importMapButton, "📥 " + TranslationServer.Translate("IMPORT MAP (.ZIP / .7Z)"), 14);
+		UIStyle.ApplyButtonText(_importMapButton, "📥 " + TranslationServer.Translate("IMPORT MAP (.RMAP)"), 14);
 		_importMapButton.AddThemeStyleboxOverride("normal", UIStyle.CreateButtonNormal());
 		_importMapButton.AddThemeStyleboxOverride("hover", UIStyle.CreateButtonHover());
 		_importMapButton.AddThemeStyleboxOverride("pressed", UIStyle.CreateButtonPressed());
@@ -701,23 +701,23 @@ public partial class StorageMenu : Control
 		string normHash = !string.IsNullOrEmpty(manifestBlake3) ? ContentAddressableStorage.NormalizeBlake3Hash(manifestBlake3) : string.Empty;
 		string shortHash = normHash.Length >= 4 ? normHash.Substring(0, 4) : (normHash.Length > 0 ? normHash : "0000");
 
-		string defaultFileName = $"{cleanMapName}_{cleanMapVersion}_{shortHash}.7z";
+		string defaultFileName = $"{cleanMapName}_{cleanMapVersion}_{shortHash}.rmap";
 
 		var err = DisplayServer.FileDialogShow(
-			TranslationServer.Translate("Export Map as .7z"),
+			TranslationServer.Translate("Export Map as .rmap"),
 			OS.GetSystemDir(OS.SystemDir.Documents),
 			defaultFileName,
 			false,
 			DisplayServer.FileDialogMode.SaveFile,
-			new[] { "*.7z ; 7-Zip Archive (*.7z)" },
+			new[] { "*.rmap ; Realm Map Package (*.rmap)" },
 			Callable.From((bool status, string[] selectedPaths, int selectedFilterIndex) =>
 			{
 				if (status && selectedPaths.Length > 0)
 				{
 					string destinationPath = selectedPaths[0];
-					if (!destinationPath.EndsWith(".7z", StringComparison.OrdinalIgnoreCase))
+					if (!destinationPath.EndsWith(".rmap", StringComparison.OrdinalIgnoreCase))
 					{
-						destinationPath += ".7z";
+						destinationPath += ".rmap";
 					}
 
 					_ = ExportMapToFileAsync(latestVersion.DirectoryPath, destinationPath);
@@ -762,7 +762,7 @@ public partial class StorageMenu : Control
 			string normHash = !string.IsNullOrEmpty(manifestBlake3) ? ContentAddressableStorage.NormalizeBlake3Hash(manifestBlake3) : string.Empty;
 			string shortHash = normHash.Length >= 4 ? normHash.Substring(0, 4) : (normHash.Length > 0 ? normHash : "0000");
 
-			destinationPath = Path.Combine(destinationPath, $"{cleanMapName}_{cleanMapVersion}_{shortHash}.7z");
+			destinationPath = Path.Combine(destinationPath, $"{cleanMapName}_{cleanMapVersion}_{shortHash}.rmap");
 		}
 
 		_exportMapButton.Disabled = true;

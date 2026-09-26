@@ -683,7 +683,7 @@ public partial class MapEditorHUD : Control
 				_contentFile.AddChild(_btnExportMap);
 			}
 		}
-		SetupOptionButton(_btnExportMap, "\uf56e EXPORT (.7Z)", () => ExportMapAction(), 13, "Export prepared map package (.7z) with compiled WASM for hosting and CAS storage");
+		SetupOptionButton(_btnExportMap, "\uf56e EXPORT (.RMAP)", () => ExportMapAction(), 13, "Export prepared map package (.rmap) with compiled WASM for hosting and CAS storage");
 
 		_btnResetMap = GetNode<Button>("LeftSlidePanel/LeftScroll/LeftVBox/FileAccordion/ContentFile/BtnResetMap");
 		SetupOptionButton(_btnResetMap, "\uf12d RESET MAP", () =>
@@ -9195,23 +9195,23 @@ public partial class MapEditorHUD : Control
 		string normHash = !string.IsNullOrEmpty(manifestBlake3) ? ContentAddressableStorage.NormalizeBlake3Hash(manifestBlake3) : string.Empty;
 		string shortHash = normHash.Length >= 4 ? normHash.Substring(0, 4) : (normHash.Length > 0 ? normHash : "0000");
 
-		string defaultFileName = $"{cleanMapName}_{cleanMapVersion}_{shortHash}.7z";
+		string defaultFileName = $"{cleanMapName}_{cleanMapVersion}_{shortHash}.rmap";
 		string initialDir = GetInitialDirectory();
 
 		var err = DisplayServer.FileDialogShow(
-			TranslationServer.Translate("Export Map Package (.7z)"),
+			TranslationServer.Translate("Export Map Package (.rmap)"),
 			initialDir,
 			defaultFileName,
 			false,
 			DisplayServer.FileDialogMode.SaveFile,
-			new[] { "*.7z ; 7-Zip Archive (*.7z)" },
+			new[] { "*.rmap ; Realm Map Package (*.rmap)" },
 			Callable.From((bool status, string[] selectedPaths, int selectedFilterIndex) => {
 				if (status && selectedPaths.Length > 0)
 				{
 					string destinationPath = selectedPaths[0];
-					if (!destinationPath.EndsWith(".7z", StringComparison.OrdinalIgnoreCase))
+					if (!destinationPath.EndsWith(".rmap", StringComparison.OrdinalIgnoreCase))
 					{
-						destinationPath += ".7z";
+						destinationPath += ".rmap";
 					}
 					_ = ExportMapPackageAsync(destinationPath);
 				}
@@ -9243,7 +9243,7 @@ public partial class MapEditorHUD : Control
 			string normHash = !string.IsNullOrEmpty(manifestBlake3) ? ContentAddressableStorage.NormalizeBlake3Hash(manifestBlake3) : string.Empty;
 			string shortHash = normHash.Length >= 4 ? normHash.Substring(0, 4) : (normHash.Length > 0 ? normHash : "0000");
 
-			destinationPath = System.IO.Path.Combine(destinationPath, $"{cleanMapName}_{cleanMapVersion}_{shortHash}.7z");
+			destinationPath = System.IO.Path.Combine(destinationPath, $"{cleanMapName}_{cleanMapVersion}_{shortHash}.rmap");
 		}
 
 		var popup = new Panel();
@@ -9269,7 +9269,7 @@ public partial class MapEditorHUD : Control
 		vbox.AddChild(new Control { CustomMinimumSize = new Vector2(0, 10) });
 
 		var titleLabel = new Label();
-		UIStyle.ApplyTitle(titleLabel, "📦 " + TranslationServer.Translate("EXPORTING MAP PACKAGE (.7Z)"), 20);
+		UIStyle.ApplyTitle(titleLabel, "📦 " + TranslationServer.Translate("EXPORTING MAP PACKAGE (.RMAP)"), 20);
 		titleLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		vbox.AddChild(titleLabel);
 
@@ -9485,13 +9485,13 @@ public partial class MapEditorHUD : Control
 			System.IO.File.WriteAllText(manifestJsonPath, manifest.ToJson());
 
 			progressBar.Value = 80;
-			statusLabel.Text = TranslationServer.Translate("Compressing package into .7z archive...");
+			statusLabel.Text = TranslationServer.Translate("Compressing package into .rmap archive...");
 			await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 
 			long lastProgressUpdateTicks = 0;
 			await System.Threading.Tasks.Task.Run(() =>
 			{
-				MapArchiveHelper.Create7zArchive(_tempWorkspacePath, destinationPath, (pct, file) =>
+				MapArchiveHelper.CreateRmapArchive(_tempWorkspacePath, destinationPath, (pct, file) =>
 				{
 					long now = System.Environment.TickCount64;
 					if (now - lastProgressUpdateTicks < 50 && pct < 1.0f)
