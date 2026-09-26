@@ -233,8 +233,7 @@ public partial class MapEditorHUD : Control
 	private AuthorSignatureDialog _authorSignatureDialog;
 	private Button _btnEditorSettings;
 	private Button _btnAuthorSignature;
-	private PanelContainer _mapNameHeaderPanel;
-	private Label _lblMapNameHeader;
+	private Button _btnMapNameHeader;
 	private double _mapNameUpdateTimer = 0.0;
 	private Button _btnOpenGlobalOverrides;
 	private Button _btnOpenAnimationPreview;
@@ -522,42 +521,33 @@ public partial class MapEditorHUD : Control
 		_btnBackToHub = GetNode<Button>("TopLeftBox/BtnBack");
 		SetupButton(_btnBackToHub, "\uf2f5 BACK TO HUB", () => BackToHubAction(), 13, "Exit editor and return to game lobby");
 		StyleMapEditorTopButton(_btnBackToHub);
-		_mapNameHeaderPanel = new PanelContainer();
-		_mapNameHeaderPanel.Name = "MapNameHeaderPanel";
-		_mapNameHeaderPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateLightInnerPanel());
-		_mapNameHeaderPanel.CustomMinimumSize = new Vector2(160, 32);
-		_mapNameHeaderPanel.MouseFilter = Control.MouseFilterEnum.Stop;
-		_mapNameHeaderPanel.MouseDefaultCursorShape = Control.CursorShape.PointingHand;
-		_mapNameHeaderPanel.TooltipText = TranslationServer.Translate("Click to open Map Settings");
-		_mapNameHeaderPanel.GuiInput += (ev) =>
+
+		_btnMapNameHeader = new Button();
+		_btnMapNameHeader.Name = "BtnMapNameHeader";
+		_btnMapNameHeader.Set("icon_max_width", 0);
+		_btnMapNameHeader.CustomMinimumSize = new Vector2(0, 32);
+		_btnMapNameHeader.FocusMode = Control.FocusModeEnum.None;
+		_btnMapNameHeader.AddThemeFontSizeOverride("font_size", 12);
+		_btnMapNameHeader.AddThemeColorOverride("font_color", new Color(0.95f, 0.95f, 0.95f));
+		var faFont = GetFontAwesomeFont();
+		if (faFont != null)
 		{
-			if (ev is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
-			{
-				_mapSettingsDialog?.OpenDialog();
-			}
+			_btnMapNameHeader.AddThemeFontOverride("font", faFont);
+		}
+		_btnMapNameHeader.TooltipText = TranslationServer.Translate("Click to open Map Settings");
+		_btnMapNameHeader.Pressed += () =>
+		{
+			UIManager.Instance?.PlayClickSound();
+			_mapSettingsDialog?.OpenDialog();
 		};
-
-		var mapNameHBox = new HBoxContainer();
-		mapNameHBox.Alignment = BoxContainer.AlignmentMode.Center;
-		mapNameHBox.AddThemeConstantOverride("separation", 6);
-		_mapNameHeaderPanel.AddChild(mapNameHBox);
-
-		_lblMapNameHeader = new Label();
-		_lblMapNameHeader.Name = "LblMapNameHeader";
-		_lblMapNameHeader.Text = "";
-		_lblMapNameHeader.AddThemeFontSizeOverride("font_size", 12);
-		_lblMapNameHeader.AddThemeColorOverride("font_color", UIStyle.ColorGold);
-		_lblMapNameHeader.HorizontalAlignment = HorizontalAlignment.Center;
-		_lblMapNameHeader.VerticalAlignment = VerticalAlignment.Center;
-		_lblMapNameHeader.MouseFilter = Control.MouseFilterEnum.Pass;
-		mapNameHBox.AddChild(_lblMapNameHeader);
+		StyleMapEditorTopButton(_btnMapNameHeader);
 
 		var topLeftBoxNode = GetNodeOrNull<HBoxContainer>("TopLeftBox");
 		if (topLeftBoxNode != null)
 		{
-			topLeftBoxNode.AddChild(_mapNameHeaderPanel);
+			topLeftBoxNode.AddChild(_btnMapNameHeader);
 			int backIdx = _btnBackToHub.GetIndex();
-			topLeftBoxNode.MoveChild(_mapNameHeaderPanel, backIdx + 1);
+			topLeftBoxNode.MoveChild(_btnMapNameHeader, backIdx + 1);
 		}
 
 		UpdateMapNameHeader();
@@ -10209,24 +10199,24 @@ public partial class MapEditorHUD : Control
 
 	public void UpdateMapNameHeader()
 	{
-		if (_lblMapNameHeader == null) return;
+		if (_btnMapNameHeader == null) return;
 		string mapName = GetMapNameFromMetadata();
 		string displayMapName = mapName == "Untitled Map" ? TranslationServer.Translate("Untitled Map") : mapName;
 		bool hasUnsaved = GameHost.Instance?.EditorHasUnsavedChanges ?? false;
 
-		string displayText = hasUnsaved ? $"🗺️ {displayMapName} *" : $"🗺️ {displayMapName}";
+		string displayText = hasUnsaved ? $"\uf279 {displayMapName} *" : $"\uf279 {displayMapName}";
 		string tooltipText = hasUnsaved
 			? $"{displayMapName} * ({TranslationServer.Translate("Unsaved changes — Press Ctrl+S to save")})"
 			: $"{displayMapName} ({TranslationServer.Translate("All changes saved")})";
 
-		if (_lblMapNameHeader.Text != displayText)
+		if (_btnMapNameHeader.Text != displayText)
 		{
-			_lblMapNameHeader.Text = displayText;
+			_btnMapNameHeader.Text = displayText;
 		}
 
-		if (_lblMapNameHeader.TooltipText != tooltipText)
+		if (_btnMapNameHeader.TooltipText != tooltipText)
 		{
-			_lblMapNameHeader.TooltipText = tooltipText;
+			_btnMapNameHeader.TooltipText = tooltipText;
 		}
 	}
 

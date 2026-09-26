@@ -141,6 +141,7 @@ public partial class FloatingDialogBase : PanelContainer
 		btnClose.FocusMode = FocusModeEnum.None;
 		btnClose.Pressed += () => CloseDialog();
 		FooterHBox.AddChild(btnClose);
+		FooterHBox.Alignment = BoxContainer.AlignmentMode.Center;
 	}
 
 	public void SetFooterApplyOnly(string applyText = "APPLY")
