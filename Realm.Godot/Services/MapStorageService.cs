@@ -584,6 +584,8 @@ public class MapStorageService
         }
         Directory.CreateDirectory(targetDirectory);
 
+        MapArchiveHelper.ExtractArchiveIntoCas(archivePath, MapAssetManager.Storage);
+
         MapArchiveHelper.ExtractArchive(archivePath, targetDirectory);
 
         if (!string.IsNullOrWhiteSpace(rootPrefix))
@@ -622,13 +624,6 @@ public class MapStorageService
                             Directory.CreateDirectory(destFileDir);
                         }
                         HardLinkHelper.CreateHardLinkOrCopy(destFilePath, casFilePath);
-                    }
-                }
-                else
-                {
-                    if (File.Exists(destFilePath))
-                    {
-                        MapAssetManager.Storage.StoreAssetFromFile(destFilePath, normHash);
                     }
                 }
 

@@ -171,7 +171,6 @@ public static class ModelConverter
 			else
 			{
 				rawGlbBytes = inputBytes.ToArray();
-				existingMetaJson ??= RealmMetadataHelper.ExtractMetadataFromGlbBytes(rawGlbBytes);
 			}
 
 			JsonObject metaObj;

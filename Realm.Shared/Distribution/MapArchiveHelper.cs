@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using Realm.Shared.Metadata;
-using ZstdSharp;
 
 namespace Realm.Shared.Distribution;
 
@@ -45,9 +45,6 @@ public static class MapArchiveHelper
             File.Delete(destinationRmapPath);
         }
 
-        var headerInfo = ExtractRmapHeaderInfoFromDirectory(sourceDirectory);
-        string headerJson = JsonSerializer.Serialize(headerInfo);
-
         var allFiles = Directory.GetFiles(sourceDirectory, "*.*", SearchOption.AllDirectories);
         var filesToArchive = new List<string>(allFiles.Length);
         foreach (var file in allFiles)
@@ -62,9 +59,7 @@ public static class MapArchiveHelper
                 relativePath.StartsWith(".vscode/", StringComparison.OrdinalIgnoreCase) ||
                 relativePath.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase) ||
                 relativePath.EndsWith(".rmap", StringComparison.OrdinalIgnoreCase) ||
-                relativePath.EndsWith(".7z", StringComparison.OrdinalIgnoreCase) ||
                 relativePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
-                relativePath.EndsWith(".rar", StringComparison.OrdinalIgnoreCase) ||
                 relativePath.EndsWith(".tar", StringComparison.OrdinalIgnoreCase) ||
                 relativePath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase) ||
                 relativePath.EndsWith(".bak", StringComparison.OrdinalIgnoreCase) ||
@@ -95,94 +90,47 @@ public static class MapArchiveHelper
         });
 
         using var fileStream = new FileStream(destinationRmapPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920);
-        using (var writer = new BinaryWriter(fileStream, Encoding.UTF8, leaveOpen: true))
-        {
-            RealmContainerHeader.WriteHeader(writer, RmapMagic, headerJson, version: CurrentVersion);
-        }
+        using var zipArchive = new ZipArchive(fileStream, ZipArchiveMode.Create, leaveOpen: false);
 
-        using var zstdStream = new CompressionStream(fileStream, compressionLevel);
-        using var zstdWriter = new BinaryWriter(zstdStream, Encoding.UTF8, leaveOpen: true);
-
-        zstdWriter.Write(filesToArchive.Count);
-        byte[] buffer = new byte[81920];
         int total = filesToArchive.Count;
-
         for (int i = 0; i < total; i++)
         {
             string file = filesToArchive[i];
             string relativePath = Path.GetRelativePath(sourceDirectory, file).Replace('\\', '/');
             progressCallback?.Invoke((float)(i + 1) / Math.Max(1, total), relativePath);
 
-            var fileInfo = new FileInfo(file);
-            zstdWriter.Write(relativePath);
-            zstdWriter.Write(fileInfo.Length);
-
+            var entry = zipArchive.CreateEntry(relativePath, CompressionLevel.NoCompression);
+            using var entryStream = entry.Open();
             using var inputFs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.SequentialScan);
-            long remaining = fileInfo.Length;
-            while (remaining > 0)
-            {
-                int toRead = (int)Math.Min(buffer.Length, remaining);
-                int read = inputFs.Read(buffer, 0, toRead);
-                if (read <= 0) break;
-                zstdStream.Write(buffer, 0, read);
-                remaining -= read;
-            }
+            inputFs.CopyTo(entryStream, 81920);
         }
-
-        zstdWriter.Flush();
-        zstdStream.Flush();
     }
 
     public static RmapHeaderInfo? ReadHeaderFromRmap(string rmapFilePath)
     {
         if (string.IsNullOrWhiteSpace(rmapFilePath) || !File.Exists(rmapFilePath)) return null;
-        string? metadataJson = RealmContainerHeader.ExtractMetadataFromFile(rmapFilePath, RmapMagic);
-        if (string.IsNullOrEmpty(metadataJson)) return null;
+
+        var (manifestJson, _) = ReadManifestFromArchive(rmapFilePath);
+        if (string.IsNullOrWhiteSpace(manifestJson)) return null;
+
         try
         {
-            return JsonSerializer.Deserialize<RmapHeaderInfo>(metadataJson);
+            var manifest = MapManifest.LoadFromJson(manifestJson);
+            if (manifest == null) return null;
+
+            return new RmapHeaderInfo
+            {
+                MapName = manifest.MapName ?? string.Empty,
+                Version = manifest.Version ?? "1.0.0",
+                Author = manifest.Author ?? "Unknown",
+                Description = manifest.Description ?? string.Empty,
+                Tags = manifest.Tags ?? new List<string>()
+            };
         }
         catch
         {
             return null;
         }
-    }
-
-    public static (uint Version, string? MetadataJson, int PayloadOffset) ReadRmapHeader(Stream stream)
-    {
-        Span<byte> header = stackalloc byte[RealmContainerHeader.MinimumHeaderLength];
-        int bytesRead = 0;
-        while (bytesRead < RealmContainerHeader.MinimumHeaderLength)
-        {
-            int r = stream.Read(header.Slice(bytesRead, RealmContainerHeader.MinimumHeaderLength - bytesRead));
-            if (r <= 0) throw new InvalidOperationException("Invalid .rmap header (truncated).");
-            bytesRead += r;
-        }
-
-        if (!RealmContainerHeader.HasMagic(header, RmapMagic))
-        {
-            throw new InvalidOperationException("Invalid .rmap magic signature.");
-        }
-
-        uint version = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(header.Slice(4, 4));
-        uint metadataLength = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(header.Slice(8, 4));
-
-        string? metadataJson = null;
-        if (metadataLength > 0)
-        {
-            byte[] metaBytes = new byte[metadataLength];
-            int metaRead = 0;
-            while (metaRead < metadataLength)
-            {
-                int r = stream.Read(metaBytes, metaRead, (int)metadataLength - metaRead);
-                if (r <= 0) throw new InvalidOperationException("Invalid .rmap header (truncated metadata).");
-                metaRead += r;
-            }
-            metadataJson = Encoding.UTF8.GetString(metaBytes);
-        }
-
-        int payloadOffset = RealmContainerHeader.MinimumHeaderLength + (int)metadataLength;
-        return (version, metadataJson, payloadOffset);
     }
 
     public static (string? ManifestJson, string RootPrefix) ReadManifestFromArchive(string archiveFilePath)
@@ -192,21 +140,10 @@ public static class MapArchiveHelper
             return (null, string.Empty);
         }
 
-        using var fileStream = new FileStream(archiveFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
-        var (version, metaJson, payloadOffset) = ReadRmapHeader(fileStream);
-        fileStream.Seek(payloadOffset, SeekOrigin.Begin);
-
-        using var zstdStream = new DecompressionStream(fileStream);
-        using var bufferedStream = new BufferedStream(zstdStream, 65536);
-        using var reader = new BinaryReader(bufferedStream, Encoding.UTF8, leaveOpen: true);
-
-        int count = reader.ReadInt32();
-        for (int i = 0; i < count; i++)
+        using var zipArchive = ZipFile.OpenRead(archiveFilePath);
+        foreach (var entry in zipArchive.Entries)
         {
-            string entryKey = reader.ReadString();
-            long fileLength = reader.ReadInt64();
-
-            string norm = entryKey.Replace('\\', '/');
+            string norm = entry.FullName.Replace('\\', '/');
             if (norm.EndsWith("manifest.json", StringComparison.OrdinalIgnoreCase) &&
                 (norm.Equals("manifest.json", StringComparison.OrdinalIgnoreCase) || norm.EndsWith("/manifest.json", StringComparison.OrdinalIgnoreCase)))
             {
@@ -214,57 +151,75 @@ public static class MapArchiveHelper
                     ? norm.Substring(0, norm.Length - "manifest.json".Length)
                     : string.Empty;
 
-                using var boundedStream = new BoundedStream(bufferedStream, fileLength);
-                using var textReader = new StreamReader(boundedStream, Encoding.UTF8);
+                using var entryStream = entry.Open();
+                using var textReader = new StreamReader(entryStream, Encoding.UTF8);
                 string manifestJson = textReader.ReadToEnd();
                 return (manifestJson, rootPrefix);
             }
-
-            using var skipStream = new BoundedStream(bufferedStream, fileLength);
-            skipStream.SkipRemaining();
         }
 
         return (null, string.Empty);
     }
 
-    public static void ProcessArchiveCandidates(
-        string archiveFilePath,
-        MapManifest manifest,
-        string rootPrefix,
-        Action<string, Stream> candidateHandler)
+    public static void ExtractArchiveIntoCas(string archiveFilePath, ContentAddressableStorage cas)
     {
         if (string.IsNullOrWhiteSpace(archiveFilePath) || !File.Exists(archiveFilePath))
+        {
+            throw new FileNotFoundException($"Archive file '{archiveFilePath}' not found.");
+        }
+
+        if (cas == null)
+        {
+            throw new ArgumentNullException(nameof(cas));
+        }
+
+        var (manifestJson, rootPrefix) = ReadManifestFromArchive(archiveFilePath);
+        if (string.IsNullOrWhiteSpace(manifestJson))
         {
             return;
         }
 
-        using var fileStream = new FileStream(archiveFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
-        var (version, metaJson, payloadOffset) = ReadRmapHeader(fileStream);
-        fileStream.Seek(payloadOffset, SeekOrigin.Begin);
-
-        using var zstdStream = new DecompressionStream(fileStream);
-        using var bufferedStream = new BufferedStream(zstdStream, 65536);
-        using var reader = new BinaryReader(bufferedStream, Encoding.UTF8, leaveOpen: true);
-
-        int count = reader.ReadInt32();
-        for (int i = 0; i < count; i++)
+        var manifest = MapManifest.LoadFromJson(manifestJson);
+        if (manifest == null || manifest.Files == null || manifest.Files.Count == 0)
         {
-            string entryKey = reader.ReadString();
-            long fileLength = reader.ReadInt64();
+            return;
+        }
 
-            string norm = entryKey.Replace('\\', '/');
+        using var zipArchive = ZipFile.OpenRead(archiveFilePath);
+
+        var entriesByKey = new Dictionary<string, ZipArchiveEntry>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in zipArchive.Entries)
+        {
+            string norm = entry.FullName.Replace('\\', '/');
             if (!string.IsNullOrEmpty(rootPrefix) && norm.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
             {
                 norm = norm.Substring(rootPrefix.Length);
             }
             norm = norm.TrimStart('/');
+            entriesByKey[norm] = entry;
+        }
 
-            using var boundedStream = new BoundedStream(bufferedStream, fileLength);
-            if (manifest.IsCandidateFile(norm))
+        foreach (var kvp in manifest.Files)
+        {
+            string relPath = kvp.Key.StartsWith("res://", StringComparison.OrdinalIgnoreCase)
+                ? kvp.Key.Substring(6)
+                : kvp.Key;
+            relPath = relPath.TrimStart('/', '\\').Replace('\\', '/');
+
+            string hashOrKey = kvp.Value;
+            string normHash = ContentAddressableStorage.NormalizeBlake3Hash(hashOrKey);
+
+            if (cas.HasAsset(normHash))
             {
-                candidateHandler(norm, boundedStream);
+                continue;
             }
-            boundedStream.SkipRemaining();
+
+            if (entriesByKey.TryGetValue(relPath, out var zipEntry))
+            {
+                using var entryStream = zipEntry.Open();
+                string ext = Path.GetExtension(relPath).ToLowerInvariant();
+                cas.StoreAsset(entryStream, ext, precomputedBlake3: normHash);
+            }
         }
     }
 
@@ -280,39 +235,24 @@ public static class MapArchiveHelper
             Directory.CreateDirectory(targetDirectory);
         }
 
-        using var fileStream = new FileStream(archiveFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
-        var (version, metaJson, payloadOffset) = ReadRmapHeader(fileStream);
-        fileStream.Seek(payloadOffset, SeekOrigin.Begin);
-
-        using var zstdStream = new DecompressionStream(fileStream);
-        using var bufferedStream = new BufferedStream(zstdStream, 65536);
-        using var reader = new BinaryReader(bufferedStream, Encoding.UTF8, leaveOpen: true);
-
-        int count = reader.ReadInt32();
-        for (int i = 0; i < count; i++)
+        using var zipArchive = ZipFile.OpenRead(archiveFilePath);
+        foreach (var entry in zipArchive.Entries)
         {
-            string entryKey = reader.ReadString();
-            long fileLength = reader.ReadInt64();
-
-            if (string.IsNullOrWhiteSpace(entryKey))
+            if (string.IsNullOrWhiteSpace(entry.Name) && entry.FullName.EndsWith("/"))
             {
-                using var skipStream = new BoundedStream(bufferedStream, fileLength);
-                skipStream.SkipRemaining();
                 continue;
             }
 
-            string destinationPath = Path.Combine(targetDirectory, entryKey.Replace('/', Path.DirectorySeparatorChar));
+            string destinationPath = Path.Combine(targetDirectory, entry.FullName.Replace('/', Path.DirectorySeparatorChar));
             string? destinationDir = Path.GetDirectoryName(destinationPath);
             if (!string.IsNullOrEmpty(destinationDir) && !Directory.Exists(destinationDir))
             {
                 Directory.CreateDirectory(destinationDir);
             }
 
-            using (var outStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920))
-            using (var boundedStream = new BoundedStream(bufferedStream, fileLength))
-            {
-                boundedStream.CopyTo(outStream, 81920);
-            }
+            using var outStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920);
+            using var entryStream = entry.Open();
+            entryStream.CopyTo(outStream, 81920);
         }
     }
 
@@ -386,73 +326,6 @@ public static class MapArchiveHelper
     {
         if (relPath.Equals("manifest.json", StringComparison.OrdinalIgnoreCase)) return 0;
         if (relPath.Equals("metadata.json", StringComparison.OrdinalIgnoreCase)) return 1;
-        if (relPath.Equals("map.json", StringComparison.OrdinalIgnoreCase)) return 2;
         return 10;
-    }
-
-    private class BoundedStream : Stream
-    {
-        private readonly Stream _baseStream;
-        private long _bytesRemaining;
-
-        public BoundedStream(Stream baseStream, long length)
-        {
-            _baseStream = baseStream ?? throw new ArgumentNullException(nameof(baseStream));
-            _bytesRemaining = length;
-        }
-
-        public override bool CanRead => true;
-        public override bool CanSeek => false;
-        public override bool CanWrite => false;
-        public override long Length => _bytesRemaining;
-        public override long Position
-        {
-            get => throw new NotSupportedException();
-            set => throw new NotSupportedException();
-        }
-
-        public override int Read(byte[] buffer, int offset, int count)
-        {
-            if (_bytesRemaining <= 0) return 0;
-            int toRead = (int)Math.Min(count, _bytesRemaining);
-            int read = _baseStream.Read(buffer, offset, toRead);
-            _bytesRemaining -= read;
-            return read;
-        }
-
-        public override int Read(Span<byte> buffer)
-        {
-            if (_bytesRemaining <= 0) return 0;
-            int toRead = (int)Math.Min(buffer.Length, _bytesRemaining);
-            int read = _baseStream.Read(buffer.Slice(0, toRead));
-            _bytesRemaining -= read;
-            return read;
-        }
-
-        public void SkipRemaining()
-        {
-            byte[] skipBuffer = new byte[81920];
-            while (_bytesRemaining > 0)
-            {
-                int toRead = (int)Math.Min(skipBuffer.Length, _bytesRemaining);
-                int read = _baseStream.Read(skipBuffer, 0, toRead);
-                if (read <= 0) break;
-                _bytesRemaining -= read;
-            }
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                SkipRemaining();
-            }
-            base.Dispose(disposing);
-        }
-
-        public override void Flush() { }
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-        public override void SetLength(long value) => throw new NotSupportedException();
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }

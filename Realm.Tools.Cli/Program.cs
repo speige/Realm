@@ -1281,7 +1281,6 @@ public static class Program
 			else
 			{
 				sourceGlbBytes = File.ReadAllBytes(inputPath);
-				existingMeta = RealmMetadataHelper.ExtractMetadataFromGlbBytes(sourceGlbBytes);
 			}
 
 			var (success, processedGlbBytes, errorMessage, maskedFaces, totalFaces, detectedKey) =
