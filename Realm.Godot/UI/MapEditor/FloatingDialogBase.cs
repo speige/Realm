@@ -409,6 +409,11 @@ public partial class FloatingDialogBase : PanelContainer
 		header.Text = titleText;
 		header.AddThemeColorOverride("font_color", color ?? UIStyle.ColorGold);
 		header.AddThemeFontSizeOverride("font_size", 12);
+		var faFont = Hud?.GetFontAwesomeFont();
+		if (faFont != null)
+		{
+			header.AddThemeFontOverride("font", faFont);
+		}
 		parent.AddChild(header);
 		return header;
 	}
