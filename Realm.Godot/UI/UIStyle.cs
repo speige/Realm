@@ -335,7 +335,7 @@ public static class UIStyle
 
 	public static StyleBox CreateUsabilitySettingsPanel()
 	{
-		var tex = GD.Load<Texture2D>("res://Assets/UI/map_editor_usability_settings.png");
+		var tex = LoadTextureWithFallback("res://Assets/UI/map_editor_usability_settings.png");
 		if (tex != null)
 		{
 			var style = new StyleBoxTexture();
