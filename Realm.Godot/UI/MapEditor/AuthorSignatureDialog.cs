@@ -14,35 +14,36 @@ public partial class AuthorSignatureDialog : FloatingDialogBase
 	private Label _lblCopyStatus;
 
 	public AuthorSignatureDialog(MapEditorHUD hud)
-		: base(hud, TranslationServer.Translate("Author Signature"), new Vector2(500, 260))
+		: base(hud, TranslationServer.Translate("Author Signature"), new Vector2(540, 360))
 	{
+		SetUncompressedPanelTexture("res://Assets/UI/map_editor_author_signature.png", 42, 25, 55, 55);
+		if (TitleLabel?.GetParent() is MarginContainer titleMargin)
+		{
+			titleMargin.AddThemeConstantOverride("margin_top", -28);
+		}
 		BuildControls();
 		SetFooterCloseOnly("CLOSE");
 	}
 
 	private void BuildControls()
 	{
-		var descPanel = new PanelContainer();
-		descPanel.AddThemeStyleboxOverride("panel", UIStyle.CreateLightInnerPanel());
-		descPanel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-
 		var descMargin = new MarginContainer();
-		descMargin.AddThemeConstantOverride("margin_top", 8);
-		descMargin.AddThemeConstantOverride("margin_bottom", 8);
-		descMargin.AddThemeConstantOverride("margin_left", 10);
-		descMargin.AddThemeConstantOverride("margin_right", 10);
+		descMargin.AddThemeConstantOverride("margin_top", 14);
+		descMargin.AddThemeConstantOverride("margin_bottom", 12);
+		descMargin.AddThemeConstantOverride("margin_left", 20);
+		descMargin.AddThemeConstantOverride("margin_right", 20);
 		descMargin.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		descPanel.AddChild(descMargin);
 
 		var descLabel = new Label();
 		descLabel.Text = TranslationServer.Translate("Your Author Signature Key is a cryptographic Ed25519 identity key stored in authorship_key_DO-NOT-SHARE.rkey. It is used to signs all maps and assets you publish to prevent others from overwriting your published files. Keep this key safely backed up in a secure location and NEVER share the private key or .rkey file with others.");
 		descLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-		descLabel.CustomMinimumSize = new Vector2(460, 0);
+		descLabel.CustomMinimumSize = new Vector2(390, 0);
+		descLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		descLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		descLabel.AddThemeFontSizeOverride("font_size", 11);
-		descLabel.AddThemeColorOverride("font_color", UIStyle.ColorGoldDull);
+		descLabel.AddThemeColorOverride("font_color", new Color(0.96f, 0.95f, 0.92f));
 		descMargin.AddChild(descLabel);
-		BodyContainer.AddChild(descPanel);
+		BodyContainer.AddChild(descMargin);
 
 		AddSectionHeader(BodyContainer, "🔑 " + TranslationServer.Translate("IDENTITY DETAILS"), UIStyle.ColorGold);
 

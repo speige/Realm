@@ -160,7 +160,26 @@ public partial class FloatingDialogBase : PanelContainer
 			MoveChild(BackgroundTextureRect, 0);
 		}
 		
-		var tex = GD.Load<Texture2D>(texturePath);
+		Texture2D tex = null;
+		try
+		{
+			tex = GD.Load<Texture2D>(texturePath);
+		}
+		catch { }
+
+		if (tex == null && !string.IsNullOrEmpty(texturePath))
+		{
+			string globalPath = ProjectSettings.GlobalizePath(texturePath);
+			if (System.IO.File.Exists(globalPath))
+			{
+				var img = Image.LoadFromFile(globalPath);
+				if (img != null)
+				{
+					tex = ImageTexture.CreateFromImage(img);
+				}
+			}
+		}
+
 		if (tex != null)
 		{
 			BackgroundTextureRect.Texture = tex;

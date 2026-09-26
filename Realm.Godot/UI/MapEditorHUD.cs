@@ -5104,52 +5104,64 @@ public partial class MapEditorHUD : Control
 		overlay.AddChild(center);
 
 		var panel = new PanelContainer();
-		panel.CustomMinimumSize = new Vector2(480, 260);
-		var style = new StyleBoxFlat();
-		style.BgColor = new Color(0.12f, 0.12f, 0.18f, 0.98f);
-		style.BorderWidthTop = 2; style.BorderWidthBottom = 2; style.BorderWidthLeft = 2; style.BorderWidthRight = 2;
-		style.BorderColor = UIStyle.ColorCyanGlow;
-		style.CornerRadiusTopLeft = 6; style.CornerRadiusTopRight = 6; style.CornerRadiusBottomLeft = 6; style.CornerRadiusBottomRight = 6;
-		panel.AddThemeStyleboxOverride("panel", style);
+		panel.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+		panel.CustomMinimumSize = new Vector2(540, 270);
 		center.AddChild(panel);
 
-		var vbox = new VBoxContainer();
-		vbox.AddThemeConstantOverride("separation", 12);
+		var bgTex = new TextureRect();
+		bgTex.Texture = GD.Load<Texture2D>("res://Assets/UI/map_editor_register_profile.png");
+		bgTex.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+		bgTex.StretchMode = TextureRect.StretchModeEnum.Scale;
+		bgTex.SetAnchorsPreset(LayoutPreset.FullRect);
+		panel.AddChild(bgTex);
+
 		var margin = new MarginContainer();
-		margin.AddThemeConstantOverride("margin_top", 18);
-		margin.AddThemeConstantOverride("margin_bottom", 18);
-		margin.AddThemeConstantOverride("margin_left", 20);
-		margin.AddThemeConstantOverride("margin_right", 20);
-		margin.AddChild(vbox);
+		margin.SetAnchorsPreset(LayoutPreset.FullRect);
+		margin.AddThemeConstantOverride("margin_top", 25);
+		margin.AddThemeConstantOverride("margin_bottom", 22);
+		margin.AddThemeConstantOverride("margin_left", 45);
+		margin.AddThemeConstantOverride("margin_right", 45);
 		panel.AddChild(margin);
 
+		var vbox = new VBoxContainer();
+		vbox.AddThemeConstantOverride("separation", 10);
+		margin.AddChild(vbox);
+
 		var title = new Label();
-		UIStyle.ApplyTitle(title, TranslationServer.Translate("REGISTER CREATOR PROFILE"), 18);
+		UIStyle.ApplyTitle(title, TranslationServer.Translate("REGISTER CREATOR PROFILE"), 15);
 		title.HorizontalAlignment = HorizontalAlignment.Center;
 		title.AddThemeColorOverride("font_color", UIStyle.ColorGold);
 		vbox.AddChild(title);
 
+		var descMargin = new MarginContainer();
+		descMargin.AddThemeConstantOverride("margin_left", 15);
+		descMargin.AddThemeConstantOverride("margin_right", 15);
 		var desc = new Label();
 		desc.Text = TranslationServer.Translate("A new cryptographic key pair has been generated for your machine. Please choose a unique display name to lock to this key.");
 		desc.HorizontalAlignment = HorizontalAlignment.Center;
 		desc.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-		desc.AddThemeFontSizeOverride("font_size", 12);
-		desc.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.95f));
-		vbox.AddChild(desc);
+		desc.AddThemeFontSizeOverride("font_size", 11);
+		desc.AddThemeColorOverride("font_color", new Color(0.85f, 0.85f, 0.90f));
+		descMargin.AddChild(desc);
+		vbox.AddChild(descMargin);
 
 		var lineEdit = new LineEdit();
-		lineEdit.PlaceholderText = TranslationServer.Translate("Enter Username");
+		lineEdit.PlaceholderText = TranslationServer.Translate("Enter Username...");
 		lineEdit.Alignment = HorizontalAlignment.Center;
+		lineEdit.CustomMinimumSize = new Vector2(320, 34);
+		lineEdit.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+		lineEdit.AddThemeFontSizeOverride("font_size", 12);
 		vbox.AddChild(lineEdit);
 
 		var errLabel = new Label();
 		errLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		errLabel.CustomMinimumSize = new Vector2(0, 16);
 		errLabel.AddThemeColorOverride("font_color", new Color(1, 0.3f, 0.3f));
 		errLabel.AddThemeFontSizeOverride("font_size", 11);
 		vbox.AddChild(errLabel);
 
 		var btnRow = new HBoxContainer();
-		btnRow.AddThemeConstantOverride("separation", 12);
+		btnRow.AddThemeConstantOverride("separation", 16);
 		btnRow.Alignment = BoxContainer.AlignmentMode.Center;
 
 		var btnCancel = new Button();
@@ -5161,7 +5173,9 @@ public partial class MapEditorHUD : Control
 		var btnRegister = new Button();
 		btnRegister.Set("icon_max_width", 0);
 		SetupOptionButton(btnRegister, TranslationServer.Translate("Register"), null, 13);
-		btnRegister.CustomMinimumSize = new Vector2(150, 36);
+		btnRegister.CustomMinimumSize = new Vector2(140, 36);
+		btnRow.AddChild(btnRegister);
+		vbox.AddChild(btnRow);
 		btnRegister.Pressed += async () => {
 			string username = lineEdit.Text.Trim();
 			if (string.IsNullOrEmpty(username))

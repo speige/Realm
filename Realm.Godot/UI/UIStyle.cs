@@ -244,6 +244,206 @@ public static class UIStyle
 		}
 		return CreateStonePanel(true);
 	}
+
+	public static StyleBox CreateMapStorageMainPanelStyle()
+	{
+		var tex = LoadTextureWithFallback("res://Assets/UI/map_storage_main_panel.png");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+			style.TextureMarginLeft = 24;
+			style.TextureMarginRight = 24;
+			style.TextureMarginTop = 24;
+			style.TextureMarginBottom = 24;
+			style.ContentMarginLeft = 32;
+			style.ContentMarginRight = 32;
+			style.ContentMarginTop = 28;
+			style.ContentMarginBottom = 28;
+			style.AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Stretch;
+			style.AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Stretch;
+			return style;
+		}
+		return CreateStonePanel(true);
+	}
+
+	public static StyleBox CreateMapStorageFilterPanelStyle()
+	{
+		var tex = LoadTextureWithFallback("res://Assets/UI/map_storage_filter_panel.png");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+			style.TextureMarginLeft = 0;
+			style.TextureMarginRight = 0;
+			style.TextureMarginTop = 0;
+			style.TextureMarginBottom = 0;
+			style.ContentMarginLeft = 30;
+			style.ContentMarginRight = 30;
+			style.ContentMarginTop = 20;
+			style.ContentMarginBottom = 30;
+			style.AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Stretch;
+			style.AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Stretch;
+			return style;
+		}
+		return CreateStonePanel(true);
+	}
+
+	public static StyleBox CreatePublishPanel()
+	{
+		var tex = GD.Load<Texture2D>("res://Assets/UI/map_editor_publish.png");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+			style.TextureMarginLeft = 140;
+			style.TextureMarginRight = 140;
+			style.TextureMarginTop = 140;
+			style.TextureMarginBottom = 140;
+			style.ContentMarginLeft = 45;
+			style.ContentMarginRight = 45;
+			style.ContentMarginTop = 45;
+			style.ContentMarginBottom = 45;
+			style.AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Stretch;
+			style.AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Stretch;
+			return style;
+		}
+		return CreateStonePanel(true);
+	}
+
+	public static StyleBox CreateRandomGeneratorPanel()
+	{
+		var tex = GD.Load<Texture2D>("res://Assets/UI/map_editor_random_generator.png");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+			style.TextureMarginLeft = 80;
+			style.TextureMarginRight = 80;
+			style.TextureMarginTop = 80;
+			style.TextureMarginBottom = 80;
+			style.ContentMarginLeft = 45;
+			style.ContentMarginRight = 45;
+			style.ContentMarginTop = 45;
+			style.ContentMarginBottom = 45;
+			style.AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Stretch;
+			style.AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Stretch;
+			return style;
+		}
+		return CreateStonePanel(true);
+	}
+
+	public static StyleBox CreateUsabilitySettingsPanel()
+	{
+		var tex = GD.Load<Texture2D>("res://Assets/UI/map_editor_usability_settings.png");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+			style.TextureMarginLeft = 80;
+			style.TextureMarginRight = 80;
+			style.TextureMarginTop = 80;
+			style.TextureMarginBottom = 80;
+			style.ContentMarginLeft = 45;
+			style.ContentMarginRight = 45;
+			style.ContentMarginTop = 45;
+			style.ContentMarginBottom = 45;
+			style.AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Stretch;
+			style.AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Stretch;
+			return style;
+		}
+		return CreateStonePanel(true);
+	}
+
+	public static StyleBox CreateRegisterProfilePanel()
+	{
+		var tex = GD.Load<Texture2D>("res://Assets/UI/map_editor_register_profile.png");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+			style.TextureMarginLeft = 80;
+			style.TextureMarginRight = 80;
+			style.TextureMarginTop = 80;
+			style.TextureMarginBottom = 80;
+			style.ContentMarginLeft = 45;
+			style.ContentMarginRight = 45;
+			style.ContentMarginTop = 45;
+			style.ContentMarginBottom = 45;
+			style.AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Stretch;
+			style.AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Stretch;
+			return style;
+		}
+		return CreateStonePanel(true);
+	}
+
+	public static StyleBox CreatePlacedObjectsPanel()
+	{
+		var tex = LoadTextureWithFallback("res://Assets/UI/map_editor_placed_objects.png");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+			style.TextureMarginLeft = 80;
+			style.TextureMarginRight = 80;
+			style.TextureMarginTop = 80;
+			style.TextureMarginBottom = 80;
+			style.ContentMarginLeft = 45;
+			style.ContentMarginRight = 45;
+			style.ContentMarginTop = 45;
+			style.ContentMarginBottom = 45;
+			style.AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Stretch;
+			style.AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Stretch;
+			return style;
+		}
+		return CreateStonePanel(true);
+	}
+
+	public static StyleBox CreateAuthorSignaturePanel()
+	{
+		var tex = LoadTextureWithFallback("res://Assets/UI/map_editor_author_signature.png");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+			style.TextureMarginLeft = 80;
+			style.TextureMarginRight = 80;
+			style.TextureMarginTop = 80;
+			style.TextureMarginBottom = 80;
+			style.ContentMarginLeft = 45;
+			style.ContentMarginRight = 45;
+			style.ContentMarginTop = 45;
+			style.ContentMarginBottom = 45;
+			style.AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Stretch;
+			style.AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Stretch;
+			return style;
+		}
+		return CreateStonePanel(true);
+	}
+
+	public static Texture2D LoadTextureWithFallback(string path)
+	{
+		Texture2D tex = null;
+		try
+		{
+			tex = GD.Load<Texture2D>(path);
+		}
+		catch { }
+
+		if (tex == null && !string.IsNullOrEmpty(path))
+		{
+			string globalPath = ProjectSettings.GlobalizePath(path);
+			if (System.IO.File.Exists(globalPath))
+			{
+				var img = Image.LoadFromFile(globalPath);
+				if (img != null)
+				{
+					tex = ImageTexture.CreateFromImage(img);
+				}
+			}
+		}
+		return tex;
+	}
 	public static StyleBox CreateBackdropPanel()
 	{
 		var style = new StyleBoxFlat();
@@ -574,19 +774,21 @@ public static class UIStyle
 
 	public static StyleBox CreateCustomLobbySearchInput(bool hasFocus = false)
 	{
-		var tex = GD.Load<Texture2D>("res://Assets/UI/custom_lobby_search.png");
+		var tex = LoadTextureWithFallback("res://Assets/UI/custom_lobby_search.png");
 		if (tex != null)
 		{
 			var style = new StyleBoxTexture();
 			style.Texture = tex;
-			style.TextureMarginLeft = 0;
-			style.TextureMarginRight = 0;
-			style.TextureMarginTop = 0;
-			style.TextureMarginBottom = 0;
-			style.ContentMarginLeft = 80;
-			style.ContentMarginRight = 100;
-			style.ContentMarginTop = 22;
-			style.ContentMarginBottom = 22;
+			style.TextureMarginLeft = 350;
+			style.TextureMarginRight = 200;
+			style.TextureMarginTop = 140;
+			style.TextureMarginBottom = 140;
+			style.ContentMarginLeft = 45;
+			style.ContentMarginRight = 25;
+			style.ContentMarginTop = 8;
+			style.ContentMarginBottom = 8;
+			style.AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Stretch;
+			style.AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Stretch;
 			if (hasFocus)
 			{
 				style.ModulateColor = new Color(1.15f, 1.15f, 1.25f);
