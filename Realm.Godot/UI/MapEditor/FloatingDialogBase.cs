@@ -91,9 +91,14 @@ public partial class FloatingDialogBase : PanelContainer
 
 		CloseButton = new Button();
 		CloseButton.Set("icon_max_width", 0);
-		CloseButton.Text = "✕";
+		CloseButton.Text = "\uf00d";
 		CloseButton.CustomMinimumSize = new Vector2(26, 26);
 		CloseButton.FocusMode = FocusModeEnum.None;
+		var faFontClose = Hud?.GetFontAwesomeFont();
+		if (faFontClose != null)
+		{
+			CloseButton.AddThemeFontOverride("font", faFontClose);
+		}
 		CloseButton.Pressed += () => CancelAndClose();
 
 		var closeMargin = new MarginContainer();
@@ -107,10 +112,13 @@ public partial class FloatingDialogBase : PanelContainer
 		BodyContainer.SizeFlagsVertical = SizeFlags.ExpandFill;
 		MainVBox.AddChild(BodyContainer);
 
+		var footerMargin = new MarginContainer();
+		footerMargin.AddThemeConstantOverride("margin_bottom", 12);
 		FooterHBox = new HBoxContainer();
 		FooterHBox.AddThemeConstantOverride("separation", 12);
 		FooterHBox.Alignment = BoxContainer.AlignmentMode.End;
-		MainVBox.AddChild(FooterHBox);
+		footerMargin.AddChild(FooterHBox);
+		MainVBox.AddChild(footerMargin);
 
 		CancelButton = new Button();
 		CancelButton.Set("icon_max_width", 0);
