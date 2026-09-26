@@ -5,8 +5,8 @@ using System.Numerics;
 using Realm.Shared.BlenderSetup;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Gif;
-using SixLabors.ImageSharp.Formats.Webp;
 using SixLabors.ImageSharp.PixelFormats;
+using Realm.Shared.Textures;
 
 namespace Realm.Shared.Animation;
 
@@ -394,12 +394,8 @@ public static class RanimRenderer
 
 		if (options.Format == RanimOutputFormat.Webp || outputPath.EndsWith(".webp", StringComparison.OrdinalIgnoreCase))
 		{
-			var webpEncoder = new WebpEncoder
-			{
-				FileFormat = options.Lossless ? WebpFileFormatType.Lossless : WebpFileFormatType.Lossy,
-				Quality = options.Lossless ? 100 : Math.Clamp(options.Quality, 1, 100)
-			};
-			spritesheet.Save(outputPath, webpEncoder);
+			byte[] webpBytes = TextureConverter.EncodeWebp(spritesheet, options.Lossless, options.Quality);
+			File.WriteAllBytes(outputPath, webpBytes);
 		}
 		else
 		{

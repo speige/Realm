@@ -105,7 +105,7 @@ public class GlbOptimizer
 			meshWithLods,
 			1.0f,
 			options.MaxTextureResolution,
-			options.CompressTextures
+			false
 		);
 
 		byte[] workingBytes = (toolSuccess && toolBytes != null && toolBytes.Length > 0)

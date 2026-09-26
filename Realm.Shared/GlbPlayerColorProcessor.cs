@@ -5,6 +5,7 @@ using System.Numerics;
 using System.Text.Json.Nodes;
 using Realm.Shared.Metadata;
 using Realm.Shared.ModelOptimization;
+using Realm.Shared.Textures;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -730,7 +731,7 @@ public static class GlbPlayerColorProcessor
 
         ApplyMaskToOrm(ormImg, globalMask, texW, texH);
 
-        byte[] newOrmBytes = EncodeImagePng(ormImg);
+        byte[] newOrmBytes = TextureConverter.EncodeWebp(ormImg, lossless: true);
 
         byte[] outputBytes = RebuildGlbWithUpdatedOrmTexture(
             root,
@@ -1584,7 +1585,8 @@ public static class GlbPlayerColorProcessor
         if (ormImageIndex >= 0 && ormImageIndex < images.Count && images[ormImageIndex] is JsonObject ormImgObj)
         {
             ormImgObj["bufferView"] = newOrmBvIdx;
-            ormImgObj["mimeType"] = "image/png";
+            ormImgObj["mimeType"] = "image/webp";
+            if (ormImgObj.ContainsKey("uri")) ormImgObj.Remove("uri");
             if (ormImgObj.ContainsKey("extensions")) ormImgObj.Remove("extensions");
         }
         else
@@ -1592,12 +1594,19 @@ public static class GlbPlayerColorProcessor
             int newOrmImageIdx = images.Count;
             images.Add(new JsonObject
             {
-                ["mimeType"] = "image/png",
+                ["mimeType"] = "image/webp",
                 ["bufferView"] = newOrmBvIdx
             });
 
             int newOrmTextureIdx = textures.Count;
-            textures.Add(new JsonObject { ["source"] = newOrmImageIdx });
+            textures.Add(new JsonObject
+            {
+                ["source"] = newOrmImageIdx,
+                ["extensions"] = new JsonObject
+                {
+                    ["EXT_texture_webp"] = new JsonObject { ["source"] = newOrmImageIdx }
+                }
+            });
 
             if (materials.Count > 0 && materials[0] is JsonObject firstMat)
             {
@@ -1617,9 +1626,10 @@ public static class GlbPlayerColorProcessor
         for (int i = 0; i < textures.Count; i++)
         {
             if (textures[i] is not JsonObject texObj) continue;
-            if (!texObj.ContainsKey("source") || texObj["source"] == null)
+            int src = texObj["source"]?.GetValue<int>() ?? -1;
+            if (src < 0)
             {
-                int src = ResolveTextureToImage(i, textures);
+                src = ResolveTextureToImage(i, textures);
                 if (src >= 0 && src < images.Count)
                 {
                     texObj["source"] = src;
@@ -1627,12 +1637,42 @@ public static class GlbPlayerColorProcessor
                 else if (images.Count > 0)
                 {
                     texObj["source"] = 0;
+                    src = 0;
                 }
             }
-            if (texObj.ContainsKey("extensions"))
+            if (src >= 0)
             {
-                texObj.Remove("extensions");
+                if (texObj["extensions"] is JsonObject texExt)
+                {
+                    if (texExt.ContainsKey("KHR_texture_basisu")) texExt.Remove("KHR_texture_basisu");
+                    texExt["EXT_texture_webp"] = new JsonObject { ["source"] = src };
+                }
+                else
+                {
+                    texObj["extensions"] = new JsonObject
+                    {
+                        ["EXT_texture_webp"] = new JsonObject { ["source"] = src }
+                    };
+                }
             }
+        }
+
+        if (root.TryGetPropertyValue("extensionsUsed", out var extNode) && extNode is JsonArray extArray)
+        {
+            bool exists = false;
+            foreach (var item in extArray)
+            {
+                if (item?.GetValue<string>() == "EXT_texture_webp")
+                {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) extArray.Add("EXT_texture_webp");
+        }
+        else
+        {
+            root["extensionsUsed"] = new JsonArray("EXT_texture_webp");
         }
 
         root["bufferViews"] = newBufferViewsList;
@@ -1644,13 +1684,6 @@ public static class GlbPlayerColorProcessor
 
         byte[] newBin = newBinStream.ToArray();
         return GlbManifestUtils.BuildGlb(root, newBin, glbVersion);
-    }
-
-    internal static byte[] EncodeImagePng(Image<Rgba32> img)
-    {
-        using var ms = new MemoryStream();
-        img.SaveAsPng(ms);
-        return ms.ToArray();
     }
 
     private static List<Vector2> ReadAccessorVec2(JsonArray accessors, JsonArray bufferViews, byte[] bin, int accessorIndex)

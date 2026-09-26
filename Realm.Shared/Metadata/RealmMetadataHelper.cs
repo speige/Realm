@@ -403,49 +403,7 @@ public static class RealmMetadataHelper
 		metaObj["blake3"] = ComputeBlake3(filePath);
 		return AddMetadata(filePath, metaObj.ToJsonString());
 	}
-
-	public static string? ExtractLicense(string filePath)
-	{
-		string? metaJson = ExtractMetadata(filePath);
-		if (string.IsNullOrEmpty(metaJson)) return null;
-		try
-		{
-			var node = JsonNode.Parse(metaJson);
-			return node?["license"]?.ToString() ?? node?["License"]?.ToString();
-		}
-		catch { }
-		return null;
-	}
-
-	public static bool SetLicense(string filePath, string license)
-	{
-		if (!File.Exists(filePath)) return false;
-		string? existingMeta = ExtractMetadata(filePath);
-		JsonObject metaObj;
-		if (!string.IsNullOrEmpty(existingMeta))
-		{
-			try
-			{
-				metaObj = JsonNode.Parse(existingMeta)?.AsObject() ?? new JsonObject();
-			}
-			catch
-			{
-				metaObj = new JsonObject();
-			}
-		}
-		else
-		{
-			metaObj = new JsonObject();
-			string ext = Path.GetExtension(filePath).ToLowerInvariant();
-			metaObj["created_utc"] = DateTime.UtcNow.ToString("O");
-			metaObj["format"] = ext.TrimStart('.');
-		}
-
-		metaObj["license"] = license;
-		metaObj["blake3"] = ComputeBlake3(filePath);
-		return AddMetadata(filePath, metaObj.ToJsonString());
-	}
-
+	
 	public static List<string> ExtractTags(string filePath)
 	{
 		var result = new List<string>();

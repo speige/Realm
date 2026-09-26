@@ -420,6 +420,23 @@ public static class GlbManifestUtils
 				}
 				MarkTextureImage("normalTexture", mat);
 				MarkTextureImage("occlusionTexture", mat);
+
+				if (mat.TryGetPropertyValue("extensions", out var extVal) && extVal is JsonObject matExt)
+				{
+					if (matExt.TryGetPropertyValue("KHR_materials_clearcoat", out var ccVal) && ccVal is JsonObject cc)
+					{
+						MarkTextureImage("clearcoatRoughnessTexture", cc);
+						MarkTextureImage("clearcoatNormalTexture", cc);
+					}
+					if (matExt.TryGetPropertyValue("KHR_materials_sheen", out var sheenVal) && sheenVal is JsonObject sheen)
+					{
+						MarkTextureImage("sheenRoughnessTexture", sheen);
+					}
+					if (matExt.TryGetPropertyValue("KHR_materials_specular", out var specVal) && specVal is JsonObject spec)
+					{
+						MarkTextureImage("specularTexture", spec);
+					}
+				}
 			}
 		}
 

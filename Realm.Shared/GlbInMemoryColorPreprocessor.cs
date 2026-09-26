@@ -3,6 +3,7 @@ using System.IO;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
+using Realm.Shared.Textures;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -180,7 +181,7 @@ public static class GlbInMemoryColorPreprocessor
 
 			ApplyAnalyticalChromaDespill(albedoImg, ormImg, effectiveChromaKey);
 
-			byte[] newAlbedoBytes = GlbPlayerColorProcessor.EncodeImagePng(albedoImg);
+			byte[] newAlbedoBytes = TextureConverter.EncodeWebp(albedoImg, lossless: false, quality: 90);
 			return RebuildGlbWithUpdatedAlbedoTexture(root, binChunk, albedoImageIndex, newAlbedoBytes, glbVersion);
 		}
 		catch
@@ -440,7 +441,7 @@ public static class GlbInMemoryColorPreprocessor
 		if (albedoImageIndex >= 0 && albedoImageIndex < images.Count && images[albedoImageIndex] is JsonObject albedoImgObj)
 		{
 			albedoImgObj["bufferView"] = newAlbedoBvIdx;
-			albedoImgObj["mimeType"] = "image/png";
+			albedoImgObj["mimeType"] = "image/webp";
 			if (albedoImgObj.ContainsKey("uri")) albedoImgObj.Remove("uri");
 			if (albedoImgObj.ContainsKey("extensions")) albedoImgObj.Remove("extensions");
 		}
@@ -448,9 +449,10 @@ public static class GlbInMemoryColorPreprocessor
 		for (int i = 0; i < textures.Count; i++)
 		{
 			if (textures[i] is not JsonObject texObj) continue;
-			if (!texObj.ContainsKey("source") || texObj["source"] == null)
+			int src = texObj["source"]?.GetValue<int>() ?? -1;
+			if (src < 0)
 			{
-				int src = GlbPlayerColorProcessor.ResolveTextureToImage(i, textures);
+				src = GlbPlayerColorProcessor.ResolveTextureToImage(i, textures);
 				if (src >= 0 && src < images.Count)
 				{
 					texObj["source"] = src;
@@ -458,12 +460,42 @@ public static class GlbInMemoryColorPreprocessor
 				else if (images.Count > 0)
 				{
 					texObj["source"] = 0;
+					src = 0;
 				}
 			}
-			if (texObj.ContainsKey("extensions"))
+			if (src >= 0)
 			{
-				texObj.Remove("extensions");
+				if (texObj["extensions"] is JsonObject texExt)
+				{
+					if (texExt.ContainsKey("KHR_texture_basisu")) texExt.Remove("KHR_texture_basisu");
+					texExt["EXT_texture_webp"] = new JsonObject { ["source"] = src };
+				}
+				else
+				{
+					texObj["extensions"] = new JsonObject
+					{
+						["EXT_texture_webp"] = new JsonObject { ["source"] = src }
+					};
+				}
 			}
+		}
+
+		if (root.TryGetPropertyValue("extensionsUsed", out var extNode) && extNode is JsonArray extArray)
+		{
+			bool exists = false;
+			foreach (var item in extArray)
+			{
+				if (item?.GetValue<string>() == "EXT_texture_webp")
+				{
+					exists = true;
+					break;
+				}
+			}
+			if (!exists) extArray.Add("EXT_texture_webp");
+		}
+		else
+		{
+			root["extensionsUsed"] = new JsonArray("EXT_texture_webp");
 		}
 
 		root["bufferViews"] = newBufferViewsList;

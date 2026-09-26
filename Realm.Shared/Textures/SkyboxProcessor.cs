@@ -255,7 +255,8 @@ public static class SkyboxProcessor
 			}
 			else if (ext == ".webp")
 			{
-				processedImage.SaveAsWebp(fullOutput);
+				byte[] webpBytes = TextureConverter.EncodeWebp(processedImage, lossless: false, quality: 95);
+				File.WriteAllBytes(fullOutput, webpBytes);
 			}
 			else
 			{

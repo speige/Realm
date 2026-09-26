@@ -6,9 +6,9 @@ using System.Text.Json.Nodes;
 using Realm.Shared.Metadata;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Png;
-using SixLabors.ImageSharp.Formats.Webp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
+using Imazen.WebP;
 
 namespace Realm.Shared.Textures;
 
@@ -318,15 +318,35 @@ public static class TextureConverter
 
 	public static byte[] EncodeWebp(Image<Rgba32> image, bool lossless = false, int quality = 90)
 	{
-		using var ms = new MemoryStream();
-		var encoder = new WebpEncoder
+		int width = image.Width;
+		int height = image.Height;
+		byte[] pixelBytes = new byte[width * height * 4];
+		image.CopyPixelDataTo(pixelBytes);
+
+		var config = new WebPEncoderConfig();
+		if (lossless)
 		{
-			FileFormat = lossless ? WebpFileFormatType.Lossless : WebpFileFormatType.Lossy,
-			Quality = lossless ? 100 : quality,
-			Method = WebpEncodingMethod.Level6
-		};
-		image.Save(ms, encoder);
-		return ms.ToArray();
+			config.SetLossless(true)
+				.SetLosslessPreset(9)
+				.SetMethod(6)
+				.SetExact(true)
+				.SetMultiThreaded(true);
+		}
+		else
+		{
+			config.SetQuality(Math.Clamp(quality, 0, 100))
+				.SetMethod(6)
+				.SetSharpYuv(true)
+				.SetMultiThreaded(true);
+		}
+
+		byte[] encoded = WebPEncoder.Encode(pixelBytes, width, height, width * 4, WebPPixelFormat.Rgba, config);
+		if (encoded == null || encoded.Length == 0)
+		{
+			throw new InvalidOperationException("Failed to encode WebP image using libwebp.");
+		}
+
+		return encoded;
 	}
 
 	private static bool EncodeTwoLayerPbrRtex(
@@ -343,9 +363,19 @@ public static class TextureConverter
 			byte[] l0Bytes = EncodeWebp(layer0, lossless: !compressAlbedo, quality: 90);
 			byte[] l1Bytes = EncodeWebp(layer1, lossless: true); // Always lossless for PBR normal/height/roughness
 
-			byte[] rtexBytes = RtexFile.Build(metadataJson, [l0Bytes, l1Bytes]);
 			string? dir = Path.GetDirectoryName(outputRtexPath);
 			if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+
+			if (!string.IsNullOrEmpty(dir))
+			{
+				string nameWithoutExtension = Path.GetFileNameWithoutExtension(outputRtexPath);
+				File.WriteAllBytes(Path.Combine(dir, $"{nameWithoutExtension}_albedo.webp"), l0Bytes);
+				File.WriteAllBytes(Path.Combine(dir, $"{nameWithoutExtension}_pbr.webp"), l1Bytes);
+				File.WriteAllBytes(Path.Combine(dir, "albedo.webp"), l0Bytes);
+				File.WriteAllBytes(Path.Combine(dir, "pbr.webp"), l1Bytes);
+			}
+
+			byte[] rtexBytes = RtexFile.Build(metadataJson, [l0Bytes, l1Bytes]);
 			File.WriteAllBytes(outputRtexPath, rtexBytes);
 			RealmMetadataHelper.SyncBlake3Metadata(outputRtexPath);
 			return true;
