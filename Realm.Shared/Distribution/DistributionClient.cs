@@ -191,6 +191,85 @@ public class DistributionClient
         }
     }
 
+    /// <summary>
+    /// Downloads a batched bundle of assets over HTTP in a single Zstandard-compressed response stream.
+    /// </summary>
+    public async Task<(bool Success, List<string> DownloadedHashes)> DownloadAssetBundleStreamAsync(
+        string targetServerBaseUrl,
+        List<string> requestedHashes,
+        IReadOnlyDictionary<string, string> hashToExtensionMap,
+        ContentAddressableStorage targetStorage,
+        CancellationToken cancellationToken = default,
+        Action<string>? onAssetDownloaded = null)
+    {
+        var downloadedHashes = new List<string>();
+        if (requestedHashes.Count == 0)
+        {
+            return (true, downloadedHashes);
+        }
+
+        string url = $"{targetServerBaseUrl.TrimEnd('/')}/api/assets/bundle";
+        var payload = new AssetBundleRequestDto { Hashes = requestedHashes };
+        string jsonPayload = JsonSerializer.Serialize(payload);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
+        };
+
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return (false, downloadedHashes);
+            }
+
+            using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+
+            await ZstdAssetBundleHelper.ExtractBundleFromStreamAsync(
+                responseStream,
+                async (assetKey, metadata, data) =>
+                {
+                    string normalizedHash = ContentAddressableStorage.NormalizeBlake3Hash(assetKey);
+                    if (!hashToExtensionMap.TryGetValue(normalizedHash, out string? extension) || string.IsNullOrEmpty(extension))
+                    {
+                        extension = ".bin";
+                    }
+
+                    string computedBlake3 = RealmMetadataHelper.ComputeBlake3(data, extension);
+                    string computedNormalized = ContentAddressableStorage.NormalizeBlake3Hash(computedBlake3);
+
+                    if (!string.Equals(computedNormalized, normalizedHash, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return;
+                    }
+
+                    if (_throttle != null)
+                    {
+                        await _throttle.ConsumeAsync(data.Length, cancellationToken);
+                    }
+
+                    var storeResult = targetStorage.StoreAsset(data, extension, metadata, precomputedBlake3: computedBlake3);
+                    if (storeResult.Success)
+                    {
+                        lock (downloadedHashes)
+                        {
+                            downloadedHashes.Add(normalizedHash);
+                        }
+                        onAssetDownloaded?.Invoke(normalizedHash);
+                    }
+                },
+                cancellationToken);
+
+            return (true, downloadedHashes);
+        }
+        catch (Exception)
+        {
+            return (false, downloadedHashes);
+        }
+    }
+
     public async Task<bool> DownloadMissingAssetsMultiThreadedAsync(
         MapManifest manifest,
         ContentAddressableStorage targetStorage,
@@ -237,38 +316,136 @@ public class DistributionClient
         int totalMissing = missingHashes.Count;
         int completedCount = 0;
 
-        using var semaphore = new SemaphoreSlim(maximumConcurrency);
-        var downloadTasks = missingHashes.Select(async item =>
+        var remainingMissingMap = new ConcurrentDictionary<string, List<(string VirtualPath, string AssetKey, string NormalizedHash)>>(StringComparer.OrdinalIgnoreCase);
+        var hashToExtMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in missingHashes)
         {
-            await semaphore.WaitAsync(cancellationToken);
-            try
+            hashToExtMap[item.NormalizedHash] = Path.GetExtension(item.AssetKey).ToLowerInvariant();
+            if (!remainingMissingMap.TryGetValue(item.NormalizedHash, out var list))
             {
-                bool downloaded = await DownloadSingleAssetWithRetriesAsync(
-                    item.NormalizedHash,
-                    item.AssetKey,
+                list = new List<(string VirtualPath, string AssetKey, string NormalizedHash)>();
+                remainingMissingMap[item.NormalizedHash] = list;
+            }
+            list.Add(item);
+        }
+
+        string firstHash = missingHashes.Count > 0 ? missingHashes[0].NormalizedHash : "";
+        var prioritizedUrls = GetPrioritizedServerUrls(firstHash, seeders, fallbackHostUrl);
+
+        foreach (string baseUrl in prioritizedUrls)
+        {
+            if (remainingMissingMap.IsEmpty || cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+
+            var circuit = GetCircuitState(baseUrl);
+            if (circuit.IsOpen(DateTime.UtcNow))
+            {
+                continue;
+            }
+
+            var currentMissingHashes = remainingMissingMap.Keys.ToList();
+            if (currentMissingHashes.Count == 0) break;
+
+            const int maxBatchCount = 100;
+            for (int i = 0; i < currentMissingHashes.Count; i += maxBatchCount)
+            {
+                if (cancellationToken.IsCancellationRequested) break;
+
+                var batch = currentMissingHashes.Skip(i).Take(maxBatchCount).ToList();
+                var (bundleSuccess, downloadedHashes) = await DownloadAssetBundleStreamAsync(
+                    baseUrl,
+                    batch,
+                    hashToExtMap,
                     targetStorage,
-                    seeders,
-                    fallbackHostUrl,
-                    cancellationToken);
+                    cancellationToken,
+                    onAssetDownloaded: normHash =>
+                    {
+                        if (remainingMissingMap.TryRemove(normHash, out var readyItems))
+                        {
+                            foreach (var item in readyItems)
+                            {
+                                onAssetReady?.Invoke(item.VirtualPath, item.AssetKey, item.NormalizedHash);
+                            }
+                            int currentCompleted = Interlocked.Increment(ref completedCount);
+                            float progress = (float)currentCompleted / totalMissing;
+                            progressCallback?.Invoke(progress);
+                        }
+                    });
 
-                if (downloaded)
+                if (bundleSuccess)
                 {
-                    onAssetReady?.Invoke(item.VirtualPath, item.AssetKey, item.NormalizedHash);
-                    int currentCompleted = Interlocked.Increment(ref completedCount);
-                    float progress = (float)currentCompleted / totalMissing;
-                    progressCallback?.Invoke(progress);
+                    circuit.RecordSuccess();
                 }
-
-                return downloaded;
+                else
+                {
+                    circuit.RecordFailure(DateTime.UtcNow);
+                    break;
+                }
             }
-            finally
+        }
+
+        if (!remainingMissingMap.IsEmpty && !cancellationToken.IsCancellationRequested)
+        {
+            var remainingMissingItems = remainingMissingMap.Values.SelectMany(v => v).Distinct().ToList();
+
+            using var semaphore = new SemaphoreSlim(maximumConcurrency);
+            var downloadTasks = remainingMissingItems.Select(async item =>
             {
-                semaphore.Release();
-            }
-        }).ToList();
+                await semaphore.WaitAsync(cancellationToken);
+                try
+                {
+                    if (targetStorage.HasAsset(item.NormalizedHash))
+                    {
+                        if (remainingMissingMap.TryRemove(item.NormalizedHash, out _))
+                        {
+                            onAssetReady?.Invoke(item.VirtualPath, item.AssetKey, item.NormalizedHash);
+                            int currentCompleted = Interlocked.Increment(ref completedCount);
+                            float progress = (float)currentCompleted / totalMissing;
+                            progressCallback?.Invoke(progress);
+                        }
+                        return true;
+                    }
 
-        var results = await Task.WhenAll(downloadTasks);
-        return results.All(success => success);
+                    bool downloaded = await DownloadSingleAssetWithRetriesAsync(
+                        item.NormalizedHash,
+                        item.AssetKey,
+                        targetStorage,
+                        seeders,
+                        fallbackHostUrl,
+                        cancellationToken);
+
+                    if (downloaded)
+                    {
+                        if (remainingMissingMap.TryRemove(item.NormalizedHash, out _))
+                        {
+                            onAssetReady?.Invoke(item.VirtualPath, item.AssetKey, item.NormalizedHash);
+                            int currentCompleted = Interlocked.Increment(ref completedCount);
+                            float progress = (float)currentCompleted / totalMissing;
+                            progressCallback?.Invoke(progress);
+                        }
+                    }
+
+                    return downloaded;
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            }).ToList();
+
+            await Task.WhenAll(downloadTasks);
+        }
+
+        if (completedCount >= totalMissing)
+        {
+            progressCallback?.Invoke(1.0f);
+            return true;
+        }
+
+        return remainingMissingMap.IsEmpty;
     }
 
     private int _roundRobinCounter = 0;
@@ -287,13 +464,10 @@ public class DistributionClient
         }
     }
 
-    private async Task<bool> DownloadSingleAssetWithRetriesAsync(
+    private List<string> GetPrioritizedServerUrls(
         string normalizedHash,
-        string assetKey,
-        ContentAddressableStorage targetStorage,
         List<SeederNodeDto> seeders,
-        string? fallbackHostUrl,
-        CancellationToken cancellationToken)
+        string? fallbackHostUrl)
     {
         var candidateSeeders = seeders
             .Where(s => DistributionSharding.SeederAcceptsHash(s.SeederId, s.CapacityPercentage, normalizedHash))
@@ -330,6 +504,19 @@ public class DistributionClient
         {
             prioritizedUrls.Add(_registryServerUrl);
         }
+
+        return prioritizedUrls;
+    }
+
+    private async Task<bool> DownloadSingleAssetWithRetriesAsync(
+        string normalizedHash,
+        string assetKey,
+        ContentAddressableStorage targetStorage,
+        List<SeederNodeDto> seeders,
+        string? fallbackHostUrl,
+        CancellationToken cancellationToken)
+    {
+        var prioritizedUrls = GetPrioritizedServerUrls(normalizedHash, seeders, fallbackHostUrl);
 
         const int maxCycles = 3;
         for (int cycle = 0; cycle < maxCycles; cycle++)

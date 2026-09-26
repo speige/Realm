@@ -116,6 +116,12 @@ public class DistributionServer
 
         try
         {
+            if (path.Equals("/api/assets/bundle", StringComparison.OrdinalIgnoreCase) && method == "POST")
+            {
+                await HandleAssetBundleEndpointAsync(context);
+                return;
+            }
+
             if (path.StartsWith("/api/assets/", StringComparison.OrdinalIgnoreCase))
             {
                 string hash = path.Substring("/api/assets/".Length);
@@ -168,6 +174,61 @@ public class DistributionServer
             catch
             {
             }
+        }
+    }
+
+    private async Task HandleAssetBundleEndpointAsync(HttpListenerContext context)
+    {
+        var request = context.Request;
+        var response = context.Response;
+
+        using var reader = new StreamReader(request.InputStream, Encoding.UTF8);
+        string json = await reader.ReadToEndAsync();
+        AssetBundleRequestDto? req = null;
+        try
+        {
+            req = JsonSerializer.Deserialize<AssetBundleRequestDto>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch { }
+
+        if (req == null || req.Hashes == null || req.Hashes.Count == 0)
+        {
+            response.StatusCode = (int)HttpStatusCode.BadRequest;
+            response.Close();
+            return;
+        }
+
+        var assetInfos = new List<(string AssetKey, string FilePath, string? Metadata)>();
+        foreach (var hash in req.Hashes)
+        {
+            if (string.IsNullOrWhiteSpace(hash)) continue;
+            string normalized = ContentAddressableStorage.NormalizeBlake3Hash(hash);
+            string? filePath = _storage.FindAssetFilePath(normalized);
+            if (filePath != null && File.Exists(filePath))
+            {
+                string? metadata = _storage.GetAssetMetadata(normalized);
+                assetInfos.Add((normalized, filePath, metadata));
+            }
+        }
+
+        response.ContentType = "application/octet-stream";
+        response.StatusCode = (int)HttpStatusCode.OK;
+
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource?.Token ?? CancellationToken.None);
+            await ZstdAssetBundleHelper.StreamAssetsToBundleAsync(
+                response.OutputStream,
+                assetInfos,
+                compressionLevel: 1,
+                cancellationToken: cts.Token);
+        }
+        catch
+        {
+        }
+        finally
+        {
+            try { response.Close(); } catch { }
         }
     }
 

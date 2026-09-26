@@ -772,6 +772,47 @@ app.MapMethods("/api/assets/{hash}", new[] { "HEAD" }, (string hash, ContentAddr
     return cas.HasAsset(normalized) ? Results.Ok() : Results.NotFound();
 });
 
+app.MapPost("/api/assets/bundle", async (HttpContext context, ContentAddressableStorage cas) =>
+{
+    using var reader = new StreamReader(context.Request.Body, Encoding.UTF8);
+    string json = await reader.ReadToEndAsync(context.RequestAborted);
+    AssetBundleRequestDto? req = null;
+    try
+    {
+        req = JsonSerializer.Deserialize<AssetBundleRequestDto>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+    }
+    catch { }
+
+    if (req == null || req.Hashes == null || req.Hashes.Count == 0)
+    {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await context.Response.WriteAsJsonAsync(new { Message = "Hashes array is required." }, context.RequestAborted);
+        return;
+    }
+
+    var assetInfos = new List<(string AssetKey, string FilePath, string? Metadata)>();
+    foreach (var hash in req.Hashes)
+    {
+        if (string.IsNullOrWhiteSpace(hash)) continue;
+        string normalized = ContentAddressableStorage.NormalizeBlake3Hash(hash);
+        string? filePath = cas.FindAssetFilePath(normalized);
+        if (filePath != null && File.Exists(filePath))
+        {
+            string? metadata = cas.GetAssetMetadata(normalized);
+            assetInfos.Add((normalized, filePath, metadata));
+        }
+    }
+
+    context.Response.ContentType = "application/octet-stream";
+    context.Response.StatusCode = StatusCodes.Status200OK;
+
+    await ZstdAssetBundleHelper.StreamAssetsToBundleAsync(
+        context.Response.Body,
+        assetInfos,
+        compressionLevel: 1,
+        cancellationToken: context.RequestAborted);
+});
+
 app.MapGet("/api/assets/{hash}", (string hash, ContentAddressableStorage cas, HttpContext context) =>
 {
     string normalized = ContentAddressableStorage.NormalizeBlake3Hash(hash);
