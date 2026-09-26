@@ -198,8 +198,8 @@ public static class TextureConverter
 			}
 		}
 
-		float[,] fineMean = ComputeSeparableBoxBlur(luminance, width, height, 3);
-		float[,] coarseMean = ComputeSeparableBoxBlur(luminance, width, height, 14);
+		float[,] fineMean = ComputeSeparableBoxBlur(luminance, width, height, 3, isDecal);
+		float[,] coarseMean = ComputeSeparableBoxBlur(luminance, width, height, 14, isDecal);
 
 		float[,] rawHeight = new float[width, height];
 		float[] flatHeights = new float[width * height];
@@ -209,22 +209,31 @@ public static class TextureConverter
 
 		for (int y = 0; y < height; y++)
 		{
-			int py = y > 0 ? y - 1 : height - 1;
-			int ny = y < height - 1 ? y + 1 : 0;
+			int py = isDecal ? (y > 0 ? y - 1 : y) : (y > 0 ? y - 1 : height - 1);
+			int ny = isDecal ? (y < height - 1 ? y + 1 : y) : (y < height - 1 ? y + 1 : 0);
 
 			for (int x = 0; x < width; x++)
 			{
-				int px = x > 0 ? x - 1 : width - 1;
-				int nx = x < width - 1 ? x + 1 : 0;
+				int px = isDecal ? (x > 0 ? x - 1 : x) : (x > 0 ? x - 1 : width - 1);
+				int nx = isDecal ? (x < width - 1 ? x + 1 : x) : (x < width - 1 ? x + 1 : 0);
 
 				float lum = luminance[x, y];
 				float highFreq = lum - fineMean[x, y];
 				float midFreq = fineMean[x, y] - coarseMean[x, y];
 
-				float dx = (luminance[nx, y] - luminance[px, y]) * 0.5f;
-				float dy = (luminance[x, ny] - luminance[x, py]) * 0.5f;
+				float l00 = luminance[px, py];
+				float l10 = luminance[x, py];
+				float l20 = luminance[nx, py];
+				float l01 = luminance[px, y];
+				float l21 = luminance[nx, y];
+				float l02 = luminance[px, ny];
+				float l12 = luminance[x, ny];
+				float l22 = luminance[nx, ny];
+
+				float dx = ((3.0f * l20 + 10.0f * l21 + 3.0f * l22) - (3.0f * l00 + 10.0f * l01 + 3.0f * l02)) / 32.0f;
+				float dy = ((3.0f * l02 + 10.0f * l12 + 3.0f * l22) - (3.0f * l00 + 10.0f * l10 + 3.0f * l20)) / 32.0f;
 				float gradMag = MathF.Sqrt(dx * dx + dy * dy);
-				float laplacian = luminance[nx, y] + luminance[px, y] + luminance[x, ny] + luminance[x, py] - 4.0f * lum;
+				float laplacian = l21 + l01 + l12 + l10 - 4.0f * lum;
 
 				float structuralValue = 0.5f + (highFreq * 2.2f) + (midFreq * 1.4f) + (laplacian * 0.5f) - (gradMag * 0.25f);
 				rawHeight[x, y] = structuralValue;
@@ -257,13 +266,13 @@ public static class TextureConverter
 
 		for (int y = 0; y < height; y++)
 		{
-			int py = y > 0 ? y - 1 : height - 1;
-			int ny = y < height - 1 ? y + 1 : 0;
+			int py = isDecal ? (y > 0 ? y - 1 : y) : (y > 0 ? y - 1 : height - 1);
+			int ny = isDecal ? (y < height - 1 ? y + 1 : y) : (y < height - 1 ? y + 1 : 0);
 
 			for (int x = 0; x < width; x++)
 			{
-				int px = x > 0 ? x - 1 : width - 1;
-				int nx = x < width - 1 ? x + 1 : 0;
+				int px = isDecal ? (x > 0 ? x - 1 : x) : (x > 0 ? x - 1 : width - 1);
+				int nx = isDecal ? (x < width - 1 ? x + 1 : x) : (x < width - 1 ? x + 1 : 0);
 
 				Rgba32 albedoCol = sourceImage[x, y];
 				float heightVal = normalizedHeight[x, y];
@@ -272,8 +281,20 @@ public static class TextureConverter
 
 				layer0[x, y] = new Rgba32(albedoCol.R, albedoCol.G, albedoCol.B, alphaVal);
 
-				float dX = (normalizedHeight[nx, y] - normalizedHeight[px, y]) * normalStrength;
-				float dY = (normalizedHeight[x, ny] - normalizedHeight[x, py]) * normalStrength;
+				float h00 = normalizedHeight[px, py];
+				float h10 = normalizedHeight[x, py];
+				float h20 = normalizedHeight[nx, py];
+				float h01 = normalizedHeight[px, y];
+				float h21 = normalizedHeight[nx, y];
+				float h02 = normalizedHeight[px, ny];
+				float h12 = normalizedHeight[x, ny];
+				float h22 = normalizedHeight[nx, ny];
+
+				float scharrX = ((3.0f * h20 + 10.0f * h21 + 3.0f * h22) - (3.0f * h00 + 10.0f * h01 + 3.0f * h02)) / 32.0f;
+				float scharrY = ((3.0f * h02 + 10.0f * h12 + 3.0f * h22) - (3.0f * h00 + 10.0f * h10 + 3.0f * h20)) / 32.0f;
+
+				float dX = scharrX * normalStrength;
+				float dY = scharrY * normalStrength;
 
 				float len = MathF.Sqrt(dX * dX + dY * dY + 1.0f);
 				float invLen = 1.0f / len;
@@ -301,7 +322,8 @@ public static class TextureConverter
 		var encoder = new WebpEncoder
 		{
 			FileFormat = lossless ? WebpFileFormatType.Lossless : WebpFileFormatType.Lossy,
-			Quality = lossless ? 100 : quality
+			Quality = lossless ? 100 : quality,
+			Method = WebpEncodingMethod.Level6
 		};
 		image.Save(ms, encoder);
 		return ms.ToArray();
@@ -1010,7 +1032,7 @@ public static class TextureConverter
 		return failCount > 0 ? 1 : 0;
 	}
 
-	private static float[,] ComputeSeparableBoxBlur(float[,] input, int w, int h, int radius)
+	private static float[,] ComputeSeparableBoxBlur(float[,] input, int w, int h, int radius, bool isDecal = false)
 	{
 		float[,] temp = new float[w, h];
 		float[,] result = new float[w, h];
@@ -1022,15 +1044,15 @@ public static class TextureConverter
 			float sum = 0.0f;
 			for (int k = -radius; k <= radius; k++)
 			{
-				int px = (k % w + w) % w;
+				int px = isDecal ? Math.Clamp(k, 0, w - 1) : (k % w + w) % w;
 				sum += input[px, y];
 			}
 			temp[0, y] = sum * invWindow;
 
 			for (int x = 1; x < w; x++)
 			{
-				int removeX = ((x - 1 - radius) % w + w) % w;
-				int addX = ((x + radius) % w + w) % w;
+				int removeX = isDecal ? Math.Clamp(x - 1 - radius, 0, w - 1) : ((x - 1 - radius) % w + w) % w;
+				int addX = isDecal ? Math.Clamp(x + radius, 0, w - 1) : ((x + radius) % w + w) % w;
 				sum += input[addX, y] - input[removeX, y];
 				temp[x, y] = sum * invWindow;
 			}
@@ -1041,15 +1063,15 @@ public static class TextureConverter
 			float sum = 0.0f;
 			for (int k = -radius; k <= radius; k++)
 			{
-				int py = (k % h + h) % h;
+				int py = isDecal ? Math.Clamp(k, 0, h - 1) : (k % h + h) % h;
 				sum += temp[x, py];
 			}
 			result[x, 0] = sum * invWindow;
 
 			for (int y = 1; y < h; y++)
 			{
-				int removeY = ((y - 1 - radius) % h + h) % h;
-				int addY = ((y + radius) % h + h) % h;
+				int removeY = isDecal ? Math.Clamp(y - 1 - radius, 0, h - 1) : ((y - 1 - radius) % h + h) % h;
+				int addY = isDecal ? Math.Clamp(y + radius, 0, h - 1) : ((y + radius) % h + h) % h;
 				sum += temp[x, addY] - temp[x, removeY];
 				result[x, y] = sum * invWindow;
 			}
