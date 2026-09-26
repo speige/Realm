@@ -8384,17 +8384,17 @@ public partial class MapEditorHUD : Control
 		_objectAttachmentDialog.OpenForUnitAndAttachment(unitId, attachmentId, hand, sourceModel, onApplied);
 	}
 
-	public void SaveUnitObjectAttachment(string unitId, Realm.Godot.Animation.HumanoidBone hand, string attachmentId, GameHost.HandAttachmentOrientation orientation)
+	public void SaveUnitObjectAttachment(string unitId, HumanoidBone hand, string attachmentId, GameHost.HandAttachmentOrientation orientation)
 	{
 		string handKey = hand switch
 		{
-			Realm.Godot.Animation.HumanoidBone.LeftHand => "left_hand",
-			Realm.Godot.Animation.HumanoidBone.RightHand => "right_hand",
-			Realm.Godot.Animation.HumanoidBone.Chest => "chest",
-			Realm.Godot.Animation.HumanoidBone.Hips => "root",
-			Realm.Godot.Animation.HumanoidBone.Head => "head",
-			Realm.Godot.Animation.HumanoidBone.LeftFoot => "left_foot",
-			Realm.Godot.Animation.HumanoidBone.RightFoot => "right_foot",
+			HumanoidBone.LeftHand => "left_hand",
+			HumanoidBone.RightHand => "right_hand",
+			HumanoidBone.Chest => "chest",
+			HumanoidBone.Hips => "root",
+			HumanoidBone.Head => "head",
+			HumanoidBone.LeftFoot => "left_foot",
+			HumanoidBone.RightFoot => "right_foot",
 			_ => "right_hand"
 		};
 		SaveUnitObjectAttachment(unitId, handKey, attachmentId, orientation);

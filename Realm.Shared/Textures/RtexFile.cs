@@ -2,6 +2,8 @@ using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.Json.Nodes;
+using Blake3;
 using Realm.Shared.Metadata;
 
 namespace Realm.Shared.Textures;
@@ -19,47 +21,101 @@ public static class RtexFile
 	public static (string? MetadataJson, List<byte[]> Layers, uint Version) Parse(ReadOnlySpan<byte> bytes)
 	{
 		var (version, metadataJson, offset) = RealmContainerHeader.ReadHeader(bytes, Magic, "RTEX");
+		bool isCompressed = RealmMetadataHelper.ExtractIsCompressed(metadataJson);
+		ReadOnlySpan<byte> payloadSpan = bytes.Slice(offset);
+
+		ReadOnlySpan<byte> layersSpan = isCompressed
+			? RealmCompressionHelper.Decompress(payloadSpan)
+			: payloadSpan;
 
 		var layers = new List<byte[]>();
-		if (offset + 4 <= bytes.Length)
+		int readOffset = 0;
+		if (readOffset + 4 <= layersSpan.Length)
 		{
-			uint layerCount = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(offset, 4));
-			offset += 4;
+			uint layerCount = BinaryPrimitives.ReadUInt32LittleEndian(layersSpan.Slice(readOffset, 4));
+			readOffset += 4;
 
 			for (int i = 0; i < layerCount; i++)
 			{
-				if (offset + 4 > bytes.Length) break;
-				uint layerLength = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(offset, 4));
-				offset += 4;
+				if (readOffset + 4 > layersSpan.Length) break;
+				uint layerLength = BinaryPrimitives.ReadUInt32LittleEndian(layersSpan.Slice(readOffset, 4));
+				readOffset += 4;
 
-				if (offset + (int)layerLength > bytes.Length) break;
-				byte[] layerData = bytes.Slice(offset, (int)layerLength).ToArray();
+				if (readOffset + (int)layerLength > layersSpan.Length) break;
+				byte[] layerData = layersSpan.Slice(readOffset, (int)layerLength).ToArray();
 				layers.Add(layerData);
-				offset += (int)layerLength;
+				readOffset += (int)layerLength;
 			}
 		}
 
 		return (metadataJson, layers, version);
 	}
 
-	public static byte[] Build(string? metadataJson, IList<byte[]> layers, uint version = CurrentVersion)
+	public static byte[] Build(string? metadataJson, IList<byte[]> layers, bool? compressed = null, uint version = CurrentVersion)
 	{
-		using var memoryStream = new MemoryStream();
-		using var writer = new BinaryWriter(memoryStream);
+		bool isCompressed = compressed ?? false;
+		if (compressed == null && !string.IsNullOrWhiteSpace(metadataJson))
+		{
+			isCompressed = RealmMetadataHelper.ExtractIsCompressed(metadataJson);
+		}
 
-		RealmContainerHeader.WriteHeader(writer, Magic, metadataJson, version);
+		using var rawPayloadStream = new MemoryStream();
+		using var rawWriter = new BinaryWriter(rawPayloadStream);
 
-		writer.Write((uint)(layers?.Count ?? 0));
+		rawWriter.Write((uint)(layers?.Count ?? 0));
 		if (layers != null)
 		{
 			foreach (var layer in layers)
 			{
-				writer.Write((uint)(layer?.Length ?? 0));
+				rawWriter.Write((uint)(layer?.Length ?? 0));
 				if (layer != null && layer.Length > 0)
 				{
-					writer.Write(layer);
+					rawWriter.Write(layer);
 				}
 			}
+		}
+		rawWriter.Flush();
+		byte[] rawPayloadBytes = rawPayloadStream.ToArray();
+
+		byte[] payload = isCompressed
+			? RealmCompressionHelper.Compress(rawPayloadBytes, RealmCompressionHelper.DefaultCompressionLevel)
+			: rawPayloadBytes;
+
+		string canonicalBlake3 = Hasher.Hash(payload).ToString();
+
+		JsonObject metaObj;
+		if (!string.IsNullOrWhiteSpace(metadataJson))
+		{
+			try
+			{
+				metaObj = JsonNode.Parse(metadataJson)?.AsObject() ?? new JsonObject();
+			}
+			catch
+			{
+				metaObj = new JsonObject();
+			}
+		}
+		else
+		{
+			metaObj = new JsonObject();
+		}
+
+		if (!metaObj.ContainsKey("created_utc") || metaObj["created_utc"] == null)
+		{
+			metaObj["created_utc"] = DateTime.UtcNow.ToString("O");
+		}
+
+		metaObj["format"] = "rtex";
+		metaObj["is_compressed"] = isCompressed;
+		metaObj["blake3"] = canonicalBlake3;
+
+		using var memoryStream = new MemoryStream();
+		using var writer = new BinaryWriter(memoryStream);
+
+		RealmContainerHeader.WriteHeader(writer, Magic, metaObj.ToJsonString(), version);
+		if (payload.Length > 0)
+		{
+			writer.Write(payload);
 		}
 
 		return memoryStream.ToArray();
@@ -69,25 +125,34 @@ public static class RtexFile
 	{
 		if (!IsRtexBytes(bytes)) return null;
 
-		uint metadataLength = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(8, 4));
-		int offset = RealmContainerHeader.MinimumHeaderLength + (int)metadataLength;
+		if (!RealmContainerHeader.TryReadHeader(bytes, Magic, out uint version, out string? metadataJson, out int payloadOffset))
+		{
+			return null;
+		}
 
-		if (offset + 4 > bytes.Length) return null;
-		uint layerCount = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(offset, 4));
-		offset += 4;
+		bool isCompressed = RealmMetadataHelper.ExtractIsCompressed(metadataJson);
+		ReadOnlySpan<byte> payloadSpan = bytes.Slice(payloadOffset);
+
+		ReadOnlySpan<byte> layersSpan = isCompressed
+			? RealmCompressionHelper.Decompress(payloadSpan)
+			: payloadSpan;
+
+		if (layersSpan.Length < 4) return null;
+		uint layerCount = BinaryPrimitives.ReadUInt32LittleEndian(layersSpan.Slice(0, 4));
+		int offset = 4;
 
 		if (layerIndex < 0 || layerIndex >= layerCount) return null;
 
 		for (int i = 0; i < layerCount; i++)
 		{
-			if (offset + 4 > bytes.Length) return null;
-			uint layerLength = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(offset, 4));
+			if (offset + 4 > layersSpan.Length) return null;
+			uint layerLength = BinaryPrimitives.ReadUInt32LittleEndian(layersSpan.Slice(offset, 4));
 			offset += 4;
 
 			if (i == layerIndex)
 			{
-				if (offset + (int)layerLength > bytes.Length) return null;
-				return bytes.Slice(offset, (int)layerLength).ToArray();
+				if (offset + (int)layerLength > layersSpan.Length) return null;
+				return layersSpan.Slice(offset, (int)layerLength).ToArray();
 			}
 
 			offset += (int)layerLength;
@@ -110,9 +175,26 @@ public static class RtexFile
 		if (!RealmContainerHeader.HasMagic(header, Magic)) return null;
 
 		uint metadataLength = BinaryPrimitives.ReadUInt32LittleEndian(header.Slice(8, 4));
+		string? metadataJson = null;
 		if (metadataLength > 0)
 		{
-			stream.Seek(metadataLength, SeekOrigin.Current);
+			byte[] metaBytes = new byte[metadataLength];
+			int metaRead = 0;
+			while (metaRead < metadataLength)
+			{
+				int r = stream.Read(metaBytes, metaRead, (int)metadataLength - metaRead);
+				if (r <= 0) return null;
+				metaRead += r;
+			}
+			metadataJson = System.Text.Encoding.UTF8.GetString(metaBytes);
+		}
+
+		bool isCompressed = RealmMetadataHelper.ExtractIsCompressed(metadataJson);
+		if (isCompressed)
+		{
+			using var memoryStream = new MemoryStream();
+			stream.CopyTo(memoryStream);
+			return GetLayer(memoryStream.ToArray(), layerIndex);
 		}
 
 		Span<byte> uintBuf = stackalloc byte[4];

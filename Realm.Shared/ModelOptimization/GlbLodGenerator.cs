@@ -319,6 +319,7 @@ public static unsafe class GlbLodGenerator
 							if (simplifiedCount >= 3 && (simplifiedCount % 3) == 0 && simplifiedCount < (nuint)originalIndices.Length)
 							{
 								MeshOptimizerNative.meshopt_optimizeVertexCache(pDest, pDest, simplifiedCount, (nuint)posCount);
+								MeshOptimizerNative.meshopt_optimizeOverdraw(pDest, pDest, simplifiedCount, pPos, (nuint)posCount, (nuint)posStride, 1.05f);
 							}
 						}
 

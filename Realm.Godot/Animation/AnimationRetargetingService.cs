@@ -157,7 +157,7 @@ public static class AnimationRetargetingService
 		};
 		godotAnim.Step = animData.FrameRate > 0f ? 1.0f / animData.FrameRate : 1.0f / 30.0f;
 
-		var boneMap = HumanoidBoneMapper.BuildSkeletonBoneMap(targetSkeleton);
+		var boneMap = targetSkeleton.BuildSkeletonBoneMap();
 		string skelPathStr = skeletonRelativePath.ToString();
 		if (string.IsNullOrEmpty(skelPathStr) || skelPathStr == ".")
 		{

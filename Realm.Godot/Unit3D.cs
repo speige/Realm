@@ -95,8 +95,8 @@ public partial class Unit3D : Prop3D
 	private BoneAttachment3D? _leftHandAttachment;
 	private string? _currentRightAttachmentId;
 	private string? _currentLeftAttachmentId;
-	private readonly Dictionary<Realm.Godot.Animation.HumanoidBone, Node3D> _boneAttachments = new();
-	private readonly Dictionary<Realm.Godot.Animation.HumanoidBone, string> _currentBoneAttachmentIds = new();
+	private readonly Dictionary<HumanoidBone, Node3D> _boneAttachments = new();
+	private readonly Dictionary<HumanoidBone, string> _currentBoneAttachmentIds = new();
 	private Node3D _pathVisualsContainer;
 	private readonly System.Collections.Generic.List<MeshInstance3D> _pathMarkersPool = new();
 	private readonly System.Collections.Generic.List<MeshInstance3D> _pathLinesPool = new();
@@ -487,7 +487,7 @@ public partial class Unit3D : Prop3D
 	}
 
 	public void SetHandAttachment(
-		Realm.Godot.Animation.HumanoidBone hand,
+		HumanoidBone hand,
 		string? attachmentId,
 		Vector3? posOffsetOverride = null,
 		Vector3? rotOffsetOverride = null,
@@ -497,7 +497,7 @@ public partial class Unit3D : Prop3D
 	}
 
 	public void SetSocketAttachment(
-		Realm.Godot.Animation.HumanoidBone bone,
+		HumanoidBone bone,
 		string? attachmentId,
 		Vector3? posOffsetOverride = null,
 		Vector3? rotOffsetOverride = null,
@@ -509,10 +509,10 @@ public partial class Unit3D : Prop3D
 	{
 		var parentNode = (_modelNode != null && GodotObject.IsInstanceValid(_modelNode)) ? _modelNode : (Node3D)this;
 		var skeleton = FindSkeleton(parentNode);
-		int boneIdx = skeleton != null ? Realm.Godot.Animation.HumanoidBoneMapper.FindBoneInSkeleton(skeleton, bone) : -1;
+		int boneIdx = skeleton != null ? Realm.Godot.Animation.HumanoidBoneExtensions.FindBoneInSkeleton(skeleton, bone) : -1;
 
-		bool isRight = bone == Realm.Godot.Animation.HumanoidBone.RightHand;
-		bool isLeft = bone == Realm.Godot.Animation.HumanoidBone.LeftHand;
+		bool isRight = bone == HumanoidBone.RightHand;
+		bool isLeft = bone == HumanoidBone.LeftHand;
 
 		if (string.IsNullOrEmpty(attachmentId) ||
 			attachmentId.Equals("null", StringComparison.OrdinalIgnoreCase) ||
@@ -709,13 +709,13 @@ public partial class Unit3D : Prop3D
 		}
 		else
 		{
-			ApplyBoneAttachmentList(Realm.Godot.Animation.HumanoidBone.RightHand, atts.right_hand);
-			ApplyBoneAttachmentList(Realm.Godot.Animation.HumanoidBone.LeftHand, atts.left_hand);
-			ApplyBoneAttachmentList(Realm.Godot.Animation.HumanoidBone.Chest, atts.chest);
-			ApplyBoneAttachmentList(Realm.Godot.Animation.HumanoidBone.Hips, atts.root);
-			ApplyBoneAttachmentList(Realm.Godot.Animation.HumanoidBone.Head, atts.head);
-			ApplyBoneAttachmentList(Realm.Godot.Animation.HumanoidBone.LeftFoot, atts.left_foot);
-			ApplyBoneAttachmentList(Realm.Godot.Animation.HumanoidBone.RightFoot, atts.right_foot);
+			ApplyBoneAttachmentList(HumanoidBone.RightHand, atts.right_hand);
+			ApplyBoneAttachmentList(HumanoidBone.LeftHand, atts.left_hand);
+			ApplyBoneAttachmentList(HumanoidBone.Chest, atts.chest);
+			ApplyBoneAttachmentList(HumanoidBone.Hips, atts.root);
+			ApplyBoneAttachmentList(HumanoidBone.Head, atts.head);
+			ApplyBoneAttachmentList(HumanoidBone.LeftFoot, atts.left_foot);
+			ApplyBoneAttachmentList(HumanoidBone.RightFoot, atts.right_foot);
 
 			ApplyPseudoSocketAttachmentList("ground", atts.ground);
 			ApplyPseudoSocketAttachmentList("center", atts.center);
@@ -724,7 +724,7 @@ public partial class Unit3D : Prop3D
 		}
 	}
 
-	private void ApplyBoneAttachmentList(Realm.Godot.Animation.HumanoidBone bone, List<Dictionary<string, GameHost.HandAttachmentOrientation>>? list)
+	private void ApplyBoneAttachmentList(HumanoidBone bone, List<Dictionary<string, GameHost.HandAttachmentOrientation>>? list)
 	{
 		if (list == null) return;
 		foreach (var dict in list)
@@ -1215,11 +1215,11 @@ public partial class Unit3D : Prop3D
 		{
 			if (!string.IsNullOrEmpty(matchedEntry.Value.RightHandAttachment))
 			{
-				SetHandAttachment(Realm.Godot.Animation.HumanoidBone.RightHand, matchedEntry.Value.RightHandAttachment);
+				SetHandAttachment(HumanoidBone.RightHand, matchedEntry.Value.RightHandAttachment);
 			}
 			if (!string.IsNullOrEmpty(matchedEntry.Value.LeftHandAttachment))
 			{
-				SetHandAttachment(Realm.Godot.Animation.HumanoidBone.LeftHand, matchedEntry.Value.LeftHandAttachment);
+				SetHandAttachment(HumanoidBone.LeftHand, matchedEntry.Value.LeftHandAttachment);
 			}
 		}
 	}

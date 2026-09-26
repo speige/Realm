@@ -1,6 +1,8 @@
 using System;
 using System.Buffers.Binary;
 using System.IO;
+using System.Text.Json.Nodes;
+using Blake3;
 using Realm.Shared.Metadata;
 
 namespace Realm.Shared.ModelOptimization;
@@ -18,40 +20,99 @@ public static class RmeshFile
 	public static (string? MetadataJson, byte[] GlbBytes, uint Version) Parse(ReadOnlySpan<byte> bytes)
 	{
 		var (version, metadataJson, offset) = RealmContainerHeader.ReadHeader(bytes, Magic, "RMESH");
+		bool isCompressed = RealmMetadataHelper.ExtractIsCompressed(metadataJson);
+		ReadOnlySpan<byte> payloadSpan = bytes.Slice(offset);
 
-		byte[] glbBytes = Array.Empty<byte>();
-		if (offset + 4 <= bytes.Length)
+		byte[] glbBytes;
+		if (isCompressed)
 		{
-			uint glbLength = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(offset, 4));
-			offset += 4;
-			if (glbLength > 0 && offset + (int)glbLength <= bytes.Length)
-			{
-				glbBytes = bytes.Slice(offset, (int)glbLength).ToArray();
-			}
-			else if (offset < bytes.Length)
-			{
-				glbBytes = bytes.Slice(offset).ToArray();
-			}
+			glbBytes = RealmCompressionHelper.Decompress(payloadSpan);
 		}
-		else if (offset < bytes.Length)
+		else
 		{
-			glbBytes = bytes.Slice(offset).ToArray();
+			if (payloadSpan.Length >= 4)
+			{
+				uint glbLength = BinaryPrimitives.ReadUInt32LittleEndian(payloadSpan.Slice(0, 4));
+				if (glbLength > 0 && 4 + (int)glbLength <= payloadSpan.Length)
+				{
+					glbBytes = payloadSpan.Slice(4, (int)glbLength).ToArray();
+				}
+				else
+				{
+					glbBytes = payloadSpan.ToArray();
+				}
+			}
+			else
+			{
+				glbBytes = payloadSpan.ToArray();
+			}
 		}
 
 		return (metadataJson, glbBytes, version);
 	}
 
-	public static byte[] Build(string? metadataJson, byte[] glbBytes, uint version = CurrentVersion)
+	public static byte[] Build(string? metadataJson, byte[] glbBytes, bool? compressed = null, uint version = CurrentVersion)
 	{
+		bool isCompressed = compressed ?? true;
+		if (compressed == null && !string.IsNullOrWhiteSpace(metadataJson))
+		{
+			isCompressed = RealmMetadataHelper.ExtractIsCompressed(metadataJson);
+		}
+
+		byte[] payload;
+		if (isCompressed)
+		{
+			payload = RealmCompressionHelper.Compress(glbBytes ?? Array.Empty<byte>(), RealmCompressionHelper.DefaultCompressionLevel);
+		}
+		else
+		{
+			if (glbBytes == null || glbBytes.Length == 0)
+			{
+				payload = Array.Empty<byte>();
+			}
+			else
+			{
+				payload = new byte[4 + glbBytes.Length];
+				BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(0, 4), (uint)glbBytes.Length);
+				Buffer.BlockCopy(glbBytes, 0, payload, 4, glbBytes.Length);
+			}
+		}
+
+		string canonicalBlake3 = Hasher.Hash(payload).ToString();
+
+		JsonObject metaObj;
+		if (!string.IsNullOrWhiteSpace(metadataJson))
+		{
+			try
+			{
+				metaObj = JsonNode.Parse(metadataJson)?.AsObject() ?? new JsonObject();
+			}
+			catch
+			{
+				metaObj = new JsonObject();
+			}
+		}
+		else
+		{
+			metaObj = new JsonObject();
+		}
+
+		if (!metaObj.ContainsKey("created_utc") || metaObj["created_utc"] == null)
+		{
+			metaObj["created_utc"] = DateTime.UtcNow.ToString("O");
+		}
+
+		metaObj["format"] = "rmesh";
+		metaObj["is_compressed"] = isCompressed;
+		metaObj["blake3"] = canonicalBlake3;
+
 		using var memoryStream = new MemoryStream();
 		using var writer = new BinaryWriter(memoryStream);
 
-		RealmContainerHeader.WriteHeader(writer, Magic, metadataJson, version);
-
-		writer.Write((uint)(glbBytes?.Length ?? 0));
-		if (glbBytes != null && glbBytes.Length > 0)
+		RealmContainerHeader.WriteHeader(writer, Magic, metaObj.ToJsonString(), version);
+		if (payload.Length > 0)
 		{
-			writer.Write(glbBytes);
+			writer.Write(payload);
 		}
 
 		return memoryStream.ToArray();
@@ -61,23 +122,30 @@ public static class RmeshFile
 	{
 		if (!IsRmeshBytes(bytes)) return null;
 
-		uint metadataLength = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(8, 4));
-		int offset = RealmContainerHeader.MinimumHeaderLength + (int)metadataLength;
-
-		if (offset + 4 > bytes.Length) return null;
-		uint glbLength = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(offset, 4));
-		offset += 4;
-
-		if (offset + (int)glbLength > bytes.Length)
+		if (!RealmContainerHeader.TryReadHeader(bytes, Magic, out uint version, out string? metadataJson, out int payloadOffset))
 		{
-			if (offset < bytes.Length)
-			{
-				return bytes.Slice(offset).ToArray();
-			}
 			return null;
 		}
 
-		return bytes.Slice(offset, (int)glbLength).ToArray();
+		bool isCompressed = RealmMetadataHelper.ExtractIsCompressed(metadataJson);
+		ReadOnlySpan<byte> payloadSpan = bytes.Slice(payloadOffset);
+
+		if (isCompressed)
+		{
+			return RealmCompressionHelper.Decompress(payloadSpan);
+		}
+		else
+		{
+			if (payloadSpan.Length >= 4)
+			{
+				uint glbLength = BinaryPrimitives.ReadUInt32LittleEndian(payloadSpan.Slice(0, 4));
+				if (glbLength > 0 && 4 + (int)glbLength <= payloadSpan.Length)
+				{
+					return payloadSpan.Slice(4, (int)glbLength).ToArray();
+				}
+			}
+			return payloadSpan.ToArray();
+		}
 	}
 
 	public static byte[]? GetGlbBytes(Stream stream)
@@ -94,25 +162,44 @@ public static class RmeshFile
 		if (!RealmContainerHeader.HasMagic(header, Magic)) return null;
 
 		uint metadataLength = BinaryPrimitives.ReadUInt32LittleEndian(header.Slice(8, 4));
+		string? metadataJson = null;
 		if (metadataLength > 0)
 		{
-			stream.Seek(metadataLength, SeekOrigin.Current);
+			byte[] metaBytes = new byte[metadataLength];
+			int metaRead = 0;
+			while (metaRead < metadataLength)
+			{
+				int r = stream.Read(metaBytes, metaRead, (int)metadataLength - metaRead);
+				if (r <= 0) return null;
+				metaRead += r;
+			}
+			metadataJson = System.Text.Encoding.UTF8.GetString(metaBytes);
 		}
 
-		Span<byte> uintBuf = stackalloc byte[4];
-		if (stream.Read(uintBuf) < 4) return null;
-		uint glbLength = BinaryPrimitives.ReadUInt32LittleEndian(uintBuf);
-		if (glbLength == 0 || glbLength > 500 * 1024 * 1024) return null;
-
-		byte[] glbBytes = new byte[glbLength];
-		int read = 0;
-		while (read < glbLength)
+		bool isCompressed = RealmMetadataHelper.ExtractIsCompressed(metadataJson);
+		if (isCompressed)
 		{
-			int r = stream.Read(glbBytes, read, (int)glbLength - read);
-			if (r <= 0) return null;
-			read += r;
+			using var memoryStream = new MemoryStream();
+			stream.CopyTo(memoryStream);
+			return RealmCompressionHelper.Decompress(memoryStream.ToArray());
 		}
-		return glbBytes;
+		else
+		{
+			Span<byte> uintBuf = stackalloc byte[4];
+			if (stream.Read(uintBuf) < 4) return null;
+			uint glbLength = BinaryPrimitives.ReadUInt32LittleEndian(uintBuf);
+			if (glbLength == 0 || glbLength > 500 * 1024 * 1024) return null;
+
+			byte[] glbBytes = new byte[glbLength];
+			int read = 0;
+			while (read < glbLength)
+			{
+				int r = stream.Read(glbBytes, read, (int)glbLength - read);
+				if (r <= 0) return null;
+				read += r;
+			}
+			return glbBytes;
+		}
 	}
 
 	public static byte[]? GetGlbBytesFromFile(string filePath)
@@ -120,8 +207,8 @@ public static class RmeshFile
 		if (!File.Exists(filePath)) return null;
 		try
 		{
-			using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, bufferSize: 8192);
-			return GetGlbBytes(stream);
+			byte[] bytes = File.ReadAllBytes(filePath);
+			return GetGlbBytes(bytes);
 		}
 		catch
 		{

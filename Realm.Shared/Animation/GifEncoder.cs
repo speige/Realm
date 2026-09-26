@@ -24,22 +24,17 @@ public static class GifEncoder
 		using var stream = File.Create(outputPath);
 		using var writer = new BinaryWriter(stream);
 
-		// 1. Header: GIF89a
 		writer.Write(new char[] { 'G', 'I', 'F', '8', '9', 'a' });
 
-		// 2. Logical Screen Descriptor
 		writer.Write((ushort)width);
 		writer.Write((ushort)height);
 
-		// Quantize first frame to get Global Color Table
 		var (gctPalette, firstIndices) = QuantizeFrame(frames[0]);
 
-		// Packed: GCT present (0x80), color resolution 8-bit (0x70), GCT size 256 (0x07) -> 0xF7
 		writer.Write((byte)0xF7);
-		writer.Write((byte)0); // Background color index
-		writer.Write((byte)0); // Pixel aspect ratio
+		writer.Write((byte)0);
+		writer.Write((byte)0);
 
-		// Write GCT (768 bytes)
 		for (int i = 0; i < 256; i++)
 		{
 			if (i < gctPalette.Length)
@@ -56,46 +51,40 @@ public static class GifEncoder
 			}
 		}
 
-		// 3. Application Extension (Netscape 2.0 for infinite looping)
-		writer.Write((byte)0x21); // Extension Introducer
-		writer.Write((byte)0xFF); // Application Extension Label
-		writer.Write((byte)0x0B); // Block Size
+		writer.Write((byte)0x21);
+		writer.Write((byte)0xFF);
+		writer.Write((byte)0x0B);
 		writer.Write(new char[] { 'N', 'E', 'T', 'S', 'C', 'A', 'P', 'E', '2', '.', '0' });
-		writer.Write((byte)0x03); // Sub-block Size
-		writer.Write((byte)0x01); // Loop extension
-		writer.Write((ushort)0);  // Loop count (0 = infinite)
-		writer.Write((byte)0x00); // Block Terminator
+		writer.Write((byte)0x03);
+		writer.Write((byte)0x01);
+		writer.Write((ushort)0);
+		writer.Write((byte)0x00);
 
-		// 4. Frames
 		for (int f = 0; f < frames.Count; f++)
 		{
 			var frame = frames[f];
 			var (palette, indices) = (f == 0) ? (gctPalette, firstIndices) : QuantizeFrame(frame);
 
-			// Graphic Control Extension
-			writer.Write((byte)0x21); // Extension Introducer
-			writer.Write((byte)0xF9); // Graphic Control Label
-			writer.Write((byte)0x04); // Block Size
-			writer.Write((byte)0x08); // Disposal method 2 (Restore to background)
+			writer.Write((byte)0x21);
+			writer.Write((byte)0xF9);
+			writer.Write((byte)0x04);
+			writer.Write((byte)0x08);
 			writer.Write((ushort)frameDelayHundredths);
-			writer.Write((byte)0x00); // Transparent color index
-			writer.Write((byte)0x00); // Block Terminator
+			writer.Write((byte)0x00);
+			writer.Write((byte)0x00);
 
-			// Image Descriptor
-			writer.Write((byte)0x2C); // Image Separator
-			writer.Write((ushort)0);  // Left
-			writer.Write((ushort)0);  // Top
+			writer.Write((byte)0x2C);
+			writer.Write((ushort)0);
+			writer.Write((ushort)0);
 			writer.Write((ushort)width);
 			writer.Write((ushort)height);
 
 			if (f == 0)
 			{
-				// Uses GCT
 				writer.Write((byte)0x00);
 			}
 			else
 			{
-				// Local Color Table present (0x80) + 256 colors (0x07) = 0x87
 				writer.Write((byte)0x87);
 				for (int i = 0; i < 256; i++)
 				{
@@ -114,11 +103,9 @@ public static class GifEncoder
 				}
 			}
 
-			// Write LZW Image Data
 			WriteLzwData(writer, indices);
 		}
 
-		// 5. Trailer
 		writer.Write((byte)0x3B);
 	}
 
@@ -193,16 +180,16 @@ public static class GifEncoder
 		const int initCodeSize = 8;
 		writer.Write((byte)initCodeSize);
 
-		int clearCode = 1 << initCodeSize; // 256
-		int eoiCode = clearCode + 1;       // 257
+		int clearCode = 1 << initCodeSize;
+		int eoiCode = clearCode + 1;
 
-		int codeSize = initCodeSize + 1;   // 9 bits initially
+		int codeSize = initCodeSize + 1;
 		int maxCode = (1 << codeSize) - 1;
 		int nextCode = eoiCode + 1;
 
 		var dictionary = new Dictionary<long, int>();
 
-		using var ms = new MemoryStream();
+		using var memoryStream = new MemoryStream();
 		int bitBuffer = 0;
 		int bitCount = 0;
 
@@ -213,9 +200,20 @@ public static class GifEncoder
 
 			while (bitCount >= 8)
 			{
-				ms.WriteByte((byte)(bitBuffer & 0xFF));
+				memoryStream.WriteByte((byte)(bitBuffer & 0xFF));
 				bitBuffer >>= 8;
 				bitCount -= 8;
+			}
+
+			if (code == clearCode)
+			{
+				codeSize = initCodeSize + 1;
+				maxCode = (1 << codeSize) - 1;
+			}
+			else if (nextCode > maxCode && codeSize < 12)
+			{
+				codeSize++;
+				maxCode = (1 << codeSize) - 1;
 			}
 		}
 
@@ -244,11 +242,6 @@ public static class GifEncoder
 				if (nextCode < 4096)
 				{
 					dictionary[key] = nextCode++;
-					if (nextCode > maxCode && codeSize < 12)
-					{
-						codeSize++;
-						maxCode = (1 << codeSize) - 1;
-					}
 				}
 				else
 				{
@@ -272,10 +265,10 @@ public static class GifEncoder
 
 		if (bitCount > 0)
 		{
-			ms.WriteByte((byte)(bitBuffer & 0xFF));
+			memoryStream.WriteByte((byte)(bitBuffer & 0xFF));
 		}
 
-		byte[] lzwBytes = ms.ToArray();
+		byte[] lzwBytes = memoryStream.ToArray();
 		int offset = 0;
 		while (offset < lzwBytes.Length)
 		{

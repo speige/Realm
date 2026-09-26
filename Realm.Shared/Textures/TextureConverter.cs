@@ -376,15 +376,6 @@ public static class TextureConverter
 			string? dir = Path.GetDirectoryName(outputRtexPath);
 			if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
-			if (!string.IsNullOrEmpty(dir))
-			{
-				string nameWithoutExtension = Path.GetFileNameWithoutExtension(outputRtexPath);
-				File.WriteAllBytes(Path.Combine(dir, $"{nameWithoutExtension}_albedo.webp"), l0Bytes);
-				File.WriteAllBytes(Path.Combine(dir, $"{nameWithoutExtension}_pbr.webp"), l1Bytes);
-				File.WriteAllBytes(Path.Combine(dir, "albedo.webp"), l0Bytes);
-				File.WriteAllBytes(Path.Combine(dir, "pbr.webp"), l1Bytes);
-			}
-
 			byte[] rtexBytes = RtexFile.Build(metadataJson, [l0Bytes, l1Bytes]);
 			File.WriteAllBytes(outputRtexPath, rtexBytes);
 			RealmMetadataHelper.SyncBlake3Metadata(outputRtexPath);

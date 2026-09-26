@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Blake3;
+using Realm.Shared.Animation;
 using Realm.Shared.Audio;
 using Realm.Shared.ModelOptimization;
 using Realm.Shared.Textures;
@@ -594,105 +595,40 @@ public static class RealmMetadataHelper
 		File.WriteAllBytes(filePath, updated);
 	}
 
-	public static string? ExtractMetadataFromRanim(string filePath)
+	public static bool ExtractIsCompressed(string? metadataJson)
 	{
-		if (!File.Exists(filePath)) return null;
+		if (string.IsNullOrWhiteSpace(metadataJson)) return false;
 		try
 		{
-			using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, bufferSize: 4096);
-			if (stream.Length == 0) return null;
-
-			int firstByte = stream.ReadByte();
-			if (firstByte == '{' || firstByte == '[')
+			var node = JsonNode.Parse(metadataJson);
+			if (node is JsonObject obj)
 			{
-				stream.Position = 0;
-				using var reader = new StreamReader(stream, Encoding.UTF8);
-				string jsonText = reader.ReadToEnd();
-				try
+				if (obj.TryGetPropertyValue("is_compressed", out var compVal) && compVal != null)
 				{
-					using var doc = JsonDocument.Parse(jsonText);
-					if (doc.RootElement.TryGetProperty("Realm", out var realmProp) || doc.RootElement.TryGetProperty("realm", out realmProp))
-					{
-						return realmProp.ValueKind == JsonValueKind.String ? realmProp.GetString() : realmProp.GetRawText();
-					}
-					return jsonText;
+					if (compVal.GetValueKind() == JsonValueKind.True) return true;
+					if (compVal.GetValueKind() == JsonValueKind.False) return false;
+					if (bool.TryParse(compVal.ToString(), out bool b)) return b;
 				}
-				catch { }
-				return null;
-			}
-
-			if (stream.Length >= 8)
-			{
-				stream.Seek(-8, SeekOrigin.End);
-				Span<byte> trailer = stackalloc byte[8];
-				if (stream.Read(trailer) == 8)
+				if (obj.TryGetPropertyValue("IsCompressed", out var compVal2) && compVal2 != null)
 				{
-					if (trailer[4] == (byte)'R' && trailer[5] == (byte)'M' && trailer[6] == (byte)'E' && trailer[7] == (byte)'T')
-					{
-						uint metaLen = BinaryPrimitives.ReadUInt32LittleEndian(trailer.Slice(0, 4));
-						if (metaLen > 0 && stream.Length >= 8 + metaLen && metaLen <= 10 * 1024 * 1024)
-						{
-							stream.Seek(-8 - (long)metaLen, SeekOrigin.End);
-							byte[] metaBytes = new byte[metaLen];
-							int read = 0;
-							while (read < metaLen)
-							{
-								int r = stream.Read(metaBytes, read, (int)metaLen - read);
-								if (r <= 0) break;
-								read += r;
-							}
-							if (read == (int)metaLen)
-							{
-								return Encoding.UTF8.GetString(metaBytes);
-							}
-						}
-					}
+					if (compVal2.GetValueKind() == JsonValueKind.True) return true;
+					if (compVal2.GetValueKind() == JsonValueKind.False) return false;
+					if (bool.TryParse(compVal2.ToString(), out bool b2)) return b2;
 				}
 			}
-			return null;
 		}
-		catch
-		{
-			return null;
-		}
+		catch { }
+		return false;
+	}
+
+	public static string? ExtractMetadataFromRanim(string filePath)
+	{
+		return RanimFile.ExtractMetadataFromFile(filePath);
 	}
 
 	public static string? ExtractMetadataFromRanimBytes(ReadOnlySpan<byte> bytes)
 	{
-		if (bytes.Length == 0) return null;
-
-		if (bytes[0] == (byte)'{' || bytes[0] == (byte)'[')
-		{
-			try
-			{
-				string jsonText = Encoding.UTF8.GetString(bytes);
-				using var doc = JsonDocument.Parse(jsonText);
-				if (doc.RootElement.TryGetProperty("Realm", out var realmProp) || doc.RootElement.TryGetProperty("realm", out realmProp))
-				{
-					return realmProp.ValueKind == JsonValueKind.String ? realmProp.GetString() : realmProp.GetRawText();
-				}
-				return jsonText;
-			}
-			catch { }
-		}
-
-		if (bytes.Length >= 8)
-		{
-			if (bytes[bytes.Length - 4] == (byte)'R' &&
-				bytes[bytes.Length - 3] == (byte)'M' &&
-				bytes[bytes.Length - 2] == (byte)'E' &&
-				bytes[bytes.Length - 1] == (byte)'T')
-			{
-				uint metaLen = BinaryPrimitives.ReadUInt32LittleEndian(bytes.Slice(bytes.Length - 8, 4));
-				if (metaLen > 0 && bytes.Length >= 8 + metaLen)
-				{
-					int metaStart = bytes.Length - 8 - (int)metaLen;
-					return Encoding.UTF8.GetString(bytes.Slice(metaStart, (int)metaLen));
-				}
-			}
-		}
-
-		return null;
+		return RanimFile.ExtractMetadata(bytes);
 	}
 
 	public static void AddMetadataToRanim(string filePath, string realmMetadataJson)
@@ -704,42 +640,7 @@ public static class RealmMetadataHelper
 
 	public static byte[] AddMetadataToRanimBytes(byte[] bytes, string realmMetadataJson)
 	{
-		if (bytes.Length > 0 && (bytes[0] == (byte)'{' || bytes[0] == (byte)'['))
-		{
-			try
-			{
-				var node = JsonNode.Parse(Encoding.UTF8.GetString(bytes)) ?? new JsonObject();
-				try { node["Realm"] = JsonNode.Parse(realmMetadataJson); }
-				catch { node["Realm"] = JsonValue.Create(realmMetadataJson); }
-				return Encoding.UTF8.GetBytes(node.ToJsonString());
-			}
-			catch { }
-		}
-
-		int baseLength = bytes.Length;
-		if (bytes.Length >= 8 &&
-			bytes[bytes.Length - 4] == (byte)'R' &&
-			bytes[bytes.Length - 3] == (byte)'M' &&
-			bytes[bytes.Length - 2] == (byte)'E' &&
-			bytes[bytes.Length - 1] == (byte)'T')
-		{
-			uint oldLen = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(bytes.Length - 8, 4));
-			if (baseLength >= 8 + (int)oldLen)
-			{
-				baseLength = baseLength - 8 - (int)oldLen;
-			}
-		}
-
-		byte[] jsonBytes = Encoding.UTF8.GetBytes(realmMetadataJson);
-		byte[] result = new byte[baseLength + jsonBytes.Length + 4 + 4];
-		Buffer.BlockCopy(bytes, 0, result, 0, baseLength);
-		Buffer.BlockCopy(jsonBytes, 0, result, baseLength, jsonBytes.Length);
-		BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(baseLength + jsonBytes.Length, 4), (uint)jsonBytes.Length);
-		result[result.Length - 4] = (byte)'R';
-		result[result.Length - 3] = (byte)'M';
-		result[result.Length - 2] = (byte)'E';
-		result[result.Length - 1] = (byte)'T';
-		return result;
+		return RanimFile.SetMetadata(bytes, realmMetadataJson);
 	}
 
 	public static void RemoveMetadataFromRanim(string filePath)
@@ -751,90 +652,12 @@ public static class RealmMetadataHelper
 
 	public static byte[] RemoveMetadataFromRanimBytes(byte[] bytes)
 	{
-		if (bytes.Length > 0 && (bytes[0] == (byte)'{' || bytes[0] == (byte)'['))
-		{
-			try
-			{
-				var node = JsonNode.Parse(Encoding.UTF8.GetString(bytes));
-				if (node is JsonObject rootObj)
-				{
-					if (rootObj.Remove("Realm") || rootObj.Remove("realm"))
-					{
-						return Encoding.UTF8.GetBytes(rootObj.ToJsonString());
-					}
-				}
-			}
-			catch { }
-			return bytes;
-		}
-
-		if (bytes.Length >= 8 &&
-			bytes[bytes.Length - 4] == (byte)'R' &&
-			bytes[bytes.Length - 3] == (byte)'M' &&
-			bytes[bytes.Length - 2] == (byte)'E' &&
-			bytes[bytes.Length - 1] == (byte)'T')
-		{
-			uint oldLen = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(bytes.Length - 8, 4));
-			if (bytes.Length >= 8 + (int)oldLen)
-			{
-				int baseLength = bytes.Length - 8 - (int)oldLen;
-				byte[] result = new byte[baseLength];
-				Buffer.BlockCopy(bytes, 0, result, 0, baseLength);
-				return result;
-			}
-		}
-
-		return bytes;
-	}
-
-	public static bool IsRmeshBytes(ReadOnlySpan<byte> bytes)
-	{
-		return RmeshFile.IsRmeshBytes(bytes);
-	}
-
-	public static bool IsRtexBytes(ReadOnlySpan<byte> bytes)
-	{
-		return Realm.Shared.Textures.RtexFile.IsRtexBytes(bytes);
-	}
-
-	public static bool IsRaudBytes(ReadOnlySpan<byte> bytes)
-	{
-		return RaudFile.IsRaudBytes(bytes);
+		return RanimFile.SetMetadata(bytes, null);
 	}
 
 	public static bool IsRanimBytes(ReadOnlySpan<byte> bytes)
 	{
-		if (bytes.Length == 0) return false;
-		if (bytes.Length >= 8 &&
-			bytes[bytes.Length - 4] == (byte)'R' &&
-			bytes[bytes.Length - 3] == (byte)'M' &&
-			bytes[bytes.Length - 2] == (byte)'E' &&
-			bytes[bytes.Length - 1] == (byte)'T')
-		{
-			return true;
-		}
-
-		if (bytes[0] == (byte)'{' || bytes[0] == (byte)'[')
-		{
-			try
-			{
-				string json = Encoding.UTF8.GetString(bytes);
-				using var doc = JsonDocument.Parse(json);
-				var root = doc.RootElement;
-				if (root.TryGetProperty("AnimationName", out _) ||
-					root.TryGetProperty("animationName", out _) ||
-					root.TryGetProperty("Tracks", out _) ||
-					root.TryGetProperty("tracks", out _) ||
-					root.TryGetProperty("FrameRate", out _) ||
-					root.TryGetProperty("frameRate", out _))
-				{
-					return true;
-				}
-			}
-			catch { }
-		}
-
-		return false;
+		return RanimFile.IsRanimBytes(bytes);
 	}
 
 	public static byte[] StripMetadataEphemeral(byte[] bytes, string? extensionOrPath = null)
@@ -849,21 +672,45 @@ public static class RealmMetadataHelper
 
 		try
 		{
-			if (extension == ".rmesh" || ((string.IsNullOrEmpty(extension) || extension == ".bin") && IsRmeshBytes(bytes)))
+			if (extension == ".rmesh" || ((string.IsNullOrEmpty(extension) || extension == ".bin") && RmeshFile.IsRmeshBytes(bytes)))
 			{
+				if (RealmContainerHeader.TryReadHeader(bytes, RmeshFile.Magic, out _, out _, out int payloadOffset))
+				{
+					return bytes.AsSpan(payloadOffset).ToArray();
+				}
 				return RmeshFile.SetMetadata(bytes, null);
 			}
-			if (extension == ".raud" || ((string.IsNullOrEmpty(extension) || extension == ".bin") && IsRaudBytes(bytes)))
+			if (extension == ".raud" || ((string.IsNullOrEmpty(extension) || extension == ".bin") && RaudFile.IsRaudBytes(bytes)))
 			{
+				if (RealmContainerHeader.TryReadHeader(bytes, RaudFile.Magic, out _, out _, out int payloadOffset))
+				{
+					return bytes.AsSpan(payloadOffset).ToArray();
+				}
 				return RaudFile.SetMetadata(bytes, null);
 			}
-			if (extension == ".rtex" || ((string.IsNullOrEmpty(extension) || extension == ".bin") && IsRtexBytes(bytes)))
+			if (extension == ".rtex" || ((string.IsNullOrEmpty(extension) || extension == ".bin") && Realm.Shared.Textures.RtexFile.IsRtexBytes(bytes)))
 			{
+				if (RealmContainerHeader.TryReadHeader(bytes, Realm.Shared.Textures.RtexFile.Magic, out _, out _, out int payloadOffset))
+				{
+					return bytes.AsSpan(payloadOffset).ToArray();
+				}
 				return Realm.Shared.Textures.RtexFile.SetMetadata(bytes, null);
 			}
-			if (extension == ".ranim" || ((string.IsNullOrEmpty(extension) || extension == ".bin") && IsRanimBytes(bytes)))
+			if (extension == ".ranim" || ((string.IsNullOrEmpty(extension) || extension == ".bin") && RanimFile.IsRanimBytes(bytes)))
 			{
-				return RemoveMetadataFromRanimBytes(bytes);
+				if (RealmContainerHeader.TryReadHeader(bytes, RanimFile.Magic, out _, out _, out int payloadOffset))
+				{
+					return bytes.AsSpan(payloadOffset).ToArray();
+				}
+				return RanimFile.SetMetadata(bytes, null);
+			}
+			if (extension == ".rkey" || ((string.IsNullOrEmpty(extension) || extension == ".bin") && RkeyFile.IsRkeyBytes(bytes)))
+			{
+				if (RealmContainerHeader.TryReadHeader(bytes, RkeyFile.Magic, out _, out _, out int payloadOffset))
+				{
+					return bytes.AsSpan(payloadOffset).ToArray();
+				}
+				return RkeyFile.SetMetadata(bytes, null);
 			}
 		}
 		catch
@@ -911,7 +758,7 @@ public static class RealmMetadataHelper
 	{
 		if (!File.Exists(filePath)) return false;
 		string ext = Path.GetExtension(filePath).ToLowerInvariant();
-		if (ext is not (".rtex" or ".ranim" or ".rmesh" or ".raud")) return false;
+		if (ext is not (".rtex" or ".ranim" or ".rmesh" or ".raud" or ".rkey")) return false;
 
 		try
 		{
@@ -968,7 +815,7 @@ public static class RealmMetadataHelper
 		if (bytes == null || bytes.Length == 0) return bytes ?? Array.Empty<byte>();
 		string ext = Path.GetExtension(extensionOrPath).ToLowerInvariant();
 		if (string.IsNullOrEmpty(ext) && extensionOrPath.StartsWith('.')) ext = extensionOrPath.ToLowerInvariant();
-		if (ext is not (".rtex" or ".ranim" or ".rmesh" or ".raud")) return bytes;
+		if (ext is not (".rtex" or ".ranim" or ".rmesh" or ".raud" or ".rkey")) return bytes;
 
 		try
 		{
@@ -976,8 +823,9 @@ public static class RealmMetadataHelper
 			string? existingMeta = null;
 			if (ext == ".rmesh") existingMeta = RmeshFile.ExtractMetadata(bytes);
 			else if (ext == ".rtex") existingMeta = RtexFile.ExtractMetadata(bytes);
-			else if (ext == ".ranim") existingMeta = ExtractMetadataFromRanimBytes(bytes);
+			else if (ext == ".ranim") existingMeta = RanimFile.ExtractMetadata(bytes);
 			else if (ext == ".raud") existingMeta = RaudFile.ExtractMetadata(bytes);
+			else if (ext == ".rkey") existingMeta = RkeyFile.ExtractMetadata(bytes);
 
 			JsonObject metaObj;
 			if (!string.IsNullOrWhiteSpace(existingMeta))
@@ -1010,8 +858,9 @@ public static class RealmMetadataHelper
 			{
 				".rmesh" => RmeshFile.SetMetadata(bytes, newMetaJson),
 				".rtex" => RtexFile.SetMetadata(bytes, newMetaJson),
-				".ranim" => AddMetadataToRanimBytes(bytes, newMetaJson),
+				".ranim" => RanimFile.SetMetadata(bytes, newMetaJson),
 				".raud" => RaudFile.SetMetadata(bytes, newMetaJson),
+				".rkey" => RkeyFile.SetMetadata(bytes, newMetaJson),
 				_ => bytes
 			};
 		}
