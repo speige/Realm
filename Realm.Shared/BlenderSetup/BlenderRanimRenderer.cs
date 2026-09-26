@@ -7,8 +7,7 @@ using System.Text;
 using System.Text.Json;
 using Realm.Shared.Animation;
 using Realm.Shared.ModelOptimization;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using SkiaSharp;
 
 namespace Realm.Shared.BlenderSetup;
 
@@ -253,7 +252,7 @@ public static class BlenderRanimRenderer
 				return new RanimRenderResult();
 			}
 
-			using var fullSheet = Image.Load<Rgba32>(temporarySpritesheet);
+			using var fullSheet = SKBitmap.Decode(temporarySpritesheet);
 			int frameCount = Math.Max(1, fullSheet.Width / renderOptions.Width);
 			float duration = animationData.Duration > 0f ? animationData.Duration : 1.0f;
 
@@ -267,19 +266,21 @@ public static class BlenderRanimRenderer
 
 			for (int frameIndex = 0; frameIndex < frameCount; frameIndex++)
 			{
-				using var frameImage = new Image<Rgba32>(renderOptions.Width, renderOptions.Height);
 				int sourceXOffset = frameIndex * renderOptions.Width;
+				byte[] pixelBytes = new byte[renderOptions.Width * renderOptions.Height * 4];
 
 				for (int y = 0; y < renderOptions.Height; y++)
 				{
 					for (int x = 0; x < renderOptions.Width; x++)
 					{
-						frameImage[x, y] = fullSheet[sourceXOffset + x, y];
+						SKColor color = fullSheet.GetPixel(sourceXOffset + x, y);
+						int idx = (y * renderOptions.Width + x) * 4;
+						pixelBytes[idx] = color.Red;
+						pixelBytes[idx + 1] = color.Green;
+						pixelBytes[idx + 2] = color.Blue;
+						pixelBytes[idx + 3] = color.Alpha;
 					}
 				}
-
-				byte[] pixelBytes = new byte[renderOptions.Width * renderOptions.Height * 4];
-				frameImage.CopyPixelDataTo(pixelBytes);
 
 				float time = (frameIndex / (float)frameCount) * duration;
 				result.Frames.Add(new RanimRenderFrame

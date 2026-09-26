@@ -5,9 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Realm.Shared.Textures;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
+using SkiaSharp;
 
 namespace Realm.Shared;
 
@@ -472,23 +470,46 @@ public static class GlbManifestUtils
 
 			try
 			{
-				using var img = Image.Load<Rgba32>(raw);
+				using var img = SKBitmap.Decode(raw);
+				if (img == null)
+				{
+					newImageBytes[i] = raw;
+					continue;
+				}
+
+				SKBitmap workingImg = img;
+				bool ownsResized = false;
 				if (img.Width > maxResolution || img.Height > maxResolution)
 				{
 					float scale = Math.Min((float)maxResolution / img.Width, (float)maxResolution / img.Height);
 					int targetW = Math.Max(1, (int)(img.Width * scale));
 					int targetH = Math.Max(1, (int)(img.Height * scale));
-					img.Mutate(x => x.Resize(targetW, targetH, KnownResamplers.Lanczos3));
+					var resized = img.Resize(new SKImageInfo(targetW, targetH), new SKSamplingOptions(SKCubicResampler.Mitchell));
+					if (resized != null)
+					{
+						workingImg = resized;
+						ownsResized = true;
+					}
 				}
 
-				bool isPbr = pbrImageIndices.Contains(i);
-				byte[] webpData = TextureConverter.EncodeWebp(
-					img,
-					lossless: isPbr,
-					quality: isPbr ? 100 : 90
-				);
+				try
+				{
+					bool isPbr = pbrImageIndices.Contains(i);
+					byte[] webpData = TextureConverter.EncodeWebp(
+						workingImg,
+						lossless: isPbr,
+						quality: isPbr ? 100 : 90
+					);
 
-				newImageBytes[i] = webpData;
+					newImageBytes[i] = webpData;
+				}
+				finally
+				{
+					if (ownsResized)
+					{
+						workingImg.Dispose();
+					}
+				}
 			}
 			catch
 			{

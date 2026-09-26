@@ -4,8 +4,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using Realm.Shared.Textures;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using SkiaSharp;
 
 namespace Realm.Shared;
 
@@ -142,14 +141,15 @@ public static class GlbInMemoryColorPreprocessor
 				return glbBytes;
 			}
 
-			using var ormImg = Image.Load<Rgba32>(ormRaw);
+			using var ormImg = SKBitmap.Decode(ormRaw);
+			if (ormImg == null) return glbBytes;
 
 			bool hasMask = false;
 			for (int y = 0; y < ormImg.Height; y++)
 			{
 				for (int x = 0; x < ormImg.Width; x++)
 				{
-					if (ormImg[x, y].R > 0)
+					if (ormImg.GetPixel(x, y).Red > 0)
 					{
 						hasMask = true;
 						break;
@@ -163,7 +163,8 @@ public static class GlbInMemoryColorPreprocessor
 				return glbBytes;
 			}
 
-			using var albedoImg = Image.Load<Rgba32>(albedoRaw);
+			using var albedoImg = SKBitmap.Decode(albedoRaw);
+			if (albedoImg == null) return glbBytes;
 
 			string effectiveChromaKey = chromaKeyHex ?? string.Empty;
 			if (string.IsNullOrWhiteSpace(effectiveChromaKey) || string.Equals(effectiveChromaKey, "auto", StringComparison.OrdinalIgnoreCase))
@@ -191,8 +192,8 @@ public static class GlbInMemoryColorPreprocessor
 	}
 
 	public static void ApplyAnalyticalChromaDespill(
-		Image<Rgba32> albedoImg,
-		Image<Rgba32> ormImg,
+		SKBitmap albedoImg,
+		SKBitmap ormImg,
 		string chromaKeyHex)
 	{
 		(float targetR, float targetG, float targetB) = GlbPlayerColorProcessor.HexToRgb(chromaKeyHex);
@@ -217,42 +218,34 @@ public static class GlbInMemoryColorPreprocessor
 		bool sameDimensions = (width == ormWidth && height == ormHeight);
 
 		float[] maskValues = new float[width * height];
-		ormImg.ProcessPixelRows(ormAccessor =>
+		for (int y = 0; y < height; y++)
 		{
-			for (int y = 0; y < height; y++)
-			{
-				int ormY = sameDimensions ? y : Math.Clamp((int)(((y + 0.5f) / height) * ormHeight), 0, ormHeight - 1);
-				var ormRow = ormAccessor.GetRowSpan(ormY);
-				int rowOffset = y * width;
+			int ormY = sameDimensions ? y : Math.Clamp((int)(((y + 0.5f) / height) * ormHeight), 0, ormHeight - 1);
+			int rowOffset = y * width;
 
-				for (int x = 0; x < width; x++)
+			for (int x = 0; x < width; x++)
+			{
+				int ormX = sameDimensions ? x : Math.Clamp((int)(((x + 0.5f) / width) * ormWidth), 0, ormWidth - 1);
+				maskValues[rowOffset + x] = ormImg.GetPixel(ormX, ormY).Red / 255.0f;
+			}
+		}
+
+		for (int y = 0; y < height; y++)
+		{
+			int rowOffset = y * width;
+
+			for (int x = 0; x < width; x++)
+			{
+				float mask = maskValues[rowOffset + x];
+				if (mask >= 0.999f) continue;
+
+				var pixel = albedoImg.GetPixel(x, y);
+				if (TryDespillPixel(pixel.Red, pixel.Green, pixel.Blue, mask, keyUnitVector, out byte newR, out byte newG, out byte newB))
 				{
-					int ormX = sameDimensions ? x : Math.Clamp((int)(((x + 0.5f) / width) * ormWidth), 0, ormWidth - 1);
-					maskValues[rowOffset + x] = ormRow[ormX].R / 255.0f;
+					albedoImg.SetPixel(x, y, new SKColor(newR, newG, newB, pixel.Alpha));
 				}
 			}
-		});
-
-		albedoImg.ProcessPixelRows(accessor =>
-		{
-			for (int y = 0; y < height; y++)
-			{
-				var albedoRow = accessor.GetRowSpan(y);
-				int rowOffset = y * width;
-
-				for (int x = 0; x < width; x++)
-				{
-					float mask = maskValues[rowOffset + x];
-					if (mask >= 0.999f) continue;
-
-					var pixel = albedoRow[x];
-					if (TryDespillPixel(pixel.R, pixel.G, pixel.B, mask, keyUnitVector, out byte newR, out byte newG, out byte newB))
-					{
-						albedoRow[x] = new Rgba32(newR, newG, newB, pixel.A);
-					}
-				}
-			}
-		});
+		}
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]

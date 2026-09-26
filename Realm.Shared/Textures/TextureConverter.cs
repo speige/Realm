@@ -4,10 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json.Nodes;
 using Realm.Shared.Metadata;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Formats.Png;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
+using SkiaSharp;
 using Imazen.WebP;
 
 namespace Realm.Shared.Textures;
@@ -45,7 +42,7 @@ public static class TextureConverter
 	}
 
 	public static float CalculateLuminanceScaleFactor(
-		Image<Rgba32> sourceImage,
+		SKBitmap sourceImage,
 		float targetLinearLuminance = 0.1133f,
 		float minScaleFactor = 0.2f,
 		float maxScaleFactor = 4.0f)
@@ -59,15 +56,15 @@ public static class TextureConverter
 		{
 			for (int x = 0; x < width; x++)
 			{
-				Rgba32 pixel = sourceImage[x, y];
-				if (pixel.A < 13 || (pixel.R == 0 && pixel.G == 0 && pixel.B == 0))
+				SKColor pixel = sourceImage.GetPixel(x, y);
+				if (pixel.Alpha < 13 || (pixel.Red == 0 && pixel.Green == 0 && pixel.Blue == 0))
 				{
 					continue;
 				}
 
-				float rLinear = SrgbToLinearLut[pixel.R];
-				float gLinear = SrgbToLinearLut[pixel.G];
-				float bLinear = SrgbToLinearLut[pixel.B];
+				float rLinear = SrgbToLinearLut[pixel.Red];
+				float gLinear = SrgbToLinearLut[pixel.Green];
+				float bLinear = SrgbToLinearLut[pixel.Blue];
 
 				float rPow = rLinear * rLinear;
 				float gPow = gLinear * gLinear;
@@ -85,12 +82,12 @@ public static class TextureConverter
 			{
 				for (int x = 0; x < width; x++)
 				{
-					Rgba32 pixel = sourceImage[x, y];
-					if (pixel.A < 13) continue;
+					SKColor pixel = sourceImage.GetPixel(x, y);
+					if (pixel.Alpha < 13) continue;
 
-					float rLinear = SrgbToLinearLut[pixel.R];
-					float gLinear = SrgbToLinearLut[pixel.G];
-					float bLinear = SrgbToLinearLut[pixel.B];
+					float rLinear = SrgbToLinearLut[pixel.Red];
+					float gLinear = SrgbToLinearLut[pixel.Green];
+					float bLinear = SrgbToLinearLut[pixel.Blue];
 
 					float rPow = rLinear * rLinear;
 					float gPow = gLinear * gLinear;
@@ -135,7 +132,8 @@ public static class TextureConverter
 				}
 			}
 
-			using var img = Image.Load<Rgba32>(imagePath);
+			using var img = SKBitmap.Decode(imagePath);
+			if (img == null) return 1.0f;
 			return CalculateLuminanceScaleFactor(img, targetLinearLuminance, minScaleFactor, maxScaleFactor);
 		}
 		catch
@@ -144,11 +142,11 @@ public static class TextureConverter
 		}
 	}
 
-	public static Image<Rgba32> NormalizeLuminance(Image<Rgba32> sourceImage, float scaleFactor)
+	public static SKBitmap NormalizeLuminance(SKBitmap sourceImage, float scaleFactor)
 	{
 		int width = sourceImage.Width;
 		int height = sourceImage.Height;
-		var result = new Image<Rgba32>(width, height);
+		var result = new SKBitmap(width, height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
 
 		byte[] scaledLut = new byte[256];
 		for (int i = 0; i < 256; i++)
@@ -161,18 +159,18 @@ public static class TextureConverter
 		{
 			for (int x = 0; x < width; x++)
 			{
-				Rgba32 pixel = sourceImage[x, y];
-				if (pixel.A < 13)
+				SKColor pixel = sourceImage.GetPixel(x, y);
+				if (pixel.Alpha < 13)
 				{
-					result[x, y] = pixel;
+					result.SetPixel(x, y, pixel);
 					continue;
 				}
 
-				byte r = scaledLut[pixel.R];
-				byte g = scaledLut[pixel.G];
-				byte b = scaledLut[pixel.B];
+				byte r = scaledLut[pixel.Red];
+				byte g = scaledLut[pixel.Green];
+				byte b = scaledLut[pixel.Blue];
 
-				result[x, y] = new Rgba32(r, g, b, pixel.A);
+				result.SetPixel(x, y, new SKColor(r, g, b, pixel.Alpha));
 			}
 		}
 
@@ -180,10 +178,10 @@ public static class TextureConverter
 	}
 
 	public static void ProcessTerrainPbr(
-		Image<Rgba32> sourceImage,
+		SKBitmap sourceImage,
 		bool isDecal,
-		out Image<Rgba32> layer0,
-		out Image<Rgba32> layer1)
+		out SKBitmap layer0,
+		out SKBitmap layer1)
 	{
 		int width = sourceImage.Width;
 		int height = sourceImage.Height;
@@ -193,8 +191,8 @@ public static class TextureConverter
 		{
 			for (int x = 0; x < width; x++)
 			{
-				Rgba32 p = sourceImage[x, y];
-				luminance[x, y] = (0.299f * p.R + 0.587f * p.G + 0.114f * p.B) / 255.0f;
+				SKColor p = sourceImage.GetPixel(x, y);
+				luminance[x, y] = (0.299f * p.Red + 0.587f * p.Green + 0.114f * p.Blue) / 255.0f;
 			}
 		}
 
@@ -261,8 +259,8 @@ public static class TextureConverter
 			}
 		}
 
-		layer0 = new Image<Rgba32>(width, height);
-		layer1 = new Image<Rgba32>(width, height);
+		layer0 = new SKBitmap(width, height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+		layer1 = new SKBitmap(width, height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
 
 		for (int y = 0; y < height; y++)
 		{
@@ -274,12 +272,12 @@ public static class TextureConverter
 				int px = isDecal ? (x > 0 ? x - 1 : x) : (x > 0 ? x - 1 : width - 1);
 				int nx = isDecal ? (x < width - 1 ? x + 1 : x) : (x < width - 1 ? x + 1 : 0);
 
-				Rgba32 albedoCol = sourceImage[x, y];
+				SKColor albedoCol = sourceImage.GetPixel(x, y);
 				float heightVal = normalizedHeight[x, y];
 				byte heightByte = (byte)Math.Clamp((int)Math.Round(heightVal * 255.0f), 0, 255);
-				byte alphaVal = isDecal ? albedoCol.A : (byte)255;
+				byte alphaVal = isDecal ? albedoCol.Alpha : (byte)255;
 
-				layer0[x, y] = new Rgba32(albedoCol.R, albedoCol.G, albedoCol.B, alphaVal);
+				layer0.SetPixel(x, y, new SKColor(albedoCol.Red, albedoCol.Green, albedoCol.Blue, alphaVal));
 
 				float h00 = normalizedHeight[px, py];
 				float h10 = normalizedHeight[x, py];
@@ -311,17 +309,29 @@ public static class TextureConverter
 				float roughness = Math.Clamp(lerpVal + highDetail * 0.8f, 0.15f, 0.95f);
 				byte normA = (byte)Math.Clamp((int)Math.Round(roughness * 255.0f), 0, 255);
 
-				layer1[x, y] = new Rgba32(normR, normG, normB, normA);
+				layer1.SetPixel(x, y, new SKColor(normR, normG, normB, normA));
 			}
 		}
 	}
 
-	public static byte[] EncodeWebp(Image<Rgba32> image, bool lossless = false, int quality = 90)
+	public static byte[] EncodeWebp(SKBitmap image, bool lossless = false, int quality = 90)
 	{
 		int width = image.Width;
 		int height = image.Height;
 		byte[] pixelBytes = new byte[width * height * 4];
-		image.CopyPixelDataTo(pixelBytes);
+
+		for (int y = 0; y < height; y++)
+		{
+			for (int x = 0; x < width; x++)
+			{
+				SKColor color = image.GetPixel(x, y);
+				int idx = (y * width + x) * 4;
+				pixelBytes[idx] = color.Red;
+				pixelBytes[idx + 1] = color.Green;
+				pixelBytes[idx + 2] = color.Blue;
+				pixelBytes[idx + 3] = color.Alpha;
+			}
+		}
 
 		var config = new WebPEncoderConfig();
 		if (lossless)
@@ -350,8 +360,8 @@ public static class TextureConverter
 	}
 
 	private static bool EncodeTwoLayerPbrRtex(
-		Image<Rgba32> layer0,
-		Image<Rgba32> layer1,
+		SKBitmap layer0,
+		SKBitmap layer1,
 		string outputRtexPath,
 		string metadataJson,
 		out string errorMessage,
@@ -388,7 +398,7 @@ public static class TextureConverter
 	}
 
 	private static bool EncodeSingleLayerRtex(
-		Image<Rgba32> image,
+		SKBitmap image,
 		string outputRtexPath,
 		string metadataJson,
 		out string errorMessage,
@@ -437,7 +447,13 @@ public static class TextureConverter
 			byte[] originalBits = File.ReadAllBytes(result.InputPath);
 			string originalBlake3 = RealmMetadataHelper.ComputeBlake3(originalBits, Path.GetExtension(result.InputPath));
 
-			using var sourceImage = Image.Load<Rgba32>(result.InputPath);
+			using var sourceImage = SKBitmap.Decode(result.InputPath);
+			if (sourceImage == null)
+			{
+				result.Success = false;
+				result.ErrorMessage = $"Failed to decode image file: {rawImagePath}";
+				return result;
+			}
 			float scaleFactor = forcedScaleFactor ?? CalculateLuminanceScaleFactor(sourceImage);
 			result.ScaleFactor = scaleFactor;
 
@@ -500,7 +516,13 @@ public static class TextureConverter
 			byte[] originalBits = File.ReadAllBytes(result.InputPath);
 			string originalBlake3 = RealmMetadataHelper.ComputeBlake3(originalBits, Path.GetExtension(result.InputPath));
 
-			using var sourceImage = Image.Load<Rgba32>(result.InputPath);
+			using var sourceImage = SKBitmap.Decode(result.InputPath);
+			if (sourceImage == null)
+			{
+				result.Success = false;
+				result.ErrorMessage = $"Failed to decode image file: {rawImagePath}";
+				return result;
+			}
 			float scaleFactor = forcedScaleFactor ?? CalculateLuminanceScaleFactor(sourceImage);
 			result.ScaleFactor = scaleFactor;
 
@@ -566,7 +588,13 @@ public static class TextureConverter
 			byte[] originalBits = File.ReadAllBytes(result.InputPath);
 			string originalBlake3 = RealmMetadataHelper.ComputeBlake3(originalBits, Path.GetExtension(result.InputPath));
 
-			using var sourceImage = Image.Load<Rgba32>(result.InputPath);
+			using var sourceImage = SKBitmap.Decode(result.InputPath);
+			if (sourceImage == null)
+			{
+				result.Success = false;
+				result.ErrorMessage = $"Failed to decode image file: {rawImagePath}";
+				return result;
+			}
 			string metadataJson = $"{{\"created_utc\":\"{DateTime.UtcNow:O}\",\"type\":\"vfx_spritesheet\",\"canonical_blake3\":\"{originalBlake3}\",\"columns\":{columns},\"rows\":{rows},\"fps\":{fps.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)},\"layers\":1}}";
 
 			bool encodeOk = EncodeSingleLayerRtex(
@@ -600,10 +628,10 @@ public static class TextureConverter
 		string outputRtexPath,
 		bool enableRdo = false,
 		float horizonBlendStart = 0.5f,
-		Rgba32? horizonColor = null,
+		SKColor? horizonColor = null,
 		float wrapBlendWidth = 0.05f,
 		float zenithBlendEnd = 0.08f,
-		Rgba32? zenithColor = null)
+		SKColor? zenithColor = null)
 	{
 		var result = new TextureConversionResult
 		{
@@ -625,7 +653,14 @@ public static class TextureConverter
 
 			using var sourceImage = Path.GetExtension(result.InputPath).Equals(".rtex", StringComparison.OrdinalIgnoreCase)
 				? ExtractImageFromRtex(result.InputPath, 0) ?? throw new InvalidOperationException($"Failed to load image from RTEX: {result.InputPath}")
-				: Image.Load<Rgba32>(originalBits);
+				: SKBitmap.Decode(originalBits);
+
+			if (sourceImage == null)
+			{
+				result.Success = false;
+				result.ErrorMessage = $"Failed to decode skybox image: {rawImagePath}";
+				return result;
+			}
 
 			using var processedImage = SkyboxProcessor.ProcessSkybox(
 				sourceImage,
@@ -720,7 +755,13 @@ public static class TextureConverter
 			byte[] originalBits = File.ReadAllBytes(result.InputPath);
 			string originalBlake3 = RealmMetadataHelper.ComputeBlake3(originalBits, Path.GetExtension(result.InputPath));
 
-			using var sourceImage = Image.Load<Rgba32>(result.InputPath);
+			using var sourceImage = SKBitmap.Decode(result.InputPath);
+			if (sourceImage == null)
+			{
+				result.Success = false;
+				result.ErrorMessage = $"Failed to decode image file: {rawImagePath}";
+				return result;
+			}
 			string metadataJson;
 			if (!string.IsNullOrWhiteSpace(customMetadataJson))
 			{
@@ -769,18 +810,18 @@ public static class TextureConverter
 		}
 	}
 
-	public static Image<Rgba32>? ExtractImageFromRtex(string rtexPath, int layer = 0)
+	public static SKBitmap? ExtractImageFromRtex(string rtexPath, int layer = 0)
 	{
 		if (!File.Exists(rtexPath)) return null;
 		byte[] bytes = File.ReadAllBytes(rtexPath);
 		return ExtractImageFromRtexBytes(bytes, layer);
 	}
 
-	public static Image<Rgba32>? ExtractImageFromRtexBytes(ReadOnlySpan<byte> rtexBytes, int layer = 0)
+	public static SKBitmap? ExtractImageFromRtexBytes(ReadOnlySpan<byte> rtexBytes, int layer = 0)
 	{
 		byte[]? webpBytes = RtexFile.GetLayer(rtexBytes, layer);
 		if (webpBytes == null || webpBytes.Length == 0) return null;
-		return Image.Load<Rgba32>(webpBytes);
+		return SKBitmap.Decode(webpBytes);
 	}
 
 	public static byte[]? ExtractWebpFromRtex(string rtexPath, int layer = 0)
@@ -824,7 +865,10 @@ public static class TextureConverter
 			string? dir = Path.GetDirectoryName(fullOutput);
 			if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
-			image.SaveAsPng(fullOutput);
+			using var skImage = SKImage.FromBitmap(image);
+			using var data = skImage.Encode(SKEncodedImageFormat.Png, 100);
+			using var stream = File.Create(fullOutput);
+			data.SaveTo(stream);
 
 			result.Success = true;
 			return result;
