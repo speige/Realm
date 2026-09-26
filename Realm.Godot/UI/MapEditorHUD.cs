@@ -2104,38 +2104,51 @@ public partial class MapEditorHUD : Control
 		overlay.AddChild(center);
 
 		var panel = new PanelContainer();
-		panel.CustomMinimumSize = new Vector2(1200, 800);
-		var style = new StyleBoxFlat();
-		style.BgColor = new Color(0.1f, 0.1f, 0.15f, 0.95f);
-		style.BorderWidthTop = 2; style.BorderWidthBottom = 2; style.BorderWidthLeft = 2; style.BorderWidthRight = 2;
-		style.BorderColor = new Color(0.3f, 0.3f, 0.35f, 1f);
-		style.CornerRadiusTopLeft = 4; style.CornerRadiusTopRight = 4; style.CornerRadiusBottomLeft = 4; style.CornerRadiusBottomRight = 4;
-		panel.AddThemeStyleboxOverride("panel", style);
+		panel.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+		panel.CustomMinimumSize = new Vector2(1024, 730);
 		center.AddChild(panel);
+
+		var bgTex = new TextureRect();
+		bgTex.Texture = UIStyle.LoadTextureWithFallback("res://Assets/UI/map_editor_publish.png");
+		bgTex.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+		bgTex.StretchMode = TextureRect.StretchModeEnum.Scale;
+		bgTex.SetAnchorsPreset(LayoutPreset.FullRect);
+		panel.AddChild(bgTex);
+
+		var margin = new MarginContainer();
+		margin.SetAnchorsPreset(LayoutPreset.FullRect);
+		margin.AddThemeConstantOverride("margin_top", 45);
+		margin.AddThemeConstantOverride("margin_bottom", 55);
+		margin.AddThemeConstantOverride("margin_left", 65);
+		margin.AddThemeConstantOverride("margin_right", 65);
+		panel.AddChild(margin);
 
 		var vbox = new VBoxContainer();
 		vbox.AddThemeConstantOverride("separation", 12);
-		vbox.SetAnchorsPreset(LayoutPreset.FullRect);
-		vbox.CustomMinimumSize = new Vector2(1180, 780);
-		var margin = new MarginContainer();
-		margin.AddThemeConstantOverride("margin_top", 10);
-		margin.AddThemeConstantOverride("margin_bottom", 10);
-		margin.AddThemeConstantOverride("margin_left", 10);
-		margin.AddThemeConstantOverride("margin_right", 10);
 		margin.AddChild(vbox);
-		panel.AddChild(margin);
 
 		var title = new Label();
-		title.Text = "Publish Map Instructions";
+		UIStyle.ApplyTitle(title, TranslationServer.Translate("Publish Map Instructions"), 20);
 		title.HorizontalAlignment = HorizontalAlignment.Center;
-		title.AddThemeFontSizeOverride("font_size", 24);
+		title.AddThemeColorOverride("font_color", UIStyle.ColorGold);
 		vbox.AddChild(title);
+
+		var contentMargin = new MarginContainer();
+		contentMargin.AddThemeConstantOverride("margin_top", 40);
+		contentMargin.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+		contentMargin.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+
+		var contentVBox = new VBoxContainer();
+		contentVBox.AddThemeConstantOverride("separation", 10);
+		contentVBox.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+		contentVBox.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		contentMargin.AddChild(contentVBox);
 
 		var optType = new OptionButton();
 		optType.AddItem("Custom Arcade Map", 0);
 		optType.AddItem("Reusable Asset Pack", 1);
 		optType.Selected = _mapSettingsDialog?.SelectedMapTypeIndex ?? 0;
-		vbox.AddChild(optType);
+		contentVBox.AddChild(optType);
 
 		var scroll = new ScrollContainer();
 		scroll.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
@@ -2144,7 +2157,9 @@ public partial class MapEditorHUD : Control
 		instructionsText.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
 		instructionsText.BbcodeEnabled = true;
 		scroll.AddChild(instructionsText);
-		vbox.AddChild(scroll);
+		contentVBox.AddChild(scroll);
+
+		vbox.AddChild(contentMargin);
 
 		string textArcade = TranslationServer.Translate("🚀 [b]Publishing Your Custom Map[/b]\nTo maintain a high-quality community arcade, all new maps start in a Beta-Testing Phase.\n\nOnce your map hits our community play-time metrics (gaining enough unique players, ratings, & community playtime), it will become available for official publishing to community maps screens.\n\nUntil then, it is up to you to share it with the community & market it until you hit that threshold.\nYour map is ready to play right now! Click the 'Export' button to share it. Host a lobby with your map & wait for players to join.\nMessage the community via discord channels, etc to explain your map & convince them to try it. If they enjoy it, they will probably re-host it, which will help you hit the graduation threshold more quickly.\n\nWhile in testing, your map name will include a prefix [Beta-Testing] so players know it's an active work-in-progress. However, you should still do as much personal testing as possible before public hosting to avoid a frustrating experience for your testers.\n\nAfter graduation, your map name will be permanently reserved to your creator profile so no one else can use that same name.");
 		string textAssetPack = TranslationServer.Translate("📦 [b]Publishing a Reusable Asset Pack[/b]\nWant to share your custom 3D models, audio, or code scripts with other map makers?\n\nIn Realm, Asset Packs are published as playable Showcase/Demo Maps.\n\n[b]Build a Playground:[/b] Turn your asset pack into a map where players can preview the functionality provided by your systems, view your models, etc.\n\n[b]Gather Community Metrics:[/b] Just like a regular map, your asset pack will start in a \"beta\" phase before being promoted on community discovery pages. Read the \"Custom Arcade Map\" section for more information.\n\n[b]Easy Importing:[/b] Once a player has a copy of your map, they can import assets from it into their maps via the map editor.\n\n[b]Automatic Credit:[/b] When creators import from you, the system tracks your files' signatures and automatically adds your info to their map credits.");

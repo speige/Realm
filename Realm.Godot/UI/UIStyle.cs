@@ -313,7 +313,7 @@ public static class UIStyle
 
 	public static StyleBox CreateRandomGeneratorPanel()
 	{
-		var tex = GD.Load<Texture2D>("res://Assets/UI/map_editor_random_generator.png");
+		var tex = LoadTextureWithFallback("res://Assets/UI/map_editor_random_generator.png");
 		if (tex != null)
 		{
 			var style = new StyleBoxTexture();
@@ -410,6 +410,28 @@ public static class UIStyle
 			style.TextureMarginRight = 80;
 			style.TextureMarginTop = 80;
 			style.TextureMarginBottom = 80;
+			style.ContentMarginLeft = 45;
+			style.ContentMarginRight = 45;
+			style.ContentMarginTop = 45;
+			style.ContentMarginBottom = 45;
+			style.AxisStretchHorizontal = StyleBoxTexture.AxisStretchMode.Stretch;
+			style.AxisStretchVertical = StyleBoxTexture.AxisStretchMode.Stretch;
+			return style;
+		}
+		return CreateStonePanel(true);
+	}
+
+	public static StyleBox CreatePublishMapInstructionsPanel()
+	{
+		var tex = LoadTextureWithFallback("res://Assets/UI/map_editor_publish.png");
+		if (tex != null)
+		{
+			var style = new StyleBoxTexture();
+			style.Texture = tex;
+			style.TextureMarginLeft = 140;
+			style.TextureMarginRight = 140;
+			style.TextureMarginTop = 140;
+			style.TextureMarginBottom = 140;
 			style.ContentMarginLeft = 45;
 			style.ContentMarginRight = 45;
 			style.ContentMarginTop = 45;
